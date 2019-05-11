@@ -174,7 +174,8 @@ public:
             uint        s_i;                // KIND_STR - index into strings array of string value
             bool        b;                  // KIND_BOOL
             _int        i;                  // KIND_INT
-            uint        u;                  // KIND_UINT
+            uint        ui;                 // KIND_UINT
+            real        r;                  // KIND_REAL
             uint        child_first_i;      // KIND_HIER - index into nodes[] array of first child
             uint        arg_first_i;        // KIND_CALL - index into nodes[] array of first arg to call
         } u;
@@ -252,6 +253,7 @@ private:
     bool eol( char *& xxx, char *& xxx_end );
     bool expect_char( char ch, char *& xxx, char* xxx_end, bool skip_whitespace_first=false );
     uint get_str_i( std::string s );
+    bool parse_expr( uint node_i, char *& xxx, char *& xxx_end );
     bool parse_string( std::string& s, char *& xxx, char *& xxx_end );
     bool parse_string_i( uint& s, char *& xxx, char *& xxx_end );
     bool parse_name( char *& name, char *& xxx, char *& xxx_end );
@@ -595,7 +597,7 @@ bool Layout::parse_aedt_node( uint& node_i )
     perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
     uint ni = hdr->node_cnt++;
     if ( id_i == aedt_begin_str_i ) {
-        // HIER
+        // HIER => parse child nodes
         uint str_i;
         if ( !parse_string_i( str_i, node_c, node_end ) ) return false;
         nodes[ni].kind = NODE_KIND::HIER;
@@ -605,27 +607,51 @@ bool Layout::parse_aedt_node( uint& node_i )
         uint prev_i = uint(-1);
         for( ;; )
         {
-             if ( !parse_id( id_i, node_c, node_end ) ) return false;
-             if ( id_i == aedt_end_str_i ) break;
+            if ( !parse_id( id_i, node_c, node_end ) ) return false;
+            if ( id_i == aedt_end_str_i ) break;
 
-             uint ci;
-             if ( !parse_aedt_node( ci ) ) return false;
-             if ( nodes[ni].u.child_first_i == uint(-1) ) {
-                 nodes[ni].u.child_first_i = ci;
-             } else {
-                 nodes[prev_i].sibling_i = ci;
-             }
-             prev_i = ci;
+            uint ci;
+            if ( !parse_aedt_node( ci ) ) return false;
+            if ( nodes[ni].u.child_first_i == uint(-1) ) {
+                nodes[ni].u.child_first_i = ci;
+            } else {
+                nodes[prev_i].sibling_i = ci;
+            }
+            prev_i = ci;
         }
     } else {
+        nodes[ni].name_i = id_i;
         char ch = *node_c;
         if ( ch == '=' ) {
+            // assignment
             if ( !expect_char( ch, node_c, node_end ) ) return false;
+            if ( !parse_expr( ni, node_c, node_end ) ) return false;
         } else if ( ch == '(' ) {
-            // CALL
+            // CALL => parse arg list
+            nodes[ni].kind = NODE_KIND::CALL;
+            nodes[ni].u.child_first_i = uint(-1);
+            nodes[ni].sibling_i = uint(-1);
+            uint prev_i = uint(-1);
             if ( !expect_char( ch, node_c, node_end ) ) return false;
+            if ( !skip_whitespace( node_c, node_end ) ) return false;
             for( ;; )
             {
+                ch = *node_c;
+                if ( ch == ')' ) break;
+
+                perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+                uint arg_i = hdr->node_cnt++;
+                nodes[arg_i].name_i = uint(-1);
+                nodes[arg_i].u.child_first_i = uint(-1);
+                nodes[arg_i].sibling_i = uint(-1);
+                if ( nodes[ni].u.child_first_i == uint(-1) ) {
+                    nodes[ni].u.child_first_i = arg_i;
+                } else {
+                    nodes[prev_i].sibling_i = arg_i;
+                    if ( !expect_char( ',', node_c, node_end ) ) return false;
+                }
+                prev_i = arg_i;
+                if ( !parse_expr( arg_i, node_c, node_end ) ) return false;
             }
         } else if ( ch == '\'' ) {
             // STR
@@ -804,6 +830,21 @@ inline uint Layout::get_str_i( std::string s )
     hdr->char_cnt += s_len + 1;
     memcpy( to_s, s.c_str(), s_len+1 );
     return s_i;
+}
+
+inline bool Layout::parse_expr( uint node_i, char *& xxx, char *& xxx_end )
+{
+    char ch = *xxx;
+    if ( ch == '\'' ) {
+        nodes[node_i].kind = NODE_KIND::STR;
+        return parse_string_i( nodes[node_i].u.s_i, xxx, xxx_end );
+    } else if ( ch == '-' || (ch >= '0' && ch <= '9') ) {
+        nodes[node_i].kind = NODE_KIND::REAL;
+        return parse_real( nodes[node_i].u.r, xxx, xxx_end );
+    } else {
+        nodes[node_i].kind = NODE_KIND::BOOL;
+        return parse_bool( nodes[node_i].u.b, xxx, xxx_end );
+    }
 }
 
 inline bool Layout::parse_string( std::string& s, char *& xxx, char *& xxx_end )
