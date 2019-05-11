@@ -150,20 +150,20 @@ public:
         uint64      byte_cnt;               // total in-memory bytes including this header
         uint64      char_cnt;               // in strings array
 
-        uint64      obj_cnt;                // in objects array  
+        uint64      node_cnt;               // in nodes array  
     };
 
-    class Object
+    class Node
     {
     public:
-        uint        name_i;                 // index of object name in strings array
+        uint        name_i;                 // index of node name in strings array
     };
 
     enum class INSTANCE_KIND
     {
         LAYOUT,                             // instance is another Layout (by name)
         LAYOUT_PTR,                         // instance is another Layout (read in and with a resolved pointer)
-        OBJECT,                             // instance is an object
+        NODE,                               // instance is a node within this Layout
     };
 
     class Instance      
@@ -176,7 +176,7 @@ public:
         real3           translation;        // 3D translation of instance
         union {
             Layout *    layout_ptr;         // resolved Layout pointer for LAYOUT_PTR
-            uint        obj_i;              // index of Object in objects[] array
+            uint        node_i;             // index of Node in nodes[] array
         } u;
 
         bool bounding_box( const Layout * layout, AABB& box, real padding=0 ) const;
@@ -189,10 +189,10 @@ public:
 
     // arrays
     char *              strings;
-    Object *            objects;
+    Node *            nodes;
 
     // maps of names to array indexes
-    std::map<std::string, uint>    name_to_obj_i;
+    std::map<std::string, uint>    name_to_node_i;
 
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
@@ -210,16 +210,20 @@ public:
 private:
     typedef enum 
     {
-        CMD_BEGIN,
-        CMD_END,
-    } obj_cmd_t;
+        KIND_HIER,
+        KIND_STRING,
+        KIND_INT,
+        KIND_UINT,
+        KIND_REAL,
+    } node_kind_t;
             
-    char * obj_start;
-    char * obj_end;
-    char * obj;
+    std::string ext_name;
+    char * node_start;
+    char * node_end;
+    char * node_c;
     uint   line_num;
 
-    bool load_aedt( std::string obj_file, std::string dir_name );        // parse .aedt
+    bool load_aedt( std::string node_file, std::string dir_name );        // parse .aedt
 
     bool open_and_read( std::string file_name, char *& start, char *& end );
 
@@ -228,13 +232,13 @@ private:
     bool skip_to_eol( char *& xxx, char *& xxx_end );
     bool eol( char *& xxx, char *& xxx_end );
     bool expect_char( char ch, char *& xxx, char* xxx_end, bool skip_whitespace_first=false );
-    bool expect_cmd( const char * s, char *& xxx, char *& xxx_end );
+    bool expect_kind( const char * s, char *& xxx, char *& xxx_end );
     bool parse_string( std::string& s, char *& xxx, char *& xxx_end );
     bool parse_string_i( uint& s, char *& xxx, char *& xxx_end );
     bool parse_name( char *& name, char *& xxx, char *& xxx_end );
     bool parse_id( std::string& id, char *& xxx, char *& xxx_end );
     bool parse_option_name( std::string& option_name, char *& xxx, char *& xxx_end );
-    bool parse_aedt_cmd( obj_cmd_t& cmd );
+    bool parse_aedt_kind( node_kind_t& kind );
     bool parse_real3( real3& r3, char *& xxx, char *& xxx_end, bool has_brackets=false );
     bool parse_real( real& r, char *& xxx, char *& xxx_end, bool skip_whitespace_first=false );
     bool parse_int( int& i, char *& xxx, char *& xxx_end );
@@ -260,7 +264,7 @@ private:
 // these are done as macros to avoid evaluating msg (it makes a big difference)
 #include <assert.h>
 #define rtn_assert( bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false ); return false; }
-#define obj_assert( bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false ); goto error;   }
+#define node_assert( bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false ); goto error;   }
 
 inline std::istream& operator >> ( std::istream& is, Layout::real3& v ) 
 {
@@ -285,7 +289,7 @@ Layout::Layout( std::string top_file )
     is_good = false;
     error_msg = "<unknown error>";
     mapped_region = nullptr;
-    obj = nullptr;
+    node_c = nullptr;
     line_num = 1;
 
     hdr = aligned_alloc<Header>( 1 );
@@ -295,21 +299,20 @@ Layout::Layout( std::string top_file )
     // Initial lengths of arrays are large in virtual memory
     //------------------------------------------------------------
     max = aligned_alloc<Header>( 1 );
-    max->obj_cnt     =  1024;
-    max->char_cnt    = max->obj_cnt * 128;
+    max->node_cnt     =  1024;
+    max->char_cnt    = max->node_cnt * 128;
 
     //------------------------------------------------------------
     // Allocate arrays
     //------------------------------------------------------------
     strings         = aligned_alloc<char>(     max->char_cnt );
-    objects         = aligned_alloc<Object>(   max->obj_cnt );
+    nodes         = aligned_alloc<Node>(   max->node_cnt );
 
     //------------------------------------------------------------
-    // Load object depending on file ext_name
+    // Load node depending on file ext_name
     //------------------------------------------------------------
     std::string dir_name;
     std::string base_name;
-    std::string ext_name;
     dissect_path( top_file, dir_name, base_name, ext_name );
     if ( ext_name == std::string( ".aedt" ) ) {
         if ( !load_aedt( top_file, dir_name ) ) return;
@@ -322,7 +325,7 @@ Layout::Layout( std::string top_file )
     // Add up byte count.
     //------------------------------------------------------------
     hdr->byte_cnt = uint64( 1                 ) * sizeof( hdr ) +
-                    uint64( hdr->obj_cnt      ) * sizeof( objects[0] ) +
+                    uint64( hdr->node_cnt      ) * sizeof( nodes[0] ) +
                     uint64( hdr->char_cnt     ) * sizeof( strings[0] );
 
     is_good = true;
@@ -383,7 +386,7 @@ Layout::Layout( std::string layout_path, bool is_compressed )
     max = aligned_alloc<Header>( 1 );
     memcpy( max, hdr, sizeof( Header ) );
     _read( strings,     char,          hdr->char_cnt );
-    _read( objects,     Object,        hdr->obj_cnt );
+    _read( nodes,     Node,        hdr->node_cnt );
 
     gzclose( fd );
 
@@ -396,7 +399,7 @@ Layout::~Layout()
         delete mapped_region;
         mapped_region = nullptr;
     } else {
-        delete objects;
+        delete nodes;
         delete strings;
     }
 }
@@ -429,7 +432,7 @@ bool Layout::write( std::string layout_path, bool is_compressed )
 
     _write( hdr,         1                  * sizeof(hdr[0]) );
     _write( strings,     hdr->char_cnt      * sizeof(strings[0]) );
-    _write( objects,     hdr->obj_cnt       * sizeof(objects[0]) );
+    _write( nodes,     hdr->node_cnt       * sizeof(nodes[0]) );
 
     gzclose( fd );
     return true;
@@ -495,7 +498,7 @@ bool Layout::write_uncompressed( std::string layout_path )
 
     _uwrite( hdr,         1                  * sizeof(hdr[0]) );
     _uwrite( strings,     hdr->char_cnt      * sizeof(strings[0]) );
-    _uwrite( objects,     hdr->obj_cnt       * sizeof(objects[0]) );
+    _uwrite( nodes,     hdr->node_cnt       * sizeof(nodes[0]) );
 
     fsync( fd ); // flush
     close( fd );
@@ -534,14 +537,14 @@ bool Layout::read_uncompressed( std::string layout_path )
     max = aligned_alloc<Header>( 1 );
     memcpy( max, hdr, sizeof( Header ) );
     _uread( strings,     char,          hdr->char_cnt );
-    _uread( objects,     Object,        hdr->obj_cnt );
+    _uread( nodes,     Node,        hdr->node_cnt );
 
     is_good = true;
 
     return true;
 }
 
-bool Layout::load_aedt( std::string obj_file, std::string dir_name )
+bool Layout::load_aedt( std::string node_file, std::string dir_name )
 {
     (void)dir_name;
 
@@ -549,32 +552,32 @@ bool Layout::load_aedt( std::string obj_file, std::string dir_name )
     // Map in file
     //------------------------------------------------------------
     line_num = 1;
-    if ( !open_and_read( obj_file, obj_start, obj_end ) ) return false;
-    obj = obj_start;
+    if ( !open_and_read( node_file, node_start, node_end ) ) return false;
+    node_c = node_start;
 
     //------------------------------------------------------------
     // Parse .aedt file contents
     //------------------------------------------------------------
-    char *      obj_name = nullptr;
+    char *      node_name = nullptr;
     char *      name;
-    Object *    object = nullptr;
+    Node *    node = nullptr;
 
     for( ;; ) 
     {
-        skip_whitespace( obj, obj_end );
-        if ( obj == obj_end ) return true;
+        skip_whitespace( node_c, node_end );
+        if ( node_c == node_end ) return true;
 
-        obj_cmd_t cmd;
-        if ( !parse_aedt_cmd( cmd ) ) break;
+        node_kind_t kind;
+        if ( !parse_aedt_kind( kind ) ) break;
 
-        switch( cmd )
+        switch( kind )
         {
             default:
                 break;
         }
     }
     error:
-        error_msg += " (at line " + std::to_string( line_num ) + " of " + obj_file + ")";
+        error_msg += " (at line " + std::to_string( line_num ) + " of " + node_file + ")";
         assert( 0 );
         return false;
 }
@@ -666,7 +669,7 @@ inline bool Layout::skip_whitespace( char *& xxx, char *& xxx_end )
         if ( !in_comment && ch != ' ' && ch != '\n' && ch != '\r' && ch != '\t' ) break;
 
         if ( ch == '\n' || ch == '\r' ) {
-            if ( ch == '\n' && (xxx == obj) ) line_num++;
+            if ( ch == '\n' && (xxx == node_c) ) line_num++;
             in_comment = false;
         }
         xxx++;
@@ -686,7 +689,7 @@ inline bool Layout::skip_whitespace_to_eol( char *& xxx, char *& xxx_end )
         if ( !in_comment && ch != ' ' && ch != '\n' && ch != '\r' && ch != '\t' ) break;
 
         if ( ch == '\n' || ch == '\r' ) {
-            if ( ch == '\n' && (xxx == obj) ) line_num++;
+            if ( ch == '\n' && (xxx == node_c) ) line_num++;
             break;
         }
         xxx++;
@@ -713,7 +716,7 @@ inline bool Layout::eol( char *& xxx, char *& xxx_end )
 
     if ( xxx == xxx_end || *xxx == '\n' || *xxx == '\r' ) {
         if ( xxx != xxx_end ) {
-            if ( *xxx == '\n' && (xxx == obj) ) line_num++;
+            if ( *xxx == '\n' && (xxx == node_c) ) line_num++;
             xxx++;
         }
         dprint( "at eol" );
@@ -733,7 +736,7 @@ inline bool Layout::expect_char( char ch, char *& xxx, char* xxx_end, bool skip_
     return true;
 }
 
-inline bool Layout::expect_cmd( const char * s, char *& xxx, char *& xxx_end )
+inline bool Layout::expect_kind( const char * s, char *& xxx, char *& xxx_end )
 {
     char s_ch1 = '!';
     while( xxx != xxx_end ) 
@@ -865,22 +868,22 @@ inline bool Layout::parse_option_name( std::string& option_name, char *& xxx, ch
     return true;
 }
 
-inline bool Layout::parse_aedt_cmd( obj_cmd_t& cmd )
+inline bool Layout::parse_aedt_kind( node_kind_t& kind )
 {
-    rtn_assert( obj != obj_end, "no .aedt command" );
+    rtn_assert( node_c != node_end, "no .aedt command" );
 
-    char ch = *obj;
-    obj++;
+    char ch = *node_c;
+    node_c++;
     switch( ch )
     {
         case 'o':           
         case 'O':           
-            rtn_assert( obj != obj_end && *obj == ' ', "bad .obj o command" );
-            //cmd = CMD_O;
+            rtn_assert( node_c != node_end && *node_c == ' ', "bad .aedt command" );
+            //kind = KIND_O;
             return true;
 
         default:
-            rtn_assert( 0, "bad .aedt command character: " + surrounding_lines( obj, obj_end ) );
+            rtn_assert( 0, "bad .aedt command character: " + surrounding_lines( node_c, node_end ) );
     }
 }
 
@@ -963,7 +966,7 @@ inline bool Layout::parse_real( Layout::real& r, char *& xxx, char *& xxx_end, b
     if ( is_neg ) r = -r;
     if ( e10 != 0 ) r *= pow( 10.0, e10 );
     dprint( "real=" + std::to_string( r ) );
-    rtn_assert( vld, "unable to parse real in " + std::string( ((xxx == obj) ? ".obj" : ".mtl") ) + " file " + surrounding_lines( xxx, xxx_end ) );
+    rtn_assert( vld, "unable to parse real in " + ext_name + " file " + surrounding_lines( xxx, xxx_end ) );
     return vld;
 }
 
@@ -992,7 +995,7 @@ inline bool Layout::parse_int( int& i, char *& xxx, char *& xxx_end )
     }
 
     if ( is_neg ) i = -i;
-    rtn_assert( vld, "unable to parse int in " + std::string( ((xxx == obj) ? ".obj" : ".mtl") ) + " file " + surrounding_lines( xxx, xxx_end ) );
+    rtn_assert( vld, "unable to parse int in " + ext_name + " file " + surrounding_lines( xxx, xxx_end ) );
     return true;
 }
 
