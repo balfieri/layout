@@ -90,7 +90,6 @@ class Layout
 public:
     typedef uint32_t uint;                  // by default, we use 32-bit integers
     typedef int32_t  _int;                  // by default, we use 32-bit integers
-    typedef uint64_t uint64;                // by default, we use 64-bit indexes for texels
     typedef double   real;
 
     Layout( std::string top_file );
@@ -155,38 +154,39 @@ public:
     {
     public:
         uint        version;                // version
-        uint64      byte_cnt;               // total in-memory bytes including this header
-        uint64      char_cnt;               // in strings array
+        uint        byte_cnt;               // total in-memory bytes including this header
+        uint        char_cnt;               // in strings array
 
-        uint64      node_cnt;               // in nodes array  
+        uint        node_cnt;               // in nodes array  
+        uint        root_i;                 // index of root node in nodes array
     };
 
     enum class NODE_KIND
     {
-        STR,
+        STR,                                // scalars
         BOOL,
         INT,
         UINT,
         REAL,
-        HIER,                          
-        CALL,
-        SLICE,
         ID,
+
+        CALL,                               // child 0 is id, other children are args
+        SLICE,                              // child 0 is id, child 1 is index before the ':', other children are other args
+        ASSIGN,                             // child 0 is lhs, child 1 is rhs
+        HIER,                               // child 0 is id, other children are normal children
     };
             
     class Node
     {
     public:
         NODE_KIND   kind;                   // kind of node
-        uint        name_i;                 // index of node name in strings array of node name, if any, else uint(-1)
         union {
             uint        s_i;                // STR or ID - index into strings array of string value
             bool        b;                  // BOOL
             _int        i;                  // INT
             uint        u;                  // UINT
             real        r;                  // REAL
-            uint        child_first_i;      // HIER - index into nodes[] array of first child
-            uint        arg_first_i;        // CALL - index into nodes[] array of first arg to call or slice
+            uint        child_first_i;      // non-scalars - index into nodes[] array of first child on list
         } u;
         uint        sibling_i;              // index in nodes array of sibling on list, else uint(-1)
     };
@@ -196,22 +196,6 @@ public:
         LAYOUT,                             // instance is another Layout (by name)
         LAYOUT_PTR,                         // instance is another Layout (read in and with a resolved pointer)
         NODE,                               // instance is a node within this Layout
-    };
-
-    class Instance      
-    {
-    public:
-        INSTANCE_KIND   kind;               // see above
-        uint            name_i;             // index in strings array of instance name
-        uint            layout_name_i;      // index in strings array of name of instanced Layout 
-        uint            layout_file_name_i; // index in strings array of file name of instanced Layout 
-        real3           translation;        // 3D translation of instance
-        union {
-            Layout *    layout_ptr;         // resolved Layout pointer for LAYOUT_PTR
-            uint        node_i;             // index of Node in nodes[] array
-        } u;
-
-        bool bounding_box( const Layout * layout, AABB& box, real padding=0 ) const;
     };
 
     // structs
@@ -241,9 +225,9 @@ public:
 //------------------------------------------------------------------------------
 private:
     std::string ext_name;
-    char * node_start;
-    char * node_end;
-    char * node_c;
+    char * nnn_start;
+    char * nnn_end;
+    char * nnn;
     uint   line_num;
 
     uint aedt_begin_str_i;              // these are to make it easier to compare
@@ -252,22 +236,22 @@ private:
     uint false_str_i;
 
     bool load_aedt( std::string node_file, std::string dir_name );        // parse .aedt
-    bool parse_aedt_node( uint& node_i, uint id_i );
+    bool parse_aedt_expr( uint& node_i );
 
     bool open_and_read( std::string file_name, char *& start, char *& end );
 
-    bool skip_whitespace_to_eol( char *& xxx, char *& xxx_end );  // on this line only
-    bool skip_whitespace( char *& xxx, char *& xxx_end );
-    bool skip_to_eol( char *& xxx, char *& xxx_end );
+    void skip_whitespace_to_eol( char *& xxx, char *& xxx_end );  // on this line only
+    void skip_whitespace( char *& xxx, char *& xxx_end );
+    void skip_to_eol( char *& xxx, char *& xxx_end );
     bool eol( char *& xxx, char *& xxx_end );
     bool expect_char( char ch, char *& xxx, char* xxx_end, bool skip_whitespace_first=false );
     uint get_str_i( std::string s );
-    bool parse_expr( uint node_i, char *& xxx, char *& xxx_end );
     bool parse_number( uint node_i, char *& xxx, char *& xxx_end );
     bool parse_string( std::string& s, char *& xxx, char *& xxx_end );
     bool parse_string_i( uint& s, char *& xxx, char *& xxx_end );
     bool parse_name( char *& name, char *& xxx, char *& xxx_end );
     bool parse_id( uint& id_i, char *& xxx, char *& xxx_end );
+    bool peek_id( uint& id_i, char *& xxx, char *& xxx_end );
     bool parse_real3( real3& r3, char *& xxx, char *& xxx_end, bool has_brackets=false );
     bool parse_real( real& r, char *& xxx, char *& xxx_end, bool skip_whitespace_first=true );
     bool parse_int( _int& i, char *& xxx, char *& xxx_end );
@@ -277,11 +261,11 @@ private:
 
     // allocates an array of T on a page boundary
     template<typename T>
-    T * aligned_alloc( uint64 cnt );
+    T * aligned_alloc( uint   cnt );
 
     // reallocate array if we are about to exceed its current size
     template<typename T>
-    inline void perhaps_realloc( T *& array, const uint64& hdr_cnt, uint64& max_cnt, uint64 add_cnt );
+    inline void perhaps_realloc( T *& array, const uint  & hdr_cnt, uint  & max_cnt, uint   add_cnt );
 
     bool write_uncompressed( std::string file_path );
     bool read_uncompressed( std::string file_path );
@@ -313,12 +297,31 @@ inline std::ostream& operator << ( std::ostream& os, const Layout::AABB& box )
     return os;
 }
 
+inline std::ostream& operator << ( std::ostream& os, const Layout::NODE_KIND& kind ) 
+{
+    switch( kind )
+    {
+        case Layout::NODE_KIND::STR:            os << "STR";       break;
+        case Layout::NODE_KIND::BOOL:           os << "BOOL";      break;
+        case Layout::NODE_KIND::INT:            os << "INT";       break;
+        case Layout::NODE_KIND::UINT:           os << "UINT";      break;
+        case Layout::NODE_KIND::REAL:           os << "REAL";      break;
+        case Layout::NODE_KIND::ID:             os << "ID";        break;
+        case Layout::NODE_KIND::CALL:           os << "CALL";      break;
+        case Layout::NODE_KIND::SLICE:          os << "SLICE";     break;
+        case Layout::NODE_KIND::ASSIGN:         os << "ASSIGN";    break;
+        case Layout::NODE_KIND::HIER:           os << "HIER";      break;
+        default:                                os << "<unknown>"; break;
+    }
+    return os;
+}
+
 Layout::Layout( std::string top_file )
 {
     is_good = false;
     error_msg = "<unknown error>";
     mapped_region = nullptr;
-    node_c = nullptr;
+    nnn = nullptr;
     line_num = 1;
 
     hdr = aligned_alloc<Header>( 1 );
@@ -328,14 +331,14 @@ Layout::Layout( std::string top_file )
     // Initial lengths of arrays are large in virtual memory
     //------------------------------------------------------------
     max = aligned_alloc<Header>( 1 );
-    max->node_cnt     =  1024;
-    max->char_cnt    = max->node_cnt * 128;
+    max->node_cnt =  1024;
+    max->char_cnt = max->node_cnt * 128;
 
     //------------------------------------------------------------
     // Allocate arrays
     //------------------------------------------------------------
-    strings         = aligned_alloc<char>(     max->char_cnt );
-    nodes         = aligned_alloc<Node>(   max->node_cnt );
+    strings = aligned_alloc<char>( max->char_cnt );
+    nodes   = aligned_alloc<Node>( max->node_cnt );
 
     //------------------------------------------------------------
     // Load node depending on file ext_name
@@ -353,9 +356,9 @@ Layout::Layout( std::string top_file )
     //------------------------------------------------------------
     // Add up byte count.
     //------------------------------------------------------------
-    hdr->byte_cnt = uint64( 1                 ) * sizeof( hdr ) +
-                    uint64( hdr->node_cnt      ) * sizeof( nodes[0] ) +
-                    uint64( hdr->char_cnt     ) * sizeof( strings[0] );
+    hdr->byte_cnt = uint  ( 1                 ) * sizeof( hdr ) +
+                    uint  ( hdr->node_cnt     ) * sizeof( nodes[0] ) +
+                    uint  ( hdr->char_cnt     ) * sizeof( strings[0] );
 
     is_good = true;
 }
@@ -390,9 +393,9 @@ Layout::Layout( std::string layout_path, bool is_compressed )
                 return; \
             } \
             char * _addr = reinterpret_cast<char *>( array ); \
-            for( uint64 _byte_cnt = (cnt)*sizeof(type); _byte_cnt != 0;  ) \
+            for( uint   _byte_cnt = (cnt)*sizeof(type); _byte_cnt != 0;  ) \
             { \
-                uint64 _this_byte_cnt = 1024*1024*1024; \
+                uint   _this_byte_cnt = 1024*1024*1024; \
                 if ( _byte_cnt < _this_byte_cnt ) _this_byte_cnt = _byte_cnt; \
                 if ( gzread( fd, _addr, _this_byte_cnt ) <= 0 ) { \
                     gzclose( fd ); \
@@ -414,7 +417,7 @@ Layout::Layout( std::string layout_path, bool is_compressed )
     }
     max = aligned_alloc<Header>( 1 );
     memcpy( max, hdr, sizeof( Header ) );
-    _read( strings,     char,          hdr->char_cnt );
+    _read( strings,   char,        hdr->char_cnt );
     _read( nodes,     Node,        hdr->node_cnt );
 
     gzclose( fd );
@@ -446,9 +449,9 @@ bool Layout::write( std::string layout_path, bool is_compressed )
     #define _write( addr, byte_cnt ) \
     { \
         char * _addr = reinterpret_cast<char *>( addr ); \
-        for( uint64 _byte_cnt = byte_cnt; _byte_cnt != 0;  ) \
+        for( uint   _byte_cnt = byte_cnt; _byte_cnt != 0;  ) \
         { \
-            uint64 _this_byte_cnt = 1024*1024*1024; \
+            uint   _this_byte_cnt = 1024*1024*1024; \
             if ( _byte_cnt < _this_byte_cnt ) _this_byte_cnt = _byte_cnt; \
             if ( gzwrite( fd, _addr, _this_byte_cnt ) <= 0 ) { \
                 gzclose( fd ); \
@@ -461,7 +464,7 @@ bool Layout::write( std::string layout_path, bool is_compressed )
 
     _write( hdr,         1                  * sizeof(hdr[0]) );
     _write( strings,     hdr->char_cnt      * sizeof(strings[0]) );
-    _write( nodes,     hdr->node_cnt       * sizeof(nodes[0]) );
+    _write( nodes,       hdr->node_cnt      * sizeof(nodes[0]) );
 
     gzclose( fd );
     return true;
@@ -469,7 +472,7 @@ bool Layout::write( std::string layout_path, bool is_compressed )
 
 // returns array of T on a page boundary
 template<typename T>
-T * Layout::aligned_alloc( Layout::uint64 cnt )
+T * Layout::aligned_alloc( Layout::uint   cnt )
 {
     void * mem = nullptr;
     posix_memalign( &mem, getpagesize(), cnt*sizeof(T) );
@@ -478,11 +481,11 @@ T * Layout::aligned_alloc( Layout::uint64 cnt )
 
 // reallocate array if we are about to exceed its current size
 template<typename T>
-inline void Layout::perhaps_realloc( T *& array, const Layout::uint64& hdr_cnt, Layout::uint64& max_cnt, Layout::uint64 add_cnt )
+inline void Layout::perhaps_realloc( T *& array, const Layout::uint  & hdr_cnt, Layout::uint  & max_cnt, Layout::uint   add_cnt )
 {
     while( (hdr_cnt + add_cnt) > max_cnt ) {
         void * mem = nullptr;
-        uint64 old_max_cnt = max_cnt;
+        uint   old_max_cnt = max_cnt;
         max_cnt *= 2;
         if ( max_cnt < old_max_cnt ) {
             assert( old_max_cnt != uint(-1) );
@@ -527,7 +530,7 @@ bool Layout::write_uncompressed( std::string layout_path )
 
     _uwrite( hdr,         1                  * sizeof(hdr[0]) );
     _uwrite( strings,     hdr->char_cnt      * sizeof(strings[0]) );
-    _uwrite( nodes,     hdr->node_cnt       * sizeof(nodes[0]) );
+    _uwrite( nodes,       hdr->node_cnt      * sizeof(nodes[0]) );
 
     fsync( fd ); // flush
     close( fd );
@@ -565,8 +568,8 @@ bool Layout::read_uncompressed( std::string layout_path )
     }
     max = aligned_alloc<Header>( 1 );
     memcpy( max, hdr, sizeof( Header ) );
-    _uread( strings,     char,          hdr->char_cnt );
-    _uread( nodes,     Node,        hdr->node_cnt );
+    _uread( strings,     char,        hdr->char_cnt );
+    _uread( nodes,       Node,        hdr->node_cnt );
 
     is_good = true;
 
@@ -581,8 +584,8 @@ bool Layout::load_aedt( std::string node_file, std::string dir_name )
     // Map in file
     //------------------------------------------------------------
     line_num = 1;
-    if ( !open_and_read( node_file, node_start, node_end ) ) return false;
-    node_c = node_start;
+    if ( !open_and_read( node_file, nnn_start, nnn_end ) ) return false;
+    nnn = nnn_start;
 
     //------------------------------------------------------------
     // Parse .aedt file contents
@@ -592,111 +595,108 @@ bool Layout::load_aedt( std::string node_file, std::string dir_name )
     aedt_end_str_i   = get_str_i( "$end" );
     true_str_i       = get_str_i( "true" );
     false_str_i      = get_str_i( "false" );
-    uint id_i;
-    uint root_i;
-    if ( !parse_id( id_i, node_c, node_end ) ) return false;
-    if ( !parse_aedt_node( root_i, id_i ) ) return false;
-    assert( root_i == 0 );
-    assert( nodes[root_i].kind == NODE_KIND::HIER );
+
+    if ( !parse_aedt_expr( hdr->root_i ) ) return false;
+    assert( nodes[hdr->root_i].kind == NODE_KIND::HIER );
     return true;
 }
 
-bool Layout::parse_aedt_node( uint& node_i, uint id_i )
+bool Layout::parse_aedt_expr( uint& ni )
 {
-    printf( "node id_i=%d id=%s\n", id_i, &strings[id_i] );
     perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-    uint ni = hdr->node_cnt++;
-    if ( id_i == aedt_begin_str_i ) {
-        // HIER => parse child nodes
-        uint str_i;
-        if ( !parse_string_i( str_i, node_c, node_end ) ) return false;
-        std::cout << "$begin " << std::string(&strings[str_i]) << "\n";
-        nodes[ni].kind = NODE_KIND::HIER;
-        nodes[ni].name_i = str_i;
-        nodes[ni].u.child_first_i = uint(-1);
-        nodes[ni].sibling_i = uint(-1);
-        uint prev_i = uint(-1);
-        for( ;; )
-        {
-            uint child_id_i;
-            if ( !parse_id( child_id_i, node_c, node_end ) ) return false;
-            if ( child_id_i == aedt_end_str_i ) {
-                uint end_str_i;
-                if ( !parse_string_i( end_str_i, node_c, node_end ) ) return false;
-                rtn_assert( end_str_i == str_i, "$end id does not match $begin id " + surrounding_lines( node_c, node_end ) );
-                break;
-            }
+    ni = hdr->node_cnt++;
+    nodes[ni].sibling_i = uint(-1);
 
-            uint child_i;
-            if ( !parse_aedt_node( child_i, child_id_i ) ) return false;
-            if ( nodes[ni].u.child_first_i == uint(-1) ) {
-                nodes[ni].u.child_first_i = child_i;
-            } else {
-                nodes[prev_i].sibling_i = child_i;
-            }
-            prev_i = child_i;
-        }
+    skip_whitespace( nnn, nnn_end );
+    char ch = *nnn;
+    if ( ch == '\'' ) {
+        // STR
+        nodes[ni].kind = NODE_KIND::STR;
+        return parse_string_i( nodes[ni].u.s_i, nnn, nnn_end );
+    } else if ( ch == '-' || (ch >= '0' && ch <= '9') ) {
+        // INT or UINT or REAL
+        return parse_number( ni, nnn, nnn_end );
     } else {
-        nodes[ni].name_i = id_i;
-        char ch = *node_c;
-        if ( ch == '=' ) {
-            // assignment
-            if ( !expect_char( ch, node_c, node_end ) ) return false;
-            if ( !parse_expr( ni, node_c, node_end ) ) return false;
-        } else if ( ch == '(' || ch == '[' ) {
-            // CALL or SLICE => parse arg list
-            nodes[ni].kind = (ch == '(') ? NODE_KIND::CALL : NODE_KIND::SLICE;
-            nodes[ni].u.child_first_i = uint(-1);
-            nodes[ni].sibling_i = uint(-1);
-            uint prev_i = uint(-1);
-            if ( !expect_char( ch, node_c, node_end ) ) return false;
-            for( bool have_one=false; ; have_one=true )
+        // must start with ID
+        uint id_i;
+        if ( !parse_id( id_i, nnn, nnn_end ) ) {
+            rtn_assert( 0, "unable to parse an expression: string, number, or id" );
+        }
+        if ( id_i == aedt_begin_str_i ) {
+            // HIER
+            uint name_i;
+            if ( !parse_aedt_expr( name_i ) ) return false;             // STR node
+            rtn_assert( nodes[name_i].kind == NODE_KIND::STR, "$begin not followed by string" );
+
+            nodes[ni].kind = NODE_KIND::HIER;
+            nodes[ni].u.child_first_i = name_i;
+            uint prev_i = name_i;
+            for( ;; )
             {
-                if ( !skip_whitespace( node_c, node_end ) ) return false;
-                ch = *node_c;
-                if ( (ch == ')' && nodes[ni].kind == NODE_KIND::CALL) || (ch == ']' && nodes[ni].kind == NODE_KIND::SLICE) ) {
-                    if ( !expect_char( ch, node_c, node_end ) ) return false;
-                    break;
+                skip_whitespace( nnn, nnn_end );
+                uint id_i;
+                if ( peek_id( id_i, nnn, nnn_end ) ) {
+                    if ( id_i == aedt_end_str_i ) {
+                        uint end_str_i;
+                        if ( !parse_string_i( end_str_i, nnn, nnn_end ) ) return false;
+                        rtn_assert( end_str_i == nodes[name_i].u.s_i, "$end id does not match $begin id " + surrounding_lines( nnn, nnn_end ) );
+                        break;
+                    }
                 }
 
-                uint arg_i;
-                if ( ch == '=' ) {
-                    rtn_assert( have_one, "'=' with nothing before it" );
-                    arg_i = prev_i;
-                    rtn_assert( nodes[arg_i].kind == NODE_KIND::ID || nodes[arg_i].kind == NODE_KIND::CALL, "= allowed only when lhs is ID or STR" );
-                    nodes[arg_i].name_i = nodes[prev_i].u.s_i;
-                } else {
-                    if ( have_one ) {
-                        if ( !expect_char( ',', node_c, node_end ) ) return false;
-                        if ( !skip_whitespace( node_c, node_end ) ) return false;
+                uint child_i;
+                if ( !parse_aedt_expr( child_i ) ) return false;
+                nodes[prev_i].sibling_i = child_i;
+                prev_i = child_i;
+            }
+        } else if ( id_i == true_str_i || id_i == false_str_i ) {
+            // BOOL
+            nodes[ni].kind = NODE_KIND::BOOL;
+            nodes[ni].u.b = id_i == true_str_i;
+        } else {
+            // ID, but could turn into ASSIGN, CALL, or SLICE
+            nodes[ni].kind = NODE_KIND::ID;
+            nodes[ni].u.s_i = id_i;
+
+            skip_whitespace( nnn, nnn_end );
+            ch = *nnn;
+            if ( ch == '=' ) {
+                expect_char( ch, nnn, nnn_end );
+            } else if ( ch == '(' || ch == '[' ) {
+                // CALL or SLICE => parse arg list
+                nodes[ni].kind = (ch == '(') ? NODE_KIND::CALL : NODE_KIND::SLICE;
+                nodes[ni].u.child_first_i = uint(-1);
+                nodes[ni].sibling_i = uint(-1);
+                uint prev_i = uint(-1);
+                expect_char( ch, nnn, nnn_end );
+                for( bool have_one=false; ; have_one=true )
+                {
+                    skip_whitespace( nnn, nnn_end );
+                    ch = *nnn;
+                    if ( (ch == ')' && nodes[ni].kind == NODE_KIND::CALL) || (ch == ']' && nodes[ni].kind == NODE_KIND::SLICE) ) {
+                        expect_char( ch, nnn, nnn_end );
+                        break;
                     }
-                    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-                    arg_i = hdr->node_cnt++;
-                    nodes[arg_i].name_i = uint(-1);
-                    nodes[arg_i].u.child_first_i = uint(-1);
-                    nodes[arg_i].sibling_i = uint(-1);
-                    if ( nodes[ni].u.child_first_i == uint(-1) ) {
+                    if ( have_one ) {
+                        if ( ch == ':' && nodes[ni].kind == NODE_KIND::SLICE ) {
+                            // skip this, it's implied
+                            //
+                            expect_char( ch, nnn, nnn_end );
+                            continue;
+                        }
+                        if ( !expect_char( ',', nnn, nnn_end ) ) rtn_assert( 0, "expected comma in arg list" );
+                    }
+
+                    uint arg_i;
+                    if ( !parse_aedt_expr( arg_i ) ) return false;
+                    if ( prev_i == uint(-1) ) {
                         nodes[ni].u.child_first_i = arg_i;
                     } else {
                         nodes[prev_i].sibling_i = arg_i;
                     }
                     prev_i = arg_i;
                 }
-                if ( !parse_expr( arg_i, node_c, node_end ) ) return false;
-                ch = *node_c;
-                if ( ch == ':' && nodes[ni].kind == NODE_KIND::SLICE ) {
-                    // skip this, it's implied
-                    //
-                    if ( !expect_char( ch, node_c, node_end ) ) return false;
-                } 
             }
-            std::cout << "END CALL\n";
-        } else if ( ch == '\'' ) {
-            // STR
-            uint str_i;
-            if ( !parse_string_i( str_i, node_c, node_end ) ) return false;
-        } else {
-            rtn_assert( false, "unknown .aedt node id=" + std::string(&strings[id_i]) + surrounding_lines( node_c, node_end ) );
         }
     }
     return true;
@@ -777,7 +777,7 @@ bool Layout::open_and_read( std::string file_path, char *& start, char *& end )
     return true;
 }
 
-inline bool Layout::skip_whitespace( char *& xxx, char *& xxx_end )
+inline void Layout::skip_whitespace( char *& xxx, char *& xxx_end )
 {
     bool in_comment = false;
     for( ;; )
@@ -789,15 +789,14 @@ inline bool Layout::skip_whitespace( char *& xxx, char *& xxx_end )
         if ( !in_comment && ch != ' ' && ch != '\n' && ch != '\r' && ch != '\t' ) break;
 
         if ( ch == '\n' || ch == '\r' ) {
-            if ( ch == '\n' && (xxx == node_c) ) line_num++;
+            if ( ch == '\n' && xxx == nnn ) line_num++;
             in_comment = false;
         }
         xxx++;
     }
-    return true;
 }
 
-inline bool Layout::skip_whitespace_to_eol( char *& xxx, char *& xxx_end )
+inline void Layout::skip_whitespace_to_eol( char *& xxx, char *& xxx_end )
 {
     bool in_comment = false;
     for( ;; )
@@ -809,15 +808,14 @@ inline bool Layout::skip_whitespace_to_eol( char *& xxx, char *& xxx_end )
         if ( !in_comment && ch != ' ' && ch != '\n' && ch != '\r' && ch != '\t' ) break;
 
         if ( ch == '\n' || ch == '\r' ) {
-            if ( ch == '\n' && (xxx == node_c) ) line_num++;
+            if ( ch == '\n' && xxx == nnn ) line_num++;
             break;
         }
         xxx++;
     }
-    return true;
 }
 
-inline bool Layout::skip_to_eol( char *& xxx, char *& xxx_end )
+inline void Layout::skip_to_eol( char *& xxx, char *& xxx_end )
 {
     if ( !eol( xxx, xxx_end ) ) {
         while( xxx != xxx_end )
@@ -827,7 +825,6 @@ inline bool Layout::skip_to_eol( char *& xxx, char *& xxx_end )
             xxx++;
         }
     }
-    return true;
 }
 
 inline bool Layout::eol( char *& xxx, char *& xxx_end )
@@ -836,7 +833,7 @@ inline bool Layout::eol( char *& xxx, char *& xxx_end )
 
     if ( xxx == xxx_end || *xxx == '\n' || *xxx == '\r' ) {
         if ( xxx != xxx_end ) {
-            if ( *xxx == '\n' && (xxx == node_c) ) line_num++;
+            if ( *xxx == '\n' && xxx == nnn ) line_num++;
             xxx++;
         }
         dprint( "at eol" );
@@ -870,30 +867,6 @@ inline uint Layout::get_str_i( std::string s )
     memcpy( to_s, s.c_str(), s_len+1 );
     std::cout << "str_i[" << s << "]=" << s_i << " strings[]=" << std::string(&strings[s_i]) << "\n";
     return s_i;
-}
-
-inline bool Layout::parse_expr( uint node_i, char *& xxx, char *& xxx_end )
-{
-    char ch = *xxx;
-    if ( ch == '\'' ) {
-        nodes[node_i].kind = NODE_KIND::STR;
-        return parse_string_i( nodes[node_i].u.s_i, xxx, xxx_end );
-    } else if ( ch == '-' || (ch >= '0' && ch <= '9') ) {
-        return parse_number( node_i, xxx, xxx_end );
-    } else {
-        uint id_i;
-        if ( !parse_id( id_i, xxx, xxx_end ) ) {
-            rtn_assert( 0, "unable to parse an expression: string, number, or id" );
-        }
-        if ( id_i == true_str_i || id_i == false_str_i ) {
-            nodes[node_i].kind = NODE_KIND::BOOL;
-            nodes[node_i].u.b = id_i == true_str_i;
-        } else {
-            nodes[node_i].kind = NODE_KIND::ID;
-            nodes[node_i].u.s_i = id_i;
-        }
-        return true;
-    }
 }
 
 inline bool Layout::parse_number( uint node_i, char *& xxx, char *& xxx_end )
@@ -995,6 +968,12 @@ inline bool Layout::parse_id( uint& id_i, char *& xxx, char *& xxx_end )
     rtn_assert( id != "", "no id found at " + surrounding_lines( xxx, xxx_end ) );
     id_i = get_str_i( id );
     return true;
+}
+
+inline bool Layout::peek_id( uint& id_i, char *& xxx_orig, char *& xxx_end )
+{
+    char * xxx = xxx_orig;
+    return parse_id( id_i, xxx, xxx_end );
 }
 
 inline bool Layout::parse_real3( Layout::real3& r3, char *& xxx, char *& xxx_end, bool has_brackets )
