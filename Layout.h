@@ -170,6 +170,7 @@ public:
         REAL,
         HIER,                          
         CALL,
+        ARRAY_REF,
     };
             
     class Node
@@ -184,7 +185,7 @@ public:
             uint        u;                  // KIND_UINT
             real        r;                  // KIND_REAL
             uint        child_first_i;      // KIND_HIER - index into nodes[] array of first child
-            uint        arg_first_i;        // KIND_CALL - index into nodes[] array of first arg to call
+            uint        arg_first_i;        // KIND_CALL - index into nodes[] array of first arg to call or array_ref
         } u;
         uint        sibling_i;              // index in nodes array of sibling on list, else uint(-1)
     };
@@ -641,9 +642,9 @@ bool Layout::parse_aedt_node( uint& node_i, uint id_i )
             // assignment
             if ( !expect_char( ch, node_c, node_end ) ) return false;
             if ( !parse_expr( ni, node_c, node_end ) ) return false;
-        } else if ( ch == '(' ) {
-            // CALL => parse arg list
-            nodes[ni].kind = NODE_KIND::CALL;
+        } else if ( ch == '(' || ch == '[' ) {
+            // CALL or ARRAY_REF => parse arg list
+            nodes[ni].kind = (ch == '(') ? NODE_KIND::CALL : NODE_KIND::ARRAY_REF;
             nodes[ni].u.child_first_i = uint(-1);
             nodes[ni].sibling_i = uint(-1);
             uint prev_i = uint(-1);
@@ -652,7 +653,7 @@ bool Layout::parse_aedt_node( uint& node_i, uint id_i )
             {
                 if ( !skip_whitespace( node_c, node_end ) ) return false;
                 ch = *node_c;
-                if ( ch == ')' ) {
+                if ( (ch == ')' && nodes[ni].kind == NODE_KIND::CALL) || (ch == ']' && nodes[ni].kind == NODE_KIND::ARRAY_REF) ) {
                     if ( !expect_char( ch, node_c, node_end ) ) return false;
                     break;
                 }
@@ -673,6 +674,12 @@ bool Layout::parse_aedt_node( uint& node_i, uint id_i )
                 }
                 prev_i = arg_i;
                 if ( !parse_expr( arg_i, node_c, node_end ) ) return false;
+                ch = *node_c;
+                if ( ch == ':' && nodes[ni].kind == NODE_KIND::ARRAY_REF ) {
+                    // skip this, it's implied
+                    //
+                    if ( !expect_char( ch, node_c, node_end ) ) return false;
+                }
             }
             std::cout << "END CALL\n";
         } else if ( ch == '\'' ) {
