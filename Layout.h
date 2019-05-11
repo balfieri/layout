@@ -97,7 +97,7 @@ public:
     Layout( std::string layout_file, bool is_compressed );
     ~Layout(); 
 
-    bool write( std::string file_path, bool is_compressed ); 
+    bool write( std::string file_path, bool is_compressed=false ); 
 
     static void dissect_path( std::string path, std::string& dir_name, std::string& base_name, std::string& ext_name ); // utility
 
