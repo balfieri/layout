@@ -82,6 +82,7 @@ class Layout
 {
 public:
     typedef uint32_t uint;                  // by default, we use 32-bit integers
+    typedef int32_t  _int;                  // by default, we use 32-bit integers
     typedef uint64_t uint64;                // by default, we use 64-bit indexes for texels
     typedef double   real;
 
@@ -153,10 +154,31 @@ public:
         uint64      node_cnt;               // in nodes array  
     };
 
+    typedef enum 
+    {
+        KIND_STR,
+        KIND_BOOL,
+        KIND_INT,
+        KIND_UINT,
+        KIND_REAL,
+        KIND_HIER,                          
+        KIND_CALL,
+    } node_kind_t;
+            
     class Node
     {
     public:
-        uint        name_i;                 // index of node name in strings array
+        node_kind_t kind;                   // kind of node
+        uint        name_i;                 // index of node name in strings array of node name, if any, else uint(-1)
+        union {
+            uint        s_i;                // KIND_STR - index into strings array of string value
+            bool        b;                  // KIND_BOOL
+            _int        i;                  // KIND_INT
+            uint        u;                  // KIND_UINT
+            uint        child_first_i;      // KIND_HIER - index into nodes[] array of first child
+            uint        arg_first_i;        // KIND_CALL - index into nodes[] array of first arg to call
+        } u;
+        uint        sibling_i;              // index in nodes array of sibling on list, else uint(-1)
     };
 
     enum class INSTANCE_KIND
@@ -189,10 +211,10 @@ public:
 
     // arrays
     char *              strings;
-    Node *            nodes;
+    Node *              nodes;
 
     // maps of names to array indexes
-    std::map<std::string, uint>    name_to_node_i;
+    std::map<std::string, uint>         str_to_str_i;          // maps string to unique location in strings[]
 
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
@@ -208,15 +230,6 @@ public:
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
 private:
-    typedef enum 
-    {
-        KIND_HIER,
-        KIND_STRING,
-        KIND_INT,
-        KIND_UINT,
-        KIND_REAL,
-    } node_kind_t;
-            
     std::string ext_name;
     char * node_start;
     char * node_end;
@@ -237,11 +250,10 @@ private:
     bool parse_string_i( uint& s, char *& xxx, char *& xxx_end );
     bool parse_name( char *& name, char *& xxx, char *& xxx_end );
     bool parse_id( std::string& id, char *& xxx, char *& xxx_end );
-    bool parse_option_name( std::string& option_name, char *& xxx, char *& xxx_end );
     bool parse_aedt_kind( node_kind_t& kind );
     bool parse_real3( real3& r3, char *& xxx, char *& xxx_end, bool has_brackets=false );
     bool parse_real( real& r, char *& xxx, char *& xxx_end, bool skip_whitespace_first=false );
-    bool parse_int( int& i, char *& xxx, char *& xxx_end );
+    bool parse_int( _int& i, char *& xxx, char *& xxx_end );
     bool parse_uint( uint& u, char *& xxx, char *& xxx_end );
     bool parse_bool( bool& b, char *& xxx, char *& xxx_end );
     std::string surrounding_lines( char *& xxx, char *& xxx_end );
@@ -849,25 +861,6 @@ inline bool Layout::parse_id( std::string& id, char *& xxx, char *& xxx_end )
     return true;
 }
 
-inline bool Layout::parse_option_name( std::string& option_name, char *& xxx, char *& xxx_end )
-{
-    while( xxx != xxx_end && (*xxx == ' ' || *xxx == '\t') ) xxx++;  // skip leading spaces
-    if ( xxx == xxx_end or *xxx != '-' ) return false;
-    xxx++;
-
-    option_name = "-";
-    while( xxx != xxx_end )
-    {
-        char ch = *xxx;
-        if ( !( ch == '_' || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ) ) break;
-
-        option_name += std::string( 1, ch );
-        xxx++;
-    }
-
-    return true;
-}
-
 inline bool Layout::parse_aedt_kind( node_kind_t& kind )
 {
     rtn_assert( node_c != node_end, "no .aedt command" );
@@ -907,7 +900,7 @@ inline bool Layout::parse_real( Layout::real& r, char *& xxx, char *& xxx_end, b
     bool has_exp = false;
     uint u = 0;     // integer part
     uint f = 0;     // frac part before divide
-    int e10 = 0;
+    _int e10 = 0;
     double f_factor = 1.0;
     dprint( "parse_real *xxx=" + std::string( 1, *xxx ) );
     while( xxx != xxx_end && (*xxx == ' ' || *xxx == '\t') ) xxx++;  // skip leading spaces
@@ -970,7 +963,7 @@ inline bool Layout::parse_real( Layout::real& r, char *& xxx, char *& xxx_end, b
     return vld;
 }
 
-inline bool Layout::parse_int( int& i, char *& xxx, char *& xxx_end )
+inline bool Layout::parse_int( _int& i, char *& xxx, char *& xxx_end )
 {
     bool vld = false;
     i = 0;
@@ -1001,7 +994,7 @@ inline bool Layout::parse_int( int& i, char *& xxx, char *& xxx_end )
 
 inline bool Layout::parse_uint( uint& u, char *& xxx, char *& xxx_end )
 {
-    int i;
+    _int i;
     if ( !parse_int( i, xxx, xxx_end ) ) return false;
     rtn_assert( i >= 0, "parse_uint encountered negative integer" );
     u = i;
