@@ -43,6 +43,13 @@
 //            exit( 1 );
 //        }
 //
+//     3) You can also write out (export) other types of files:
+//      
+//        layout->write( "new_chip.aedt" );     // writes out an .aedt files
+//        layout->write( "new_chip.gds" );      // writes out a .gds II file
+//        layout->write( "new_chip.lst" );      // writes out a .lst file for FastCap2
+//        layout->write( "new_chip.henry" );    // writes out a FastHenry2 files
+//
 // How it works:
 //
 //     1) Allocate large virtual memory 1D arrays for records and other structures.
