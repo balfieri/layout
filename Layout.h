@@ -617,11 +617,11 @@ bool Layout::parse_aedt_expr( uint& ni )
         dprint( "NUMBER" );
         return parse_number( ni, nnn, nnn_end );
     } else {
-        dprint( "ID START" );
         uint id_i;
         if ( !parse_id( id_i, nnn, nnn_end ) ) {
             rtn_assert( 0, "unable to parse an expression: string, number, or id" );
         }
+        dprint( "ID START " + std::string(&strings[id_i]) );
         if ( id_i == aedt_begin_str_i ) {
             uint name_i;
             if ( !parse_aedt_expr( name_i ) ) return false;             // STR node
@@ -665,6 +665,18 @@ bool Layout::parse_aedt_expr( uint& ni )
             if ( ch == '=' ) {
                 dprint( "ASSIGN" );
                 expect_char( ch, nnn, nnn_end );
+
+                uint rhs_i;
+                if ( !parse_aedt_expr( rhs_i ) ) return false;
+
+                perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+                uint ai = hdr->node_cnt++;
+                nodes[ai].kind = NODE_KIND::ASSIGN;
+                nodes[ai].u.child_first_i = ni;
+                nodes[ni].sibling_i = rhs_i;
+                nodes[ai].sibling_i = uint(-1);
+                ni = ai;
+
             } else if ( ch == '(' || ch == '[' ) {
                 dprint( (ch == '(') ? "CALL" : "SLICE" );
                 nodes[ni].kind = (ch == '(') ? NODE_KIND::CALL : NODE_KIND::SLICE;
@@ -681,13 +693,15 @@ bool Layout::parse_aedt_expr( uint& ni )
                         break;
                     }
                     if ( have_one ) {
+                        skip_whitespace( nnn, nnn_end );
                         if ( ch == ':' && nodes[ni].kind == NODE_KIND::SLICE ) {
                             // skip this, it's implied
                             //
                             expect_char( ch, nnn, nnn_end );
                             continue;
+                        } else {
+                            if ( !expect_char( ',', nnn, nnn_end ) ) rtn_assert( 0, "expected comma in arg list, got " + std::string(1, *nnn) );
                         }
-                        if ( !expect_char( ',', nnn, nnn_end ) ) rtn_assert( 0, "expected comma in arg list" );
                     }
 
                     uint arg_i;
