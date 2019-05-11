@@ -76,10 +76,7 @@
 #include <string.h>
 #include <zlib.h>
 
-#ifndef STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
-#endif
+#include "libGDSII.h"
 
 class Layout
 {
@@ -319,52 +316,6 @@ Layout::Layout( std::string top_file )
     } else {
         error_msg = "unknown top file ext_name: " + ext_name;
         return;
-    }
-
-    if ( resolve_layouts ) {
-        //------------------------------------------------------------
-        // Resolve Layout Pointers in LAYOUT Instances
-        // Do this only for unique layouts.
-        //------------------------------------------------------------
-        uint      unique_cnt = 0;
-        uint *    unique_name_i = new uint[ hdr->inst_cnt ];
-        Layout ** uniques       = new Layout*[ hdr->inst_cnt ];
-
-        for( uint i = 0; i < hdr->inst_cnt; i++ )
-        {
-            Instance * instance = &instances[i];
-            if ( instance->kind == INSTANCE_KIND::LAYOUT ) {
-                uint u;
-                for( u = 0; u < unique_cnt; u++ )
-                {
-                    if ( unique_name_i[u] == instance->layout_file_name_i ) break;
-                }
-
-                Layout * layout;
-                if ( u == unique_cnt ) {
-                    // read in layout for the first time
-                    const char * layout_file_name = &strings[instance->layout_file_name_i];
-                    std::string file_name = layout_file_name;
-                    layout = new Layout( file_name, false );
-                    if ( !layout->is_good ) {
-                        error_msg = layout->error_msg;
-                        return;
-                    }
-                    unique_name_i[u] = instance->layout_file_name_i;
-                    uniques[u]       = layout;
-                    unique_cnt++;
-                } else {
-                    // layout already read in
-                    layout = uniques[u];
-                }
-
-                instance->u.layout_ptr = layout;
-                instance->kind = INSTANCE_KIND::LAYOUT_PTR;
-
-                // also transform target layout's bbox to global world space and save
-                // here in the instance->box.
-            }
-        }
     }
 
     //------------------------------------------------------------
@@ -715,7 +666,7 @@ inline bool Layout::skip_whitespace( char *& xxx, char *& xxx_end )
         if ( !in_comment && ch != ' ' && ch != '\n' && ch != '\r' && ch != '\t' ) break;
 
         if ( ch == '\n' || ch == '\r' ) {
-            if ( ch == '\n' && (xxx == fsc || xxx == obj) ) line_num++;
+            if ( ch == '\n' && (xxx == obj) ) line_num++;
             in_comment = false;
         }
         xxx++;
@@ -735,7 +686,7 @@ inline bool Layout::skip_whitespace_to_eol( char *& xxx, char *& xxx_end )
         if ( !in_comment && ch != ' ' && ch != '\n' && ch != '\r' && ch != '\t' ) break;
 
         if ( ch == '\n' || ch == '\r' ) {
-            if ( ch == '\n' && (xxx == fsc || xxx == obj) ) line_num++;
+            if ( ch == '\n' && (xxx == obj) ) line_num++;
             break;
         }
         xxx++;
@@ -762,7 +713,7 @@ inline bool Layout::eol( char *& xxx, char *& xxx_end )
 
     if ( xxx == xxx_end || *xxx == '\n' || *xxx == '\r' ) {
         if ( xxx != xxx_end ) {
-            if ( *xxx == '\n' && (xxx == fsc || xxx == obj) ) line_num++;
+            if ( *xxx == '\n' && (xxx == obj) ) line_num++;
             xxx++;
         }
         dprint( "at eol" );
@@ -1012,7 +963,7 @@ inline bool Layout::parse_real( Layout::real& r, char *& xxx, char *& xxx_end, b
     if ( is_neg ) r = -r;
     if ( e10 != 0 ) r *= pow( 10.0, e10 );
     dprint( "real=" + std::to_string( r ) );
-    rtn_assert( vld, "unable to parse real in " + std::string( ((xxx == fsc) ? ".fscene" : (xxx == obj) ? ".obj" : ".mtl") ) + " file " + surrounding_lines( xxx, xxx_end ) );
+    rtn_assert( vld, "unable to parse real in " + std::string( ((xxx == obj) ? ".obj" : ".mtl") ) + " file " + surrounding_lines( xxx, xxx_end ) );
     return vld;
 }
 
@@ -1041,7 +992,7 @@ inline bool Layout::parse_int( int& i, char *& xxx, char *& xxx_end )
     }
 
     if ( is_neg ) i = -i;
-    rtn_assert( vld, "unable to parse int in " + std::string( ((xxx == fsc) ? ".fscene" : (xxx == obj) ? ".obj" : ".mtl") ) + " file " + surrounding_lines( xxx, xxx_end ) );
+    rtn_assert( vld, "unable to parse int in " + std::string( ((xxx == obj) ? ".obj" : ".mtl") ) + " file " + surrounding_lines( xxx, xxx_end ) );
     return true;
 }
 
