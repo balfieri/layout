@@ -621,6 +621,7 @@ bool Layout::parse_aedt_node( uint& node_i, uint id_i )
                 uint end_str_i;
                 if ( !parse_string_i( end_str_i, node_c, node_end ) ) return false;
                 rtn_assert( end_str_i == str_i, "$end id does not match $begin id " + surrounding_lines( node_c, node_end ) );
+                break;
             }
 
             uint child_i;
@@ -650,7 +651,6 @@ bool Layout::parse_aedt_node( uint& node_i, uint id_i )
             {
                 if ( !skip_whitespace( node_c, node_end ) ) return false;
                 ch = *node_c;
-                printf( "ch=%c\n", ch );
                 if ( ch == ')' ) {
                     if ( !expect_char( ch, node_c, node_end ) ) return false;
                     break;
@@ -673,12 +673,13 @@ bool Layout::parse_aedt_node( uint& node_i, uint id_i )
                 prev_i = arg_i;
                 if ( !parse_expr( arg_i, node_c, node_end ) ) return false;
             }
+            std::cout << "END CALL\n";
         } else if ( ch == '\'' ) {
             // STR
             uint str_i;
             if ( !parse_string_i( str_i, node_c, node_end ) ) return false;
         } else {
-            rtn_assert( false, "unknown .aedt node " + surrounding_lines( node_c, node_end ) );
+            rtn_assert( false, "unknown .aedt node id=" + std::string(&strings[id_i]) + surrounding_lines( node_c, node_end ) );
         }
     }
     return true;
