@@ -154,21 +154,21 @@ public:
         uint64      node_cnt;               // in nodes array  
     };
 
-    typedef enum 
+    enum class NODE_KIND
     {
-        KIND_STR,
-        KIND_BOOL,
-        KIND_INT,
-        KIND_UINT,
-        KIND_REAL,
-        KIND_HIER,                          
-        KIND_CALL,
-    } node_kind_t;
+        STR,
+        BOOL,
+        INT,
+        UINT,
+        REAL,
+        HIER,                          
+        CALL,
+    };
             
     class Node
     {
     public:
-        node_kind_t kind;                   // kind of node
+        NODE_KIND   kind;                   // kind of node
         uint        name_i;                 // index of node name in strings array of node name, if any, else uint(-1)
         union {
             uint        s_i;                // KIND_STR - index into strings array of string value
@@ -236,7 +236,13 @@ private:
     char * node_c;
     uint   line_num;
 
+    uint aedt_begin_str_i;              // these are to make it easier to compare
+    uint aedt_end_str_i;
+    uint true_str_i;
+    uint false_str_i;
+
     bool load_aedt( std::string node_file, std::string dir_name );        // parse .aedt
+    bool parse_aedt_node( uint& node_i );
 
     bool open_and_read( std::string file_name, char *& start, char *& end );
 
@@ -245,12 +251,11 @@ private:
     bool skip_to_eol( char *& xxx, char *& xxx_end );
     bool eol( char *& xxx, char *& xxx_end );
     bool expect_char( char ch, char *& xxx, char* xxx_end, bool skip_whitespace_first=false );
-    bool expect_kind( const char * s, char *& xxx, char *& xxx_end );
+    uint get_str_i( std::string s );
     bool parse_string( std::string& s, char *& xxx, char *& xxx_end );
     bool parse_string_i( uint& s, char *& xxx, char *& xxx_end );
     bool parse_name( char *& name, char *& xxx, char *& xxx_end );
-    bool parse_id( std::string& id, char *& xxx, char *& xxx_end );
-    bool parse_aedt_kind( node_kind_t& kind );
+    bool parse_id( uint& id_i, char *& xxx, char *& xxx_end );
     bool parse_real3( real3& r3, char *& xxx, char *& xxx_end, bool has_brackets=false );
     bool parse_real( real& r, char *& xxx, char *& xxx_end, bool skip_whitespace_first=false );
     bool parse_int( _int& i, char *& xxx, char *& xxx_end );
@@ -569,29 +574,29 @@ bool Layout::load_aedt( std::string node_file, std::string dir_name )
 
     //------------------------------------------------------------
     // Parse .aedt file contents
+    // Parse the first $begin .. $end.
     //------------------------------------------------------------
-    char *      node_name = nullptr;
-    char *      name;
-    Node *    node = nullptr;
+    aedt_begin_str_i = get_str_i( "$begin" );
+    aedt_end_str_i   = get_str_i( "$end" );
+    true_str_i       = get_str_i( "true" );
+    false_str_i      = get_str_i( "false" );
+    uint root_i;
+    if ( !parse_aedt_node( root_i ) ) return false;
+    assert( root_i == 0 );
+    assert( nodes[root_i].kind == NODE_KIND::HIER );
+    return true;
+}
 
-    for( ;; ) 
-    {
-        skip_whitespace( node_c, node_end );
-        if ( node_c == node_end ) return true;
-
-        node_kind_t kind;
-        if ( !parse_aedt_kind( kind ) ) break;
-
-        switch( kind )
-        {
-            default:
-                break;
-        }
+bool Layout::parse_aedt_node( uint& node_i )
+{
+    if ( !skip_whitespace( node_c, node_end ) ) return false;
+    uint id_i;
+    if ( !parse_id( id_i, node_c, node_end ) ) return false;
+    if ( id_i == aedt_begin_str_i ) {
+        uint str_i;
+        if ( !parse_string_i( str_i, node_c, node_end ) ) return false;
     }
-    error:
-        error_msg += " (at line " + std::to_string( line_num ) + " of " + node_file + ")";
-        assert( 0 );
-        return false;
+    return true;
 }
 
 void Layout::dissect_path( std::string path, std::string& dir_name, std::string& base_name, std::string& ext_name ) 
@@ -748,43 +753,28 @@ inline bool Layout::expect_char( char ch, char *& xxx, char* xxx_end, bool skip_
     return true;
 }
 
-inline bool Layout::expect_kind( const char * s, char *& xxx, char *& xxx_end )
+inline uint Layout::get_str_i( std::string s )
 {
-    char s_ch1 = '!';
-    while( xxx != xxx_end ) 
-    {
-        s_ch1 = *s;
-        s++;
-        if ( s_ch1 == '\0' ) {
-            // command needs to end with space
-            rtn_assert( *xxx == ' ' || *xxx == '\t', "unknown command" );
-            return true;
-        }
-
-        // case insensitive
-        char s_ch2;
-        if ( s_ch1 >= 'a' && s_ch1 <= 'z' ) {
-            s_ch2 = 'A' + s_ch1 - 'a';
-        } else {
-            s_ch2 = s_ch1;
-        }
-
-        char o_ch = *xxx;
-        xxx++;
-        rtn_assert( o_ch == s_ch1 || o_ch == s_ch2, "unexpected command character: " + std::string( 1, o_ch ) );
-    }
-
-    return s_ch1 == '\0';
+    auto it = str_to_str_i.find( s );
+    if ( it != str_to_str_i.end() ) return it->second;
+        
+    uint s_len = s.length();
+    perhaps_realloc( strings, hdr->char_cnt, max->char_cnt, s_len+1 );
+    uint s_i = hdr->char_cnt;
+    char * to_s = &strings[hdr->char_cnt];
+    hdr->char_cnt += s_len + 1;
+    memcpy( to_s, s.c_str(), s_len+1 );
+    return s_i;
 }
 
 inline bool Layout::parse_string( std::string& s, char *& xxx, char *& xxx_end )
 {
-    if ( !expect_char( '"', xxx, xxx_end, true ) ) return false;
+    if ( !expect_char( '\'', xxx, xxx_end, true ) ) return false;
     s = "";
     for( ;; ) 
     {
         rtn_assert( xxx != xxx_end, "no terminating \" for string" );
-        if ( *xxx == '"' ) {
+        if ( *xxx == '\'' ) {
             xxx++;
             return true;
         }
@@ -797,13 +787,7 @@ inline bool Layout::parse_string_i( uint& s_i, char *& xxx, char *& xxx_end )
 {
     std::string s;
     if ( !parse_string( s, xxx, xxx_end ) ) return false;
-
-    uint s_len = s.length();
-    perhaps_realloc( strings, hdr->char_cnt, max->char_cnt, s_len+1 );
-    s_i = hdr->char_cnt;
-    char * to_s = &strings[hdr->char_cnt];
-    hdr->char_cnt += s_len + 1;
-    memcpy( to_s, s.c_str(), s_len+1 );
+    s_i = get_str_i( s );
     return true;
 }
 
@@ -844,11 +828,11 @@ inline bool Layout::parse_name( char *& name, char *& xxx, char *& xxx_end )
     rtn_assert( 0, "could not parse name: " + surrounding_lines( xxx, xxx_end ) );
 }
 
-inline bool Layout::parse_id( std::string& id, char *& xxx, char *& xxx_end )
+inline bool Layout::parse_id( uint& id_i, char *& xxx, char *& xxx_end )
 {
     skip_whitespace( xxx, xxx_end );
 
-    id = "";
+    std::string id = "";
     while( xxx != xxx_end )
     {
         char ch = *xxx;
@@ -857,27 +841,8 @@ inline bool Layout::parse_id( std::string& id, char *& xxx, char *& xxx_end )
         id += std::string( 1, ch );
         xxx++;
     }
-
+    id_i = get_str_i( id );
     return true;
-}
-
-inline bool Layout::parse_aedt_kind( node_kind_t& kind )
-{
-    rtn_assert( node_c != node_end, "no .aedt command" );
-
-    char ch = *node_c;
-    node_c++;
-    switch( ch )
-    {
-        case 'o':           
-        case 'O':           
-            rtn_assert( node_c != node_end && *node_c == ' ', "bad .aedt command" );
-            //kind = KIND_O;
-            return true;
-
-        default:
-            rtn_assert( 0, "bad .aedt command character: " + surrounding_lines( node_c, node_end ) );
-    }
 }
 
 inline bool Layout::parse_real3( Layout::real3& r3, char *& xxx, char *& xxx_end, bool has_brackets )
@@ -1003,10 +968,10 @@ inline bool Layout::parse_uint( uint& u, char *& xxx, char *& xxx_end )
 
 inline bool Layout::parse_bool( bool& b, char *& xxx, char *& xxx_end )
 {
-    std::string id;
-    if ( !parse_id( id , xxx, xxx_end ) ) return false;
-    b = id == std::string( "true" );
-    return true;
+    uint id_i;
+    if ( !parse_id( id_i, xxx, xxx_end ) ) return false;
+    b = id_i == true_str_i;
+    return b || id_i == false_str_i;
 }
 
 std::string Layout::surrounding_lines( char *& xxx, char *& xxx_end )
