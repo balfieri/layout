@@ -170,7 +170,8 @@ public:
         REAL,
         HIER,                          
         CALL,
-        ARRAY_REF,
+        SLICE,
+        ID,
     };
             
     class Node
@@ -179,13 +180,13 @@ public:
         NODE_KIND   kind;                   // kind of node
         uint        name_i;                 // index of node name in strings array of node name, if any, else uint(-1)
         union {
-            uint        s_i;                // KIND_STR - index into strings array of string value
-            bool        b;                  // KIND_BOOL
-            _int        i;                  // KIND_INT
-            uint        u;                  // KIND_UINT
-            real        r;                  // KIND_REAL
-            uint        child_first_i;      // KIND_HIER - index into nodes[] array of first child
-            uint        arg_first_i;        // KIND_CALL - index into nodes[] array of first arg to call or array_ref
+            uint        s_i;                // STR or ID - index into strings array of string value
+            bool        b;                  // BOOL
+            _int        i;                  // INT
+            uint        u;                  // UINT
+            real        r;                  // REAL
+            uint        child_first_i;      // HIER - index into nodes[] array of first child
+            uint        arg_first_i;        // CALL - index into nodes[] array of first arg to call or slice
         } u;
         uint        sibling_i;              // index in nodes array of sibling on list, else uint(-1)
     };
@@ -643,8 +644,8 @@ bool Layout::parse_aedt_node( uint& node_i, uint id_i )
             if ( !expect_char( ch, node_c, node_end ) ) return false;
             if ( !parse_expr( ni, node_c, node_end ) ) return false;
         } else if ( ch == '(' || ch == '[' ) {
-            // CALL or ARRAY_REF => parse arg list
-            nodes[ni].kind = (ch == '(') ? NODE_KIND::CALL : NODE_KIND::ARRAY_REF;
+            // CALL or SLICE => parse arg list
+            nodes[ni].kind = (ch == '(') ? NODE_KIND::CALL : NODE_KIND::SLICE;
             nodes[ni].u.child_first_i = uint(-1);
             nodes[ni].sibling_i = uint(-1);
             uint prev_i = uint(-1);
@@ -653,33 +654,41 @@ bool Layout::parse_aedt_node( uint& node_i, uint id_i )
             {
                 if ( !skip_whitespace( node_c, node_end ) ) return false;
                 ch = *node_c;
-                if ( (ch == ')' && nodes[ni].kind == NODE_KIND::CALL) || (ch == ']' && nodes[ni].kind == NODE_KIND::ARRAY_REF) ) {
+                if ( (ch == ')' && nodes[ni].kind == NODE_KIND::CALL) || (ch == ']' && nodes[ni].kind == NODE_KIND::SLICE) ) {
                     if ( !expect_char( ch, node_c, node_end ) ) return false;
                     break;
                 }
 
-                if ( have_one ) {
-                    if ( !expect_char( ',', node_c, node_end ) ) return false;
-                    if ( !skip_whitespace( node_c, node_end ) ) return false;
-                }
-                perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-                uint arg_i = hdr->node_cnt++;
-                nodes[arg_i].name_i = uint(-1);
-                nodes[arg_i].u.child_first_i = uint(-1);
-                nodes[arg_i].sibling_i = uint(-1);
-                if ( nodes[ni].u.child_first_i == uint(-1) ) {
-                    nodes[ni].u.child_first_i = arg_i;
+                uint arg_i;
+                if ( ch == '=' ) {
+                    rtn_assert( have_one, "'=' with nothing before it" );
+                    arg_i = prev_i;
+                    rtn_assert( nodes[arg_i].kind == NODE_KIND::ID || nodes[arg_i].kind == NODE_KIND::CALL, "= allowed only when lhs is ID or STR" );
+                    nodes[arg_i].name_i = nodes[prev_i].u.s_i;
                 } else {
-                    nodes[prev_i].sibling_i = arg_i;
+                    if ( have_one ) {
+                        if ( !expect_char( ',', node_c, node_end ) ) return false;
+                        if ( !skip_whitespace( node_c, node_end ) ) return false;
+                    }
+                    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+                    arg_i = hdr->node_cnt++;
+                    nodes[arg_i].name_i = uint(-1);
+                    nodes[arg_i].u.child_first_i = uint(-1);
+                    nodes[arg_i].sibling_i = uint(-1);
+                    if ( nodes[ni].u.child_first_i == uint(-1) ) {
+                        nodes[ni].u.child_first_i = arg_i;
+                    } else {
+                        nodes[prev_i].sibling_i = arg_i;
+                    }
+                    prev_i = arg_i;
                 }
-                prev_i = arg_i;
                 if ( !parse_expr( arg_i, node_c, node_end ) ) return false;
                 ch = *node_c;
-                if ( ch == ':' && nodes[ni].kind == NODE_KIND::ARRAY_REF ) {
+                if ( ch == ':' && nodes[ni].kind == NODE_KIND::SLICE ) {
                     // skip this, it's implied
                     //
                     if ( !expect_char( ch, node_c, node_end ) ) return false;
-                }
+                } 
             }
             std::cout << "END CALL\n";
         } else if ( ch == '\'' ) {
@@ -872,8 +881,18 @@ inline bool Layout::parse_expr( uint node_i, char *& xxx, char *& xxx_end )
     } else if ( ch == '-' || (ch >= '0' && ch <= '9') ) {
         return parse_number( node_i, xxx, xxx_end );
     } else {
-        nodes[node_i].kind = NODE_KIND::BOOL;
-        return parse_bool( nodes[node_i].u.b, xxx, xxx_end );
+        uint id_i;
+        if ( !parse_id( id_i, xxx, xxx_end ) ) {
+            rtn_assert( 0, "unable to parse an expression: string, number, or id" );
+        }
+        if ( id_i == true_str_i || id_i == false_str_i ) {
+            nodes[node_i].kind = NODE_KIND::BOOL;
+            nodes[node_i].u.b = id_i == true_str_i;
+        } else {
+            nodes[node_i].kind = NODE_KIND::ID;
+            nodes[node_i].u.s_i = id_i;
+        }
+        return true;
     }
 }
 
