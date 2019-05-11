@@ -6,4 +6,6 @@ Bob's tools for chip layout using single .h files:
 </ul>
 
 <p>
-See instructions at the top of Layout.h for how to use the Layout class to do various tasks.</p>
+See instructions at the top of Layout.h for how to include the Layout class in your program.</p>
+<p>
+See eg/* for example programs that use Layout.h</p>
