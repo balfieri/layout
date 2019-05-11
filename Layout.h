@@ -181,7 +181,7 @@ public:
             uint        s_i;                // KIND_STR - index into strings array of string value
             bool        b;                  // KIND_BOOL
             _int        i;                  // KIND_INT
-            uint        ui;                 // KIND_UINT
+            uint        u;                  // KIND_UINT
             real        r;                  // KIND_REAL
             uint        child_first_i;      // KIND_HIER - index into nodes[] array of first child
             uint        arg_first_i;        // KIND_CALL - index into nodes[] array of first arg to call
@@ -261,6 +261,7 @@ private:
     bool expect_char( char ch, char *& xxx, char* xxx_end, bool skip_whitespace_first=false );
     uint get_str_i( std::string s );
     bool parse_expr( uint node_i, char *& xxx, char *& xxx_end );
+    bool parse_number( uint node_i, char *& xxx, char *& xxx_end );
     bool parse_string( std::string& s, char *& xxx, char *& xxx_end );
     bool parse_string_i( uint& s, char *& xxx, char *& xxx_end );
     bool parse_name( char *& name, char *& xxx, char *& xxx_end );
@@ -862,11 +863,32 @@ inline bool Layout::parse_expr( uint node_i, char *& xxx, char *& xxx_end )
         nodes[node_i].kind = NODE_KIND::STR;
         return parse_string_i( nodes[node_i].u.s_i, xxx, xxx_end );
     } else if ( ch == '-' || (ch >= '0' && ch <= '9') ) {
-        nodes[node_i].kind = NODE_KIND::REAL;
-        return parse_real( nodes[node_i].u.r, xxx, xxx_end );
+        return parse_number( node_i, xxx, xxx_end );
     } else {
         nodes[node_i].kind = NODE_KIND::BOOL;
         return parse_bool( nodes[node_i].u.b, xxx, xxx_end );
+    }
+}
+
+inline bool Layout::parse_number( uint node_i, char *& xxx, char *& xxx_end )
+{
+    char * xxx_orig = xxx;
+
+    _int i;
+    if ( !parse_int( i, xxx, xxx_end ) ) return false;
+    if ( *xxx != '.' ) {
+        if ( i < 0 ) {
+            nodes[node_i].kind = NODE_KIND::INT;
+            nodes[node_i].u.i  = i;
+        } else {
+            nodes[node_i].kind = NODE_KIND::UINT;
+            nodes[node_i].u.u  = i;
+        }
+        return true;
+    } else {
+        xxx = xxx_orig;
+        nodes[node_i].kind = NODE_KIND::REAL;
+        return parse_real( nodes[node_i].u.r, xxx, xxx_end );
     }
 }
 
