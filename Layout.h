@@ -612,14 +612,32 @@ bool Layout::parse_aedt_expr( uint& ni )
     if ( ch == '\'' ) {
         dprint( "STR" );
         nodes[ni].kind = NODE_KIND::STR;
-        return parse_string_i( nodes[ni].u.s_i, nnn, nnn_end );
+        if ( !parse_string_i( nodes[ni].u.s_i, nnn, nnn_end ) ) return false;
+
+        skip_whitespace( nnn, nnn_end );
+        ch = *nnn;
+        if ( ch == '=' ) {
+            dprint( "ASSIGN" );
+            expect_char( ch, nnn, nnn_end );
+
+            uint rhs_i;
+            if ( !parse_aedt_expr( rhs_i ) ) return false;
+
+            perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+            uint ai = hdr->node_cnt++;
+            nodes[ai].kind = NODE_KIND::ASSIGN;
+            nodes[ai].u.child_first_i = ni;
+            nodes[ni].sibling_i = rhs_i;
+            nodes[ai].sibling_i = uint(-1);
+            ni = ai;
+        }
     } else if ( ch == '-' || (ch >= '0' && ch <= '9') ) {
         dprint( "NUMBER" );
         return parse_number( ni, nnn, nnn_end );
     } else {
         uint id_i;
         if ( !parse_id( id_i, nnn, nnn_end ) ) {
-            rtn_assert( 0, "unable to parse an expression: string, number, or id" );
+            rtn_assert( 0, "unable to parse an expression: string, number, or id " + surrounding_lines( nnn, nnn_end ) );
         }
         dprint( "ID START " + std::string(&strings[id_i]) );
         if ( id_i == aedt_begin_str_i ) {
@@ -699,8 +717,8 @@ bool Layout::parse_aedt_expr( uint& ni )
                             //
                             expect_char( ch, nnn, nnn_end );
                             continue;
-                        } else {
-                            if ( !expect_char( ',', nnn, nnn_end ) ) rtn_assert( 0, "expected comma in arg list, got " + std::string(1, *nnn) );
+                        } else if ( ch == ',' ) {
+                            expect_char( ',', nnn, nnn_end );
                         }
                     }
 
@@ -1125,7 +1143,7 @@ inline bool Layout::parse_bool( bool& b, char *& xxx, char *& xxx_end )
 std::string Layout::surrounding_lines( char *& xxx, char *& xxx_end )
 {
     uint eol_cnt = 0;
-    std::string s = "";
+    std::string s = "line " + std::to_string(line_num) + " ";
     while( eol_cnt != 10 && xxx != xxx_end )
     {
         s += std::string( 1, *xxx ) ;
