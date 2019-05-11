@@ -250,7 +250,7 @@ private:
     uint false_str_i;
 
     bool load_aedt( std::string node_file, std::string dir_name );        // parse .aedt
-    bool parse_aedt_node( uint& node_i );
+    bool parse_aedt_node( uint& node_i, uint id_i );
 
     bool open_and_read( std::string file_name, char *& start, char *& end );
 
@@ -266,7 +266,7 @@ private:
     bool parse_name( char *& name, char *& xxx, char *& xxx_end );
     bool parse_id( uint& id_i, char *& xxx, char *& xxx_end );
     bool parse_real3( real3& r3, char *& xxx, char *& xxx_end, bool has_brackets=false );
-    bool parse_real( real& r, char *& xxx, char *& xxx_end, bool skip_whitespace_first=false );
+    bool parse_real( real& r, char *& xxx, char *& xxx_end, bool skip_whitespace_first=true );
     bool parse_int( _int& i, char *& xxx, char *& xxx_end );
     bool parse_uint( uint& u, char *& xxx, char *& xxx_end );
     bool parse_bool( bool& b, char *& xxx, char *& xxx_end );
@@ -589,24 +589,25 @@ bool Layout::load_aedt( std::string node_file, std::string dir_name )
     aedt_end_str_i   = get_str_i( "$end" );
     true_str_i       = get_str_i( "true" );
     false_str_i      = get_str_i( "false" );
+    uint id_i;
     uint root_i;
-    if ( !parse_aedt_node( root_i ) ) return false;
+    if ( !parse_id( id_i, node_c, node_end ) ) return false;
+    if ( !parse_aedt_node( root_i, id_i ) ) return false;
     assert( root_i == 0 );
     assert( nodes[root_i].kind == NODE_KIND::HIER );
     return true;
 }
 
-bool Layout::parse_aedt_node( uint& node_i )
+bool Layout::parse_aedt_node( uint& node_i, uint id_i )
 {
-    if ( !skip_whitespace( node_c, node_end ) ) return false;
-    uint id_i;
-    if ( !parse_id( id_i, node_c, node_end ) ) return false;
+    printf( "node id_i=%d id=%s\n", id_i, &strings[id_i] );
     perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
     uint ni = hdr->node_cnt++;
     if ( id_i == aedt_begin_str_i ) {
         // HIER => parse child nodes
         uint str_i;
         if ( !parse_string_i( str_i, node_c, node_end ) ) return false;
+        std::cout << "$begin " << std::string(&strings[str_i]) << "\n";
         nodes[ni].kind = NODE_KIND::HIER;
         nodes[ni].name_i = str_i;
         nodes[ni].u.child_first_i = uint(-1);
@@ -614,17 +615,22 @@ bool Layout::parse_aedt_node( uint& node_i )
         uint prev_i = uint(-1);
         for( ;; )
         {
-            if ( !parse_id( id_i, node_c, node_end ) ) return false;
-            if ( id_i == aedt_end_str_i ) break;
-
-            uint ci;
-            if ( !parse_aedt_node( ci ) ) return false;
-            if ( nodes[ni].u.child_first_i == uint(-1) ) {
-                nodes[ni].u.child_first_i = ci;
-            } else {
-                nodes[prev_i].sibling_i = ci;
+            uint child_id_i;
+            if ( !parse_id( child_id_i, node_c, node_end ) ) return false;
+            if ( child_id_i == aedt_end_str_i ) {
+                uint end_str_i;
+                if ( !parse_string_i( end_str_i, node_c, node_end ) ) return false;
+                rtn_assert( end_str_i == str_i, "$end id does not match $begin id " + surrounding_lines( node_c, node_end ) );
             }
-            prev_i = ci;
+
+            uint child_i;
+            if ( !parse_aedt_node( child_i, child_id_i ) ) return false;
+            if ( nodes[ni].u.child_first_i == uint(-1) ) {
+                nodes[ni].u.child_first_i = child_i;
+            } else {
+                nodes[prev_i].sibling_i = child_i;
+            }
+            prev_i = child_i;
         }
     } else {
         nodes[ni].name_i = id_i;
@@ -640,12 +646,20 @@ bool Layout::parse_aedt_node( uint& node_i )
             nodes[ni].sibling_i = uint(-1);
             uint prev_i = uint(-1);
             if ( !expect_char( ch, node_c, node_end ) ) return false;
-            if ( !skip_whitespace( node_c, node_end ) ) return false;
-            for( ;; )
+            for( bool have_one=false; ; have_one=true )
             {
+                if ( !skip_whitespace( node_c, node_end ) ) return false;
                 ch = *node_c;
-                if ( ch == ')' ) break;
+                printf( "ch=%c\n", ch );
+                if ( ch == ')' ) {
+                    if ( !expect_char( ch, node_c, node_end ) ) return false;
+                    break;
+                }
 
+                if ( have_one ) {
+                    if ( !expect_char( ',', node_c, node_end ) ) return false;
+                    if ( !skip_whitespace( node_c, node_end ) ) return false;
+                }
                 perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
                 uint arg_i = hdr->node_cnt++;
                 nodes[arg_i].name_i = uint(-1);
@@ -655,7 +669,6 @@ bool Layout::parse_aedt_node( uint& node_i )
                     nodes[ni].u.child_first_i = arg_i;
                 } else {
                     nodes[prev_i].sibling_i = arg_i;
-                    if ( !expect_char( ',', node_c, node_end ) ) return false;
                 }
                 prev_i = arg_i;
                 if ( !parse_expr( arg_i, node_c, node_end ) ) return false;
@@ -665,7 +678,7 @@ bool Layout::parse_aedt_node( uint& node_i )
             uint str_i;
             if ( !parse_string_i( str_i, node_c, node_end ) ) return false;
         } else {
-            rtn_assert( false, "unknown .aedt node" );
+            rtn_assert( false, "unknown .aedt node " + surrounding_lines( node_c, node_end ) );
         }
     }
     return true;
@@ -833,9 +846,11 @@ inline uint Layout::get_str_i( std::string s )
     uint s_len = s.length();
     perhaps_realloc( strings, hdr->char_cnt, max->char_cnt, s_len+1 );
     uint s_i = hdr->char_cnt;
-    char * to_s = &strings[hdr->char_cnt];
+    str_to_str_i[s] = s_i;
+    char * to_s = &strings[s_i];
     hdr->char_cnt += s_len + 1;
     memcpy( to_s, s.c_str(), s_len+1 );
+    std::cout << "str_i[" << s << "]=" << s_i << " strings[]=" << std::string(&strings[s_i]) << "\n";
     return s_i;
 }
 
@@ -923,11 +938,12 @@ inline bool Layout::parse_id( uint& id_i, char *& xxx, char *& xxx_end )
     while( xxx != xxx_end )
     {
         char ch = *xxx;
-        if ( !( ch == '_' || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (id != "" && ch >= '0' && ch <= '9')) ) break;
+        if ( !( ch == '$' || ch == '_' || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (id != "" && ch >= '0' && ch <= '9')) ) break;
 
         id += std::string( 1, ch );
         xxx++;
     }
+    rtn_assert( id != "", "no id found at " + surrounding_lines( xxx, xxx_end ) );
     id_i = get_str_i( id );
     return true;
 }
