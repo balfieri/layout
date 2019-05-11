@@ -610,27 +610,23 @@ bool Layout::parse_aedt_expr( uint& ni )
     skip_whitespace( nnn, nnn_end );
     char ch = *nnn;
     if ( ch == '\'' ) {
-        // STR
         dprint( "STR" );
         nodes[ni].kind = NODE_KIND::STR;
         return parse_string_i( nodes[ni].u.s_i, nnn, nnn_end );
     } else if ( ch == '-' || (ch >= '0' && ch <= '9') ) {
-        // INT or UINT or REAL
         dprint( "NUMBER" );
         return parse_number( ni, nnn, nnn_end );
     } else {
-        // must start with ID
         dprint( "ID START" );
         uint id_i;
         if ( !parse_id( id_i, nnn, nnn_end ) ) {
             rtn_assert( 0, "unable to parse an expression: string, number, or id" );
         }
         if ( id_i == aedt_begin_str_i ) {
-            // HIER
-            dprint( "HIER" );
             uint name_i;
             if ( !parse_aedt_expr( name_i ) ) return false;             // STR node
             rtn_assert( nodes[name_i].kind == NODE_KIND::STR, "$begin not followed by string" );
+            dprint( "BEGIN " + std::string(&strings[nodes[name_i].u.s_i]) );
 
             nodes[ni].kind = NODE_KIND::HIER;
             nodes[ni].u.child_first_i = name_i;
@@ -641,8 +637,10 @@ bool Layout::parse_aedt_expr( uint& ni )
                 uint id_i;
                 if ( peek_id( id_i, nnn, nnn_end ) ) {
                     if ( id_i == aedt_end_str_i ) {
+                        parse_id( id_i, nnn, nnn_end );
                         uint end_str_i;
                         if ( !parse_string_i( end_str_i, nnn, nnn_end ) ) return false;
+                        dprint( "END " + std::string(&strings[end_str_i]) );
                         rtn_assert( end_str_i == nodes[name_i].u.s_i, "$end id does not match $begin id " + surrounding_lines( nnn, nnn_end ) );
                         break;
                     }
