@@ -592,9 +592,48 @@ bool Layout::parse_aedt_node( uint& node_i )
     if ( !skip_whitespace( node_c, node_end ) ) return false;
     uint id_i;
     if ( !parse_id( id_i, node_c, node_end ) ) return false;
+    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+    uint ni = hdr->node_cnt++;
     if ( id_i == aedt_begin_str_i ) {
+        // HIER
         uint str_i;
         if ( !parse_string_i( str_i, node_c, node_end ) ) return false;
+        nodes[ni].kind = NODE_KIND::HIER;
+        nodes[ni].name_i = str_i;
+        nodes[ni].u.child_first_i = uint(-1);
+        nodes[ni].sibling_i = uint(-1);
+        uint prev_i = uint(-1);
+        for( ;; )
+        {
+             if ( !parse_id( id_i, node_c, node_end ) ) return false;
+             if ( id_i == aedt_end_str_i ) break;
+
+             uint ci;
+             if ( !parse_aedt_node( ci ) ) return false;
+             if ( nodes[ni].u.child_first_i == uint(-1) ) {
+                 nodes[ni].u.child_first_i = ci;
+             } else {
+                 nodes[prev_i].sibling_i = ci;
+             }
+             prev_i = ci;
+        }
+    } else {
+        char ch = *node_c;
+        if ( ch == '=' ) {
+            if ( !expect_char( ch, node_c, node_end ) ) return false;
+        } else if ( ch == '(' ) {
+            // CALL
+            if ( !expect_char( ch, node_c, node_end ) ) return false;
+            for( ;; )
+            {
+            }
+        } else if ( ch == '\'' ) {
+            // STR
+            uint str_i;
+            if ( !parse_string_i( str_i, node_c, node_end ) ) return false;
+        } else {
+            rtn_assert( false, "unknown .aedt node" );
+        }
     }
     return true;
 }
