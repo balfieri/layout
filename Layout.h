@@ -271,8 +271,8 @@ private:
     bool read_uncompressed( std::string file_path );
 };
 
-#define dprint( msg )
-//#define dprint( msg ) std::cout << (msg) << "\n"
+//#define dprint( msg )
+#define dprint( msg ) std::cout << (msg) << "\n"
 
 // these are done as macros to avoid evaluating msg (it makes a big difference)
 #include <assert.h>
@@ -611,19 +611,23 @@ bool Layout::parse_aedt_expr( uint& ni )
     char ch = *nnn;
     if ( ch == '\'' ) {
         // STR
+        dprint( "STR" );
         nodes[ni].kind = NODE_KIND::STR;
         return parse_string_i( nodes[ni].u.s_i, nnn, nnn_end );
     } else if ( ch == '-' || (ch >= '0' && ch <= '9') ) {
         // INT or UINT or REAL
+        dprint( "NUMBER" );
         return parse_number( ni, nnn, nnn_end );
     } else {
         // must start with ID
+        dprint( "ID START" );
         uint id_i;
         if ( !parse_id( id_i, nnn, nnn_end ) ) {
             rtn_assert( 0, "unable to parse an expression: string, number, or id" );
         }
         if ( id_i == aedt_begin_str_i ) {
             // HIER
+            dprint( "HIER" );
             uint name_i;
             if ( !parse_aedt_expr( name_i ) ) return false;             // STR node
             rtn_assert( nodes[name_i].kind == NODE_KIND::STR, "$begin not followed by string" );
@@ -650,20 +654,21 @@ bool Layout::parse_aedt_expr( uint& ni )
                 prev_i = child_i;
             }
         } else if ( id_i == true_str_i || id_i == false_str_i ) {
-            // BOOL
+            dprint( "BOOL" );
             nodes[ni].kind = NODE_KIND::BOOL;
             nodes[ni].u.b = id_i == true_str_i;
         } else {
-            // ID, but could turn into ASSIGN, CALL, or SLICE
+            dprint( "USER ID" );
             nodes[ni].kind = NODE_KIND::ID;
             nodes[ni].u.s_i = id_i;
 
             skip_whitespace( nnn, nnn_end );
             ch = *nnn;
             if ( ch == '=' ) {
+                dprint( "ASSIGN" );
                 expect_char( ch, nnn, nnn_end );
             } else if ( ch == '(' || ch == '[' ) {
-                // CALL or SLICE => parse arg list
+                dprint( (ch == '(') ? "CALL" : "SLICE" );
                 nodes[ni].kind = (ch == '(') ? NODE_KIND::CALL : NODE_KIND::SLICE;
                 nodes[ni].u.child_first_i = uint(-1);
                 nodes[ni].sibling_i = uint(-1);
@@ -965,7 +970,7 @@ inline bool Layout::parse_id( uint& id_i, char *& xxx, char *& xxx_end )
         id += std::string( 1, ch );
         xxx++;
     }
-    rtn_assert( id != "", "no id found at " + surrounding_lines( xxx, xxx_end ) );
+    if ( id == "" ) return false;
     id_i = get_str_i( id );
     return true;
 }
