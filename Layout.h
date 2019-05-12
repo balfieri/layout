@@ -271,8 +271,11 @@ private:
     bool read_uncompressed( std::string file_path );
 };
 
-//#define dprint( msg )
+#ifdef LAYOUT_DEBUG
 #define dprint( msg ) std::cout << (msg) << "\n"
+#else
+#define dprint( msg )
+#endif
 
 // these are done as macros to avoid evaluating msg (it makes a big difference)
 #include <assert.h>
@@ -1088,6 +1091,11 @@ inline bool Layout::parse_int( _int& i, char *& xxx, char *& xxx_end )
     while( xxx != xxx_end )
     {
         char ch = *xxx;
+        if ( ch == '+' ) {
+            rtn_assert( !is_neg, "-+ not allowed for an int" );
+            xxx++;
+            continue;
+        }    
         if ( ch == '-' ) {
             rtn_assert( !is_neg, "too many minus signs" );
             is_neg = true;
