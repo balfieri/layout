@@ -71,6 +71,7 @@
 #include <algorithm>
 #include <map>
 #include <iostream>
+#include <fstream>
 
 #include <errno.h>
 #include <stdlib.h>
@@ -238,6 +239,7 @@ private:
     bool read_aedt( std::string file );                 // .aedt
     bool parse_aedt_expr( uint& node_i );
     bool write_aedt( std::string file );
+    void write_aedt_expr( std::ofstream& out, uint node_i, std::string indent_str );
 
     bool open_and_read( std::string file_name, char *& start, char *& end );
 
@@ -656,7 +658,106 @@ bool Layout::parse_aedt_expr( uint& ni )
 
 bool Layout::write_aedt( std::string file )
 {
+    std::ofstream out( file, std::ofstream::out );
+    write_aedt_expr( out, hdr->root_i, "\n" );
+    out.close();
     return false;
+}
+
+void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_str )
+{
+    assert( ni != uint(-1) );
+    const Node& node = nodes[ni];
+    out << indent_str;
+    switch( node.kind ) 
+    {
+        case NODE_KIND::STR:
+            out << "'" << std::string(&strings[node.u.s_i]) << "'";
+            break;
+
+        case NODE_KIND::BOOL:
+            out << (node.u.b ? "true" : "false");
+            break;
+
+        case NODE_KIND::INT:
+            out << node.u.i;
+            break;
+            
+        case NODE_KIND::UINT:
+            out << node.u.u;
+            break;
+            
+        case NODE_KIND::REAL:
+            out << node.u.r;
+            break;
+
+        case NODE_KIND::ID:
+            out << std::string(&strings[node.u.s_i]);
+            break;
+
+        case NODE_KIND::ASSIGN:
+        {
+            uint child_i = node.u.child_first_i;
+            write_aedt_expr( out, child_i, "" );
+            out << "=";
+            child_i = nodes[child_i].sibling_i;
+            write_aedt_expr( out, child_i, "" );
+            break;
+        }
+
+        case NODE_KIND::CALL:
+        {
+            uint child_i = node.u.child_first_i;
+            write_aedt_expr( out, child_i, "" );
+            out << "(";
+            bool have_one = false;
+            for( child_i = nodes[child_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+            {
+                if ( have_one ) out << ", ";
+                write_aedt_expr( out, child_i, "" );
+                have_one = true;
+            }
+            out << ")";
+            break;
+        }
+
+        case NODE_KIND::SLICE:
+        {
+            uint child_i = node.u.child_first_i;
+            write_aedt_expr( out, child_i, "" );
+            out << "[";
+            bool have_one = false;
+            for( child_i = nodes[child_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+            {
+                if ( have_one ) out << ", ";
+                write_aedt_expr( out, child_i, "" );
+                if ( !have_one ) out << ": ";
+                have_one = true;
+            }
+            out << "]";
+            break;
+        }
+
+        case NODE_KIND::HIER:
+        {
+            uint id_i = node.u.child_first_i;
+            out << "$begin '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
+            indent_str += "\t";
+            write_aedt_expr( out, id_i, indent_str );
+            for( uint child_i = nodes[id_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+            {
+                write_aedt_expr( out, child_i, indent_str );
+            }
+            out << "$end '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
+            break;
+        }
+
+        default:
+        {
+            std::cout << "ERROR: unknown NODE_KIND\n";
+            break;
+        }
+    }
 }
 
 void Layout::dissect_path( std::string path, std::string& dir_name, std::string& base_name, std::string& ext_name ) 
