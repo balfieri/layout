@@ -329,6 +329,7 @@ Layout::Layout( std::string top_file )
 
     hdr = aligned_alloc<Header>( 1 );
     memset( hdr, 0, sizeof( Header ) );
+    hdr->version = VERSION;
 
     //------------------------------------------------------------
     // Initial lengths of arrays are large in virtual memory
