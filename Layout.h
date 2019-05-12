@@ -256,7 +256,7 @@ private:
     bool parse_id( uint& id_i, char *& xxx, char *& xxx_end );
     bool peek_id( uint& id_i, char *& xxx, char *& xxx_end );
     bool parse_real3( real3& r3, char *& xxx, char *& xxx_end, bool has_brackets=false );
-    bool parse_real( real& r, char *& xxx, char *& xxx_end, bool skip_whitespace_first=true );
+    bool parse_real( real& r, char *& xxx, char *& xxx_end );
     bool parse_int( _int& i, char *& xxx, char *& xxx_end );
     bool parse_uint( uint& u, char *& xxx, char *& xxx_end );
     bool parse_bool( bool& b, char *& xxx, char *& xxx_end );
@@ -1040,28 +1040,20 @@ inline bool Layout::peek_id( uint& id_i, char *& xxx_orig, char *& xxx_end )
 inline bool Layout::parse_real3( Layout::real3& r3, char *& xxx, char *& xxx_end, bool has_brackets )
 {
     return (!has_brackets || expect_char( '[', xxx, xxx_end, true )) &&
-           parse_real( r3.c[0], xxx, xxx_end, has_brackets ) && 
+           parse_real( r3.c[0], xxx, xxx_end ) && 
            (!has_brackets || expect_char( ',', xxx, xxx_end, true )) &&
-           parse_real( r3.c[1], xxx, xxx_end, has_brackets ) && 
+           parse_real( r3.c[1], xxx, xxx_end ) && 
            (!has_brackets || expect_char( ',', xxx, xxx_end, true )) &&
-           parse_real( r3.c[2], xxx, xxx_end, has_brackets ) &&
+           parse_real( r3.c[2], xxx, xxx_end ) &&
            (!has_brackets || expect_char( ']', xxx, xxx_end, true ));
 }
 
-inline bool Layout::parse_real( Layout::real& r, char *& xxx, char *& xxx_end, bool skip_whitespace_first )
+inline bool Layout::parse_real( Layout::real& r, char *& xxx, char *& xxx_end )
 {
-    if ( skip_whitespace_first ) skip_whitespace( xxx, xxx_end );   // can span lines unlike below
-    bool vld = false;
-    bool is_neg = false;
+    skip_whitespace( xxx, xxx_end );   
+    std::string s = "";
     bool in_frac = false;
     bool has_exp = false;
-    uint u = 0;     // integer part
-    uint f = 0;     // frac part before divide
-    _int e10 = 0;
-    double f_factor = 1.0;
-    dprint( "parse_real *xxx=" + std::string( 1, *xxx ) );
-    while( xxx != xxx_end && (*xxx == ' ' || *xxx == '\t') ) xxx++;  // skip leading spaces
-
     while( xxx != xxx_end )
     {
         char ch = *xxx;
@@ -1079,12 +1071,13 @@ inline bool Layout::parse_real( Layout::real& r, char *& xxx, char *& xxx_end, b
         }
 
         if ( ch == '-' && !in_frac ) {
-            is_neg = true;
+            s += "-";
             xxx++;
             continue;
         }
 
         if ( ch == '.' && !in_frac ) {
+            s += ".";
             in_frac = true;
             xxx++;
             continue;
@@ -1093,31 +1086,25 @@ inline bool Layout::parse_real( Layout::real& r, char *& xxx, char *& xxx_end, b
         if ( ch == 'e' || ch == 'E' ) {
             rtn_assert( !has_exp, "real has more than one 'e' exponent" );
             has_exp = true;
+            s += std::string( 1, ch );
             xxx++;
+            _int e10;
             if ( !parse_int( e10, xxx, xxx_end ) ) return false;
+            s += std::to_string( e10 );
             continue;
         }
 
         if ( ch < '0' || ch > '9' ) break;
 
-        uint digit = ch - '0';
-        if ( in_frac ) {
-            f = 10*f + digit;
-            f_factor *= 10.0;
-        } else {
-            u = 10*u + digit;
-        }
-
-        vld = true;
+        s += std::string( 1, ch );
         xxx++;
     }
 
-    r = double(u) + f/f_factor;
-    if ( is_neg ) r = -r;
-    if ( e10 != 0 ) r *= pow( 10.0, e10 );
+    rtn_assert( s.length() != 0, "unable to parse real in " + ext_name + " file " + surrounding_lines( xxx, xxx_end ) );
+
+    r = std::atof( s.c_str() );
     dprint( "real=" + std::to_string( r ) );
-    rtn_assert( vld, "unable to parse real in " + ext_name + " file " + surrounding_lines( xxx, xxx_end ) );
-    return vld;
+    return true;
 }
 
 inline bool Layout::parse_int( _int& i, char *& xxx, char *& xxx_end )
