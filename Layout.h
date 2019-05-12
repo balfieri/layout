@@ -613,31 +613,14 @@ bool Layout::parse_aedt_expr( uint& ni )
         dprint( "STR" );
         nodes[ni].kind = NODE_KIND::STR;
         if ( !parse_string_i( nodes[ni].u.s_i, nnn, nnn_end ) ) return false;
-
-        skip_whitespace( nnn, nnn_end );
-        ch = *nnn;
-        if ( ch == '=' ) {
-            dprint( "ASSIGN" );
-            expect_char( ch, nnn, nnn_end );
-
-            uint rhs_i;
-            if ( !parse_aedt_expr( rhs_i ) ) return false;
-
-            perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-            uint ai = hdr->node_cnt++;
-            nodes[ai].kind = NODE_KIND::ASSIGN;
-            nodes[ai].u.child_first_i = ni;
-            nodes[ni].sibling_i = rhs_i;
-            nodes[ai].sibling_i = uint(-1);
-            ni = ai;
-        }
     } else if ( ch == '-' || (ch >= '0' && ch <= '9') ) {
         dprint( "NUMBER" );
         return parse_number( ni, nnn, nnn_end );
     } else {
         uint id_i;
+        char * nnn_save = nnn;
         if ( !parse_id( id_i, nnn, nnn_end ) ) {
-            rtn_assert( 0, "unable to parse an expression: string, number, or id " + surrounding_lines( nnn, nnn_end ) );
+            rtn_assert( 0, "unable to parse an expression: string, number, or id " + surrounding_lines( nnn_save, nnn_end ) );
         }
         dprint( "ID START " + std::string(&strings[id_i]) );
         if ( id_i == aedt_begin_str_i ) {
@@ -677,63 +660,64 @@ bool Layout::parse_aedt_expr( uint& ni )
             dprint( "USER ID" );
             nodes[ni].kind = NODE_KIND::ID;
             nodes[ni].u.s_i = id_i;
-
-            skip_whitespace( nnn, nnn_end );
-            ch = *nnn;
-            if ( ch == '=' ) {
-                dprint( "ASSIGN" );
-                expect_char( ch, nnn, nnn_end );
-
-                uint rhs_i;
-                if ( !parse_aedt_expr( rhs_i ) ) return false;
-
-                perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-                uint ai = hdr->node_cnt++;
-                nodes[ai].kind = NODE_KIND::ASSIGN;
-                nodes[ai].u.child_first_i = ni;
-                nodes[ni].sibling_i = rhs_i;
-                nodes[ai].sibling_i = uint(-1);
-                ni = ai;
-
-            } else if ( ch == '(' || ch == '[' ) {
-                dprint( (ch == '(') ? "CALL" : "SLICE" );
-                nodes[ni].kind = (ch == '(') ? NODE_KIND::CALL : NODE_KIND::SLICE;
-                nodes[ni].u.child_first_i = uint(-1);
-                nodes[ni].sibling_i = uint(-1);
-                uint prev_i = uint(-1);
-                expect_char( ch, nnn, nnn_end );
-                for( bool have_one=false; ; have_one=true )
-                {
-                    skip_whitespace( nnn, nnn_end );
-                    ch = *nnn;
-                    if ( (ch == ')' && nodes[ni].kind == NODE_KIND::CALL) || (ch == ']' && nodes[ni].kind == NODE_KIND::SLICE) ) {
-                        expect_char( ch, nnn, nnn_end );
-                        break;
-                    }
-                    if ( have_one ) {
-                        skip_whitespace( nnn, nnn_end );
-                        if ( ch == ':' && nodes[ni].kind == NODE_KIND::SLICE ) {
-                            // skip this, it's implied
-                            //
-                            expect_char( ch, nnn, nnn_end );
-                            continue;
-                        } else if ( ch == ',' ) {
-                            expect_char( ',', nnn, nnn_end );
-                        }
-                    }
-
-                    uint arg_i;
-                    if ( !parse_aedt_expr( arg_i ) ) return false;
-                    if ( prev_i == uint(-1) ) {
-                        nodes[ni].u.child_first_i = arg_i;
-                    } else {
-                        nodes[prev_i].sibling_i = arg_i;
-                    }
-                    prev_i = arg_i;
-                }
-            }
         }
     }
+
+    skip_whitespace( nnn, nnn_end );
+    ch = *nnn;
+    if ( ch == '=' ) {
+        dprint( "ASSIGN" );
+        expect_char( ch, nnn, nnn_end );
+
+        uint rhs_i;
+        if ( !parse_aedt_expr( rhs_i ) ) return false;
+
+        perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+        uint ai = hdr->node_cnt++;
+        nodes[ai].kind = NODE_KIND::ASSIGN;
+        nodes[ai].u.child_first_i = ni;
+        nodes[ni].sibling_i = rhs_i;
+        nodes[ai].sibling_i = uint(-1);
+        ni = ai;
+
+    } else if ( ch == '(' || ch == '[' ) {
+        dprint( (ch == '(') ? "CALL" : "SLICE" );
+        nodes[ni].kind = (ch == '(') ? NODE_KIND::CALL : NODE_KIND::SLICE;
+        nodes[ni].u.child_first_i = uint(-1);
+        nodes[ni].sibling_i = uint(-1);
+        uint prev_i = uint(-1);
+        expect_char( ch, nnn, nnn_end );
+        for( bool have_one=false; ; have_one=true )
+        {
+            skip_whitespace( nnn, nnn_end );
+            ch = *nnn;
+            if ( (ch == ')' && nodes[ni].kind == NODE_KIND::CALL) || (ch == ']' && nodes[ni].kind == NODE_KIND::SLICE) ) {
+                expect_char( ch, nnn, nnn_end );
+                break;
+            }
+            if ( have_one ) {
+                skip_whitespace( nnn, nnn_end );
+                if ( ch == ':' && nodes[ni].kind == NODE_KIND::SLICE ) {
+                    // skip this, it's implied
+                    //
+                    expect_char( ch, nnn, nnn_end );
+                    continue;
+                } else if ( ch == ',' ) {
+                    expect_char( ',', nnn, nnn_end );
+                }
+            }
+
+            uint arg_i;
+            if ( !parse_aedt_expr( arg_i ) ) return false;
+            if ( prev_i == uint(-1) ) {
+                nodes[ni].u.child_first_i = arg_i;
+            } else {
+                nodes[prev_i].sibling_i = arg_i;
+            }
+            prev_i = arg_i;
+        }
+    }
+
     return true;
 }
 
@@ -900,7 +884,7 @@ inline uint Layout::get_str_i( std::string s )
     char * to_s = &strings[s_i];
     hdr->char_cnt += s_len + 1;
     memcpy( to_s, s.c_str(), s_len+1 );
-    std::cout << "str_i[" << s << "]=" << s_i << " strings[]=" << std::string(&strings[s_i]) << "\n";
+    dprint( "str_i[" + s + "]=" + std::to_string(s_i) + " strings[]=" + std::string(&strings[s_i]) );
     return s_i;
 }
 
