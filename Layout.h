@@ -96,7 +96,8 @@ public:
 
     bool write( std::string file_path );
 
-    static void dissect_path( std::string path, std::string& dir_name, std::string& base_name, std::string& ext_name ); // utility
+    static void        dissect_path( std::string path, std::string& dir_name, std::string& base_name, std::string& ext_name ); // utility
+    static std::string path_without_ext( std::string path );  // returns path without file extension part
 
     static const uint VERSION = 0xB0BA1f01; // current version 
 
@@ -798,6 +799,19 @@ void Layout::dissect_path( std::string path, std::string& dir_name, std::string&
 
     // dir_name is whatever's left
     if ( pos >= 0 ) dir_name = path.substr( 0, pos+1 );
+}
+
+std::string Layout::path_without_ext( std::string path )
+{
+    char * path_c = strdup( path.c_str() );
+    for( uint i = path.length() - 1; i != 0; i-- )
+    {
+        if ( path_c[i] == '.' ) {
+            path_c[i] = '\0';
+            break;
+        }
+    }
+    return std::string( path_c );
 }
 
 bool Layout::open_and_read( std::string file_path, char *& start, char *& end )
