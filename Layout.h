@@ -32,8 +32,6 @@
 //            exit( 1 );
 //        }
 //        layout->write( "my_chip.layout" );    // will write out the self-contained binary layout layout
-//                                              // default is uncompressed, which is larger but faster; 
-//                                              // pass true as second argument to get compressed output
 //
 //     2) After that, you can quickly read in the single binary layout file using:
 //
@@ -93,10 +91,9 @@ public:
     typedef double   real;
 
     Layout( std::string top_file );
-    Layout( std::string layout_file, bool is_compressed );
     ~Layout(); 
 
-    bool write( std::string file_path, bool is_compressed=false ); 
+    bool write( std::string file_path );
 
     static void dissect_path( std::string path, std::string& dir_name, std::string& base_name, std::string& ext_name ); // utility
 
@@ -235,8 +232,12 @@ private:
     uint true_str_i;
     uint false_str_i;
 
-    bool load_aedt( std::string node_file, std::string dir_name );        // parse .aedt
+    bool read_layout( std::string file_path );
+    bool write_layout( std::string file_path );         // .layout
+
+    bool read_aedt( std::string file );                 // .aedt
     bool parse_aedt_expr( uint& node_i );
+    bool write_aedt( std::string file );
 
     bool open_and_read( std::string file_name, char *& start, char *& end );
 
@@ -266,9 +267,6 @@ private:
     // reallocate array if we are about to exceed its current size
     template<typename T>
     inline void perhaps_realloc( T *& array, const uint  & hdr_cnt, uint  & max_cnt, uint   add_cnt );
-
-    bool write_uncompressed( std::string file_path );
-    bool read_uncompressed( std::string file_path );
 };
 
 #ifdef LAYOUT_DEBUG
@@ -338,94 +336,39 @@ Layout::Layout( std::string top_file )
     max->char_cnt = max->node_cnt * 128;
 
     //------------------------------------------------------------
-    // Allocate arrays
-    //------------------------------------------------------------
-    strings = aligned_alloc<char>( max->char_cnt );
-    nodes   = aligned_alloc<Node>( max->node_cnt );
-
-    //------------------------------------------------------------
-    // Load node depending on file ext_name
+    // Read depends on file ext_name
     //------------------------------------------------------------
     std::string dir_name;
     std::string base_name;
     dissect_path( top_file, dir_name, base_name, ext_name );
-    if ( ext_name == std::string( ".aedt" ) ) {
-        if ( !load_aedt( top_file, dir_name ) ) return;
+    if ( ext_name == std::string( ".layout" ) ) {
+        //------------------------------------------------------------
+        // Read uncompressed .layout
+        //------------------------------------------------------------
+        if ( !read_layout( top_file ) ) return;
     } else {
-        error_msg = "unknown top file ext_name: " + ext_name;
-        return;
+        //------------------------------------------------------------
+        // Allocate initial arrays
+        //------------------------------------------------------------
+        strings = aligned_alloc<char>( max->char_cnt );
+        nodes   = aligned_alloc<Node>( max->node_cnt );
+
+        if ( ext_name == std::string( ".aedt" ) ) {
+            if ( !read_aedt( top_file ) ) return;
+        } else {
+            error_msg = "unknown top file ext_name: " + ext_name;
+            return;
+        }
+
+        //------------------------------------------------------------
+        // Add up byte count.
+        //------------------------------------------------------------
+        hdr->byte_cnt = uint  ( 1                 ) * sizeof( hdr ) +
+                        uint  ( hdr->node_cnt     ) * sizeof( nodes[0] ) +
+                        uint  ( hdr->char_cnt     ) * sizeof( strings[0] );
+
+        is_good = true;
     }
-
-    //------------------------------------------------------------
-    // Add up byte count.
-    //------------------------------------------------------------
-    hdr->byte_cnt = uint  ( 1                 ) * sizeof( hdr ) +
-                    uint  ( hdr->node_cnt     ) * sizeof( nodes[0] ) +
-                    uint  ( hdr->char_cnt     ) * sizeof( strings[0] );
-
-    is_good = true;
-}
-
-Layout::Layout( std::string layout_path, bool is_compressed )
-{
-    is_good = false;
-    mapped_region = nullptr;
-    if ( !is_compressed ) {
-        read_uncompressed( layout_path );
-        return;
-    }
-
-    gzFile fd = gzopen( layout_path.c_str(), "r" );
-    if ( fd == Z_NULL ) {
-        "Could not gzopen() file " + layout_path + " for reading - gzopen() error: " + strerror( errno );
-        return;
-    }
-
-    //------------------------------------------------------------
-    // Reader in header then individual arrays.
-    //------------------------------------------------------------
-    #define _read( array, type, cnt ) \
-        if ( cnt == 0 ) { \
-            array = nullptr; \
-        } else { \
-            array = aligned_alloc<type>( cnt ); \
-            if ( array == nullptr ) { \
-                gzclose( fd ); \
-                error_msg = "could not allocate " #array " array"; \
-                assert( 0 ); \
-                return; \
-            } \
-            char * _addr = reinterpret_cast<char *>( array ); \
-            for( uint   _byte_cnt = (cnt)*sizeof(type); _byte_cnt != 0;  ) \
-            { \
-                uint   _this_byte_cnt = 1024*1024*1024; \
-                if ( _byte_cnt < _this_byte_cnt ) _this_byte_cnt = _byte_cnt; \
-                if ( gzread( fd, _addr, _this_byte_cnt ) <= 0 ) { \
-                    gzclose( fd ); \
-                    error_msg = "could not gzread() file " + layout_path + " - gzread() error: " + strerror( errno ); \
-                    assert( 0 ); \
-                    return; \
-                } \
-                _byte_cnt -= _this_byte_cnt; \
-                _addr     += _this_byte_cnt; \
-            } \
-        } \
-
-    _read( hdr,         Header,   1 );
-    if ( hdr->version != VERSION ) {
-        gzclose( fd );
-        error_msg = "hdr->version does not match VERSION=" + std::to_string(VERSION) + ", got " + std::to_string(hdr->version);
-        assert( 0 ); \
-        return;
-    }
-    max = aligned_alloc<Header>( 1 );
-    memcpy( max, hdr, sizeof( Header ) );
-    _read( strings,   char,        hdr->char_cnt );
-    _read( nodes,     Node,        hdr->node_cnt );
-
-    gzclose( fd );
-
-    is_good = true;
 }
 
 Layout::~Layout()
@@ -439,38 +382,27 @@ Layout::~Layout()
     }
 }
 
-bool Layout::write( std::string layout_path, bool is_compressed ) 
+bool Layout::write( std::string top_file )
 {
-    if ( !is_compressed ) return write_uncompressed( layout_path );
-
-    gzFile fd = gzopen( layout_path.c_str(), "w" );
-    rtn_assert( fd != Z_NULL, "could not gzopen() file " + layout_path + " for writing - gzopen() error: " + strerror( errno ) );
-
     //------------------------------------------------------------
-    // Write out header than individual arrays.
+    // Write depends on file ext_name
     //------------------------------------------------------------
-    #define _write( addr, byte_cnt ) \
-    { \
-        char * _addr = reinterpret_cast<char *>( addr ); \
-        for( uint   _byte_cnt = byte_cnt; _byte_cnt != 0;  ) \
-        { \
-            uint   _this_byte_cnt = 1024*1024*1024; \
-            if ( _byte_cnt < _this_byte_cnt ) _this_byte_cnt = _byte_cnt; \
-            if ( gzwrite( fd, _addr, _this_byte_cnt ) <= 0 ) { \
-                gzclose( fd ); \
-                rtn_assert( 0, "could not gzwrite() file " + layout_path + " - gzwrite() error: " + strerror( errno ) ); \
-            } \
-            _byte_cnt -= _this_byte_cnt; \
-            _addr     += _this_byte_cnt; \
-        } \
-    } \
-
-    _write( hdr,         1                  * sizeof(hdr[0]) );
-    _write( strings,     hdr->char_cnt      * sizeof(strings[0]) );
-    _write( nodes,       hdr->node_cnt      * sizeof(nodes[0]) );
-
-    gzclose( fd );
-    return true;
+    std::string dir_name;
+    std::string base_name;
+    dissect_path( top_file, dir_name, base_name, ext_name );
+    if ( ext_name == std::string( ".layout" ) ) {
+        //------------------------------------------------------------
+        // Write uncompressed .layout
+        //------------------------------------------------------------
+        return write_layout( top_file );
+    } else {
+        if ( ext_name == std::string( ".aedt" ) ) {
+            return write_aedt( top_file );
+        } else {
+            error_msg = "unknown file ext_name: " + ext_name;
+            return false;
+        }
+    }
 }
 
 // returns array of T on a page boundary
@@ -501,7 +433,45 @@ inline void Layout::perhaps_realloc( T *& array, const Layout::uint  & hdr_cnt, 
     }
 }
 
-bool Layout::write_uncompressed( std::string layout_path ) 
+bool Layout::read_layout( std::string layout_path )
+{
+    char * start;
+    char * end;
+    if ( !open_and_read( layout_path, start, end ) ) return false;
+    mapped_region = start;
+
+    //------------------------------------------------------------
+    // Write out header than individual arrays.
+    // Each is padded out to a page boundary in the file.
+    //------------------------------------------------------------
+    char * _addr = start;
+    size_t page_size = getpagesize();
+
+    #define _uread( array, type, cnt ) \
+        if ( (cnt) == 0 ) { \
+            array = nullptr; \
+        } else { \
+            array = reinterpret_cast<type *>( _addr ); \
+            size_t _byte_cnt = (cnt)*sizeof(type); \
+            _byte_cnt += _byte_cnt % page_size; \
+            _addr += _byte_cnt; \
+        } \
+
+    _uread( hdr,         Header,   1 );
+    if ( hdr->version != VERSION ) {
+        rtn_assert( 0, "hdr->version does not match VERSION=" + std::to_string(VERSION) + ", got " + std::to_string(hdr->version) );
+    }
+    max = aligned_alloc<Header>( 1 );
+    memcpy( max, hdr, sizeof( Header ) );
+    _uread( strings,     char,        hdr->char_cnt );
+    _uread( nodes,       Node,        hdr->node_cnt );
+
+    is_good = true;
+
+    return true;
+}
+
+bool Layout::write_layout( std::string layout_path ) 
 {
     int fd = open( layout_path.c_str(), O_CREAT|O_WRONLY|O_TRUNC|O_SYNC|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP );
     if ( fd < 0 ) std::cout << "open() for write error: " << strerror( errno ) << "\n";
@@ -541,53 +511,13 @@ bool Layout::write_uncompressed( std::string layout_path )
     return true;
 }
 
-bool Layout::read_uncompressed( std::string layout_path )
+bool Layout::read_aedt( std::string file )
 {
-    char * start;
-    char * end;
-    if ( !open_and_read( layout_path, start, end ) ) return false;
-    mapped_region = start;
-
-    //------------------------------------------------------------
-    // Write out header than individual arrays.
-    // Each is padded out to a page boundary in the file.
-    //------------------------------------------------------------
-    char * _addr = start;
-    size_t page_size = getpagesize();
-
-    #define _uread( array, type, cnt ) \
-        if ( (cnt) == 0 ) { \
-            array = nullptr; \
-        } else { \
-            array = reinterpret_cast<type *>( _addr ); \
-            size_t _byte_cnt = (cnt)*sizeof(type); \
-            _byte_cnt += _byte_cnt % page_size; \
-            _addr += _byte_cnt; \
-        } \
-
-    _uread( hdr,         Header,   1 );
-    if ( hdr->version != VERSION ) {
-        rtn_assert( 0, "hdr->version does not match VERSION=" + std::to_string(VERSION) + ", got " + std::to_string(hdr->version) );
-    }
-    max = aligned_alloc<Header>( 1 );
-    memcpy( max, hdr, sizeof( Header ) );
-    _uread( strings,     char,        hdr->char_cnt );
-    _uread( nodes,       Node,        hdr->node_cnt );
-
-    is_good = true;
-
-    return true;
-}
-
-bool Layout::load_aedt( std::string node_file, std::string dir_name )
-{
-    (void)dir_name;
-
     //------------------------------------------------------------
     // Map in file
     //------------------------------------------------------------
     line_num = 1;
-    if ( !open_and_read( node_file, nnn_start, nnn_end ) ) return false;
+    if ( !open_and_read( file, nnn_start, nnn_end ) ) return false;
     nnn = nnn_start;
 
     //------------------------------------------------------------
@@ -722,6 +652,11 @@ bool Layout::parse_aedt_expr( uint& ni )
     }
 
     return true;
+}
+
+bool Layout::write_aedt( std::string file )
+{
+    return false;
 }
 
 void Layout::dissect_path( std::string path, std::string& dir_name, std::string& base_name, std::string& ext_name ) 
