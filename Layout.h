@@ -617,10 +617,13 @@ bool Layout::parse_aedt_expr( uint& ni )
 
     } else if ( ch == '(' || ch == '[' ) {
         dprint( (ch == '(') ? "CALL" : "SLICE" );
+        uint id_i = ni;
+        perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+        ni = hdr->node_cnt++;
         nodes[ni].kind = (ch == '(') ? NODE_KIND::CALL : NODE_KIND::SLICE;
-        nodes[ni].u.child_first_i = uint(-1);
+        nodes[ni].u.child_first_i = id_i;
         nodes[ni].sibling_i = uint(-1);
-        uint prev_i = uint(-1);
+        uint prev_i = id_i;
         expect_char( ch, nnn, nnn_end );
         for( bool have_one=false; ; have_one=true )
         {
@@ -644,11 +647,7 @@ bool Layout::parse_aedt_expr( uint& ni )
 
             uint arg_i;
             if ( !parse_aedt_expr( arg_i ) ) return false;
-            if ( prev_i == uint(-1) ) {
-                nodes[ni].u.child_first_i = arg_i;
-            } else {
-                nodes[prev_i].sibling_i = arg_i;
-            }
+            nodes[prev_i].sibling_i = arg_i;
             prev_i = arg_i;
         }
     }
@@ -726,13 +725,17 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
             uint child_i = node.u.child_first_i;
             write_aedt_expr( out, child_i, "" );
             out << "[";
-            bool have_one = false;
-            for( child_i = nodes[child_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
-            {
-                if ( have_one ) out << ", ";
+            child_i = nodes[child_i].sibling_i;
+            if ( child_i != uint(-1) ) {
                 write_aedt_expr( out, child_i, "" );
-                if ( !have_one ) out << ": ";
-                have_one = true;
+                out << ":";
+                bool have_one = false;
+                for( child_i = nodes[child_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                {
+                    out << (have_one ? ", " : " ");
+                    write_aedt_expr( out, child_i, "" );
+                    have_one = true;
+                }
             }
             out << "]";
             break;
@@ -742,12 +745,11 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
         {
             uint id_i = node.u.child_first_i;
             out << "$begin '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
-            indent_str += "\t";
-            write_aedt_expr( out, id_i, indent_str );
             for( uint child_i = nodes[id_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
             {
-                write_aedt_expr( out, child_i, indent_str );
+                write_aedt_expr( out, child_i, indent_str + "\t" );
             }
+            out << indent_str;
             out << "$end '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
             break;
         }
@@ -755,6 +757,7 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
         default:
         {
             std::cout << "ERROR: unknown NODE_KIND\n";
+            exit( 1 );
             break;
         }
     }
