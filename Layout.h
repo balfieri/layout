@@ -936,7 +936,8 @@ inline bool Layout::parse_number( uint node_i, char *& xxx, char *& xxx_end )
 
     _int i;
     if ( !parse_int( i, xxx, xxx_end ) ) return false;
-    if ( *xxx != '.' ) {
+    char ch = *xxx;
+    if ( ch != '.' && ch != 'e' && ch != 'E' ) {
         if ( i < 0 ) {
             nodes[node_i].kind = NODE_KIND::INT;
             nodes[node_i].u.i  = i;
