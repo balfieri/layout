@@ -1,8 +1,8 @@
-Single Layout.h file for chip layout tools that support:
+Single Layout.h file for chip layout.  Layout.h provides:
 
 <ul>
 <li>efficient .layout binary format</li>
-<li>reading/writing .gds</li>
+<li>reading/writing .gds (GDSII industry standard chip layout format)</li>
 <li>reading/writing .aedt files for Ansysi HFSS 3D field solver</li> 
 <li>writing fastcap2 input files for capacitance 3D field solver</li>
 <li>writing fasthenry2 input files for resistance+inductance 3D field solver</li>
