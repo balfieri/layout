@@ -1,7 +1,11 @@
-Bob's tools for chip layout using single .h file:
+Single Layout.h file for chip layout tools that support:
 
 <ul>
-<li>Layout.h - Bob's layout format, plus reader/writer for .gdsii (chip layout), .aedt (for HFSS), fastcap2 (C extraction), and fasthenry2 (RL extraction)
+<li>efficient .layout binary format</li>
+<li>reading/writing .gds</li>
+<li>reading/writing .aedt files for Ansysi HFSS 3D field solver</li> 
+<li>writing fastcap2 input files for capacitance 3D field solver</li>
+<li>writing fasthenry2 input files for resistance+inductance 3D field solver</li>
 </ul>
 
 <p>
