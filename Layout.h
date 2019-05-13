@@ -235,9 +235,14 @@ private:
     uint true_str_i;
     uint false_str_i;
 
-    bool read_layout( std::string file_path );
-    bool write_layout( std::string file_path );         // .layout
+    bool read_layout( std::string file_path );          // .layout
+    bool write_layout( std::string file_path );         
 
+    bool read_gdsii( std::string file_path );           // .gds
+    bool parse_gdsii_record( uint& node_i );
+    bool write_gdsii( std::string file );
+    void write_gdsii_record( std::ofstream& out, uint node_i );
+    
     bool read_aedt( std::string file );                 // .aedt
     bool parse_aedt_expr( uint& node_i );
     bool write_aedt( std::string file );
@@ -358,7 +363,9 @@ Layout::Layout( std::string top_file )
         strings = aligned_alloc<char>( max->char_cnt );
         nodes   = aligned_alloc<Node>( max->node_cnt );
 
-        if ( ext_name == std::string( ".aedt" ) ) {
+        if ( ext_name == std::string( ".gds" ) ) {
+            if ( !read_gdsii( top_file ) ) return;
+        } else if ( ext_name == std::string( ".aedt" ) ) {
             if ( !read_aedt( top_file ) ) return;
         } else {
             error_msg = "unknown top file ext_name: " + ext_name;
@@ -753,6 +760,245 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
                 write_aedt_expr( out, child_i, indent_str + "\t" );
             }
             out << indent_str;
+            out << "$end '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
+            break;
+        }
+
+        default:
+        {
+            std::cout << "ERROR: unknown NODE_KIND\n";
+            exit( 1 );
+            break;
+        }
+    }
+}
+
+bool Layout::read_gdsii( std::string file )
+{
+    //------------------------------------------------------------
+    // Map in file
+    //------------------------------------------------------------
+    line_num = 1;
+    if ( !open_and_read( file, nnn_start, nnn_end ) ) return false;
+    nnn = nnn_start;
+
+    if ( !parse_gdsii_record( hdr->root_i ) ) return false;
+    assert( nodes[hdr->root_i].kind == NODE_KIND::HIER );
+    return true;
+}
+
+bool Layout::parse_gdsii_record( uint& ni )
+{
+    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+    ni = hdr->node_cnt++;
+    nodes[ni].sibling_i = uint(-1);
+
+    skip_whitespace( nnn, nnn_end );
+    char ch = *nnn;
+    if ( ch == '\'' ) {
+        dprint( "STR" );
+        nodes[ni].kind = NODE_KIND::STR;
+        if ( !parse_string_i( nodes[ni].u.s_i, nnn, nnn_end ) ) return false;
+    } else if ( ch == '-' || (ch >= '0' && ch <= '9') ) {
+        dprint( "NUMBER" );
+        return parse_number( ni, nnn, nnn_end );
+    } else {
+        uint id_i;
+        char * nnn_save = nnn;
+        if ( !parse_id( id_i, nnn, nnn_end ) ) {
+            rtn_assert( 0, "unable to parse an expression: std::string, number, or id " + surrounding_lines( nnn_save, nnn_end ) );
+        }
+        dprint( "ID START " + std::string(&strings[id_i]) );
+        if ( id_i == 0 ) {
+            uint name_i;
+            if ( !parse_gdsii_record( name_i ) ) return false;             // STR node
+            rtn_assert( nodes[name_i].kind == NODE_KIND::STR, "$begin not followed by std::string" );
+            dprint( "BEGIN " + std::string(&strings[nodes[name_i].u.s_i]) );
+
+            nodes[ni].kind = NODE_KIND::HIER;
+            nodes[ni].u.child_first_i = name_i;
+            uint prev_i = name_i;
+            for( ;; )
+            {
+                skip_whitespace( nnn, nnn_end );
+                uint id_i;
+                if ( peek_id( id_i, nnn, nnn_end ) ) {
+                    if ( id_i == 0 ) {
+                        parse_id( id_i, nnn, nnn_end );
+                        uint end_str_i;
+                        if ( !parse_string_i( end_str_i, nnn, nnn_end ) ) return false;
+                        dprint( "END " + std::string(&strings[end_str_i]) );
+                        rtn_assert( end_str_i == nodes[name_i].u.s_i, "$end id does not match $begin id " + surrounding_lines( nnn, nnn_end ) );
+                        break;
+                    }
+                }
+
+                uint child_i;
+                if ( !parse_gdsii_record( child_i ) ) return false;
+                nodes[prev_i].sibling_i = child_i;
+                prev_i = child_i;
+            }
+        } else if ( id_i == true_str_i || id_i == false_str_i ) {
+            dprint( "BOOL" );
+            nodes[ni].kind = NODE_KIND::BOOL;
+            nodes[ni].u.b = id_i == true_str_i;
+        } else {
+            dprint( "USER ID" );
+            nodes[ni].kind = NODE_KIND::ID;
+            nodes[ni].u.s_i = id_i;
+        }
+    }
+
+    skip_whitespace( nnn, nnn_end );
+    ch = *nnn;
+    if ( ch == '=' ) {
+        dprint( "ASSIGN" );
+        expect_char( ch, nnn, nnn_end );
+
+        uint rhs_i;
+        if ( !parse_gdsii_record( rhs_i ) ) return false;
+
+        perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+        uint ai = hdr->node_cnt++;
+        nodes[ai].kind = NODE_KIND::ASSIGN;
+        nodes[ai].u.child_first_i = ni;
+        nodes[ni].sibling_i = rhs_i;
+        nodes[ai].sibling_i = uint(-1);
+        ni = ai;
+
+    } else if ( ch == '(' || ch == '[' ) {
+        dprint( (ch == '(') ? "CALL" : "SLICE" );
+        uint id_i = ni;
+        perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+        ni = hdr->node_cnt++;
+        nodes[ni].kind = (ch == '(') ? NODE_KIND::CALL : NODE_KIND::SLICE;
+        nodes[ni].u.child_first_i = id_i;
+        nodes[ni].sibling_i = uint(-1);
+        uint prev_i = id_i;
+        expect_char( ch, nnn, nnn_end );
+        for( bool have_one=false; ; have_one=true )
+        {
+            skip_whitespace( nnn, nnn_end );
+            ch = *nnn;
+            if ( (ch == ')' && nodes[ni].kind == NODE_KIND::CALL) || (ch == ']' && nodes[ni].kind == NODE_KIND::SLICE) ) {
+                expect_char( ch, nnn, nnn_end );
+                break;
+            }
+            if ( have_one ) {
+                skip_whitespace( nnn, nnn_end );
+                if ( ch == ':' && nodes[ni].kind == NODE_KIND::SLICE ) {
+                    // skip this, it's implied
+                    //
+                    expect_char( ch, nnn, nnn_end );
+                    continue;
+                } else if ( ch == ',' ) {
+                    expect_char( ',', nnn, nnn_end );
+                }
+            }
+
+            uint arg_i;
+            if ( !parse_gdsii_record( arg_i ) ) return false;
+            nodes[prev_i].sibling_i = arg_i;
+            prev_i = arg_i;
+        }
+    }
+
+    return true;
+}
+
+bool Layout::write_gdsii( std::string file )
+{
+    std::ofstream out( file, std::ofstream::out );
+    write_gdsii_record( out, hdr->root_i );
+    out.close();
+    return false;
+}
+
+void Layout::write_gdsii_record( std::ofstream& out, uint ni )
+{
+    assert( ni != uint(-1) );
+    const Node& node = nodes[ni];
+    switch( node.kind ) 
+    {
+        case NODE_KIND::STR:
+            out << "'" << std::string(&strings[node.u.s_i]) << "'";
+            break;
+
+        case NODE_KIND::BOOL:
+            out << (node.u.b ? "true" : "false");
+            break;
+
+        case NODE_KIND::INT:
+            out << node.u.i;
+            break;
+            
+        case NODE_KIND::UINT:
+            out << node.u.u;
+            break;
+            
+        case NODE_KIND::REAL:
+            out << node.u.r;
+            break;
+
+        case NODE_KIND::ID:
+            out << std::string(&strings[node.u.s_i]);
+            break;
+
+        case NODE_KIND::ASSIGN:
+        {
+            uint child_i = node.u.child_first_i;
+            write_gdsii_record( out, child_i );
+            out << "=";
+            child_i = nodes[child_i].sibling_i;
+            write_gdsii_record( out, child_i );
+            break;
+        }
+
+        case NODE_KIND::CALL:
+        {
+            uint child_i = node.u.child_first_i;
+            write_gdsii_record( out, child_i );
+            out << "(";
+            bool have_one = false;
+            for( child_i = nodes[child_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+            {
+                if ( have_one ) out << ", ";
+                write_gdsii_record( out, child_i );
+                have_one = true;
+            }
+            out << ")";
+            break;
+        }
+
+        case NODE_KIND::SLICE:
+        {
+            uint child_i = node.u.child_first_i;
+            write_gdsii_record( out, child_i );
+            out << "[";
+            child_i = nodes[child_i].sibling_i;
+            if ( child_i != uint(-1) ) {
+                write_gdsii_record( out, child_i );
+                out << ":";
+                bool have_one = false;
+                for( child_i = nodes[child_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                {
+                    out << (have_one ? ", " : " ");
+                    write_gdsii_record( out, child_i );
+                    have_one = true;
+                }
+            }
+            out << "]";
+            break;
+        }
+
+        case NODE_KIND::HIER:
+        {
+            uint id_i = node.u.child_first_i;
+            out << "$begin '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
+            for( uint child_i = nodes[id_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+            {
+                write_gdsii_record( out, child_i );
+            }
             out << "$end '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
             break;
         }
