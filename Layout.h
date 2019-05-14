@@ -1024,6 +1024,8 @@ bool Layout::read_gdsii( std::string file )
     return true;
 }
 
+static bool is_gdsii_allowed_char( char c ) { return isprint( c ) && c != '"' && c != ','; }
+
 bool Layout::parse_gdsii_record( uint& ni )
 {
     //------------------------------------------------------------
@@ -1033,9 +1035,84 @@ bool Layout::parse_gdsii_record( uint& ni )
     uint32_t       byte_cnt = uint32_t( nnn[0] ) + uint32_t( nnn[1] ); 
     GDSII_KIND     kind     = GDSII_KIND( nnn[2] );
     GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
+    rtn_assert( byte_cnt >= 4, "gdsii record byte_cnt must be at least 4" );
+    byte_cnt -= 4;
+    nnn += 4;
     rtn_assert( uint32_t(kind) < GDSII_KIND_CNT, "bad gdsii record kind " + std::to_string(uint32_t(kind)) );
     rtn_assert( kind_to_datatype( kind ) == datatype, "datatype does not match expected for record kind " + str(kind) );
+    rtn_assert( (nnn + byte_cnt) <= nnn_end, "unexpected end of gdsii file" );
   
+    //------------------------------------------------------------
+    // Parse payload.
+    //------------------------------------------------------------
+    uint bits = 0;
+    uint s_i = uint(-1);
+    switch( datatype )
+    {
+        case GDSII_DATATYPE::NO_DATA:
+        {
+            rtn_assert( byte_cnt == 0, "NO_DATA gdsii datatype should have no payload" );
+            break;
+        }
+
+        case GDSII_DATATYPE::BITARRAY:
+        {
+            rtn_assert( byte_cnt == 2, "BITARRAY gdsii datatype should have 2-byte payload" );
+            bits = (nnn[1] << 8) | nnn[0];
+            break;
+        }
+
+        case GDSII_DATATYPE::STRING:
+        {
+            char c[33];
+            if ( byte_cnt > 32 ) byte_cnt = 32;
+            if ( byte_cnt > 0 ) strncpy( c, nnn, byte_cnt );
+            c[byte_cnt] = '\0';
+            for( int i = byte_cnt-1; i >= 0; i-- ) 
+            {
+                if ( is_gdsii_allowed_char( c[i] ) ) break;
+                c[i] = '\0';
+            }
+            for( int i = 0; i < byte_cnt && c[i] != '\0'; i++ )
+            {
+                if ( !is_gdsii_allowed_char( c[i] ) ) c[i] = '_';
+            }
+            std::string s = std::string( c );
+            s_i = get_str_i( s );
+            break;
+        }
+
+#if 0
+     case INTEGER_2:
+     case INTEGER_4:
+      { size_t DataSize = (DType==INTEGER_2) ? 2 : 4;
+        Record.NumVals  = PayloadSize / DataSize;
+        BYTE *B=(BYTE *)Payload; 
+        for(size_t nv=0; nv<Record.NumVals; nv++, B+=DataSize)
+         Record.iVal.push_back( ConvertInt(B, RecordTypes[RType].DType) );
+      };
+     break;
+
+     case REAL_4:
+     case REAL_8:
+      { size_t DataSize  = (DType==REAL_4) ? 4 : 8;
+        Record.NumVals   = PayloadSize / DataSize;
+        BYTE *B=(BYTE *)Payload; 
+        for(size_t nv=0; nv<Record.NumVals; nv++, B+=DataSize)
+         Record.dVal.push_back(ConvertReal(B, RecordTypes[RType].DType));
+      };
+     break;
+#endif
+
+        default:
+        {
+            rtn_assert( false, "something is wrong" );
+            break;
+        }
+    }
+
+    nnn += byte_cnt;
+
     //------------------------------------------------------------
     // Get record type. We don't support all record types.
     //------------------------------------------------------------
