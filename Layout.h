@@ -1026,118 +1026,164 @@ bool Layout::read_gdsii( std::string file )
 
 bool Layout::parse_gdsii_record( uint& ni )
 {
-    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-    ni = hdr->node_cnt++;
-    nodes[ni].sibling_i = uint(-1);
-
-    skip_whitespace( nnn, nnn_end );
-    char ch = *nnn;
-    if ( ch == '\'' ) {
-        dprint( "STR" );
-        nodes[ni].kind = NODE_KIND::STR;
-        if ( !parse_string_i( nodes[ni].u.s_i, nnn, nnn_end ) ) return false;
-    } else if ( ch == '-' || (ch >= '0' && ch <= '9') ) {
-        dprint( "NUMBER" );
-        return parse_number( ni, nnn, nnn_end );
-    } else {
-        uint id_i;
-        char * nnn_save = nnn;
-        if ( !parse_id( id_i, nnn, nnn_end ) ) {
-            rtn_assert( 0, "unable to parse an expression: std::string, number, or id " + surrounding_lines( nnn_save, nnn_end ) );
-        }
-        dprint( "ID START " + std::string(&strings[id_i]) );
-        if ( id_i == 0 ) {
-            uint name_i;
-            if ( !parse_gdsii_record( name_i ) ) return false;             // STR node
-            rtn_assert( nodes[name_i].kind == NODE_KIND::STR, "$begin not followed by std::string" );
-            dprint( "BEGIN " + std::string(&strings[nodes[name_i].u.s_i]) );
-
-            nodes[ni].kind = NODE_KIND::HIER;
-            nodes[ni].u.child_first_i = name_i;
-            uint prev_i = name_i;
-            for( ;; )
-            {
-                skip_whitespace( nnn, nnn_end );
-                uint id_i;
-                if ( peek_id( id_i, nnn, nnn_end ) ) {
-                    if ( id_i == 0 ) {
-                        parse_id( id_i, nnn, nnn_end );
-                        uint end_str_i;
-                        if ( !parse_string_i( end_str_i, nnn, nnn_end ) ) return false;
-                        dprint( "END " + std::string(&strings[end_str_i]) );
-                        rtn_assert( end_str_i == nodes[name_i].u.s_i, "$end id does not match $begin id " + surrounding_lines( nnn, nnn_end ) );
-                        break;
-                    }
-                }
-
-                uint child_i;
-                if ( !parse_gdsii_record( child_i ) ) return false;
-                nodes[prev_i].sibling_i = child_i;
-                prev_i = child_i;
-            }
-        } else if ( id_i == true_str_i || id_i == false_str_i ) {
-            dprint( "BOOL" );
-            nodes[ni].kind = NODE_KIND::BOOL;
-            nodes[ni].u.b = id_i == true_str_i;
-        } else {
-            dprint( "USER ID" );
-            nodes[ni].kind = NODE_KIND::ID;
-            nodes[ni].u.s_i = id_i;
-        }
-    }
-
-    skip_whitespace( nnn, nnn_end );
-    ch = *nnn;
-    if ( ch == '=' ) {
-        dprint( "ASSIGN" );
-        expect_char( ch, nnn, nnn_end );
-
-        uint rhs_i;
-        if ( !parse_gdsii_record( rhs_i ) ) return false;
-
-        perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-        uint ai = hdr->node_cnt++;
-        nodes[ai].kind = NODE_KIND::ASSIGN;
-        nodes[ai].u.child_first_i = ni;
-        nodes[ni].sibling_i = rhs_i;
-        nodes[ai].sibling_i = uint(-1);
-        ni = ai;
-
-    } else if ( ch == '(' || ch == '[' ) {
-        dprint( (ch == '(') ? "CALL" : "SLICE" );
-        uint id_i = ni;
-        perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-        ni = hdr->node_cnt++;
-        nodes[ni].kind = (ch == '(') ? NODE_KIND::CALL : NODE_KIND::SLICE;
-        nodes[ni].u.child_first_i = id_i;
-        nodes[ni].sibling_i = uint(-1);
-        uint prev_i = id_i;
-        expect_char( ch, nnn, nnn_end );
-        for( bool have_one=false; ; have_one=true )
+    //------------------------------------------------------------
+    // Parse record header.
+    //------------------------------------------------------------
+    rtn_assert( (nnn + 4) <= nnn_end, "unexpected end of gdsii file" );
+    uint32_t       byte_cnt = uint32_t( nnn[0] ) + uint32_t( nnn[1] ); 
+    GDSII_KIND     kind     = GDSII_KIND( nnn[2] );
+    GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
+    rtn_assert( uint32_t(kind) < GDSII_KIND_CNT, "bad gdsii record kind " + std::to_string(uint32_t(kind)) );
+    rtn_assert( kind_to_datatype( kind ) == datatype, "datatype does not match expected for record kind " + str(kind) );
+  
+    //------------------------------------------------------------
+    // Get record type. We don't support all record types.
+    //------------------------------------------------------------
+    switch( kind )
+    {
+        case GDSII_KIND::HEADER:
         {
-            skip_whitespace( nnn, nnn_end );
-            ch = *nnn;
-            if ( (ch == ')' && nodes[ni].kind == NODE_KIND::CALL) || (ch == ']' && nodes[ni].kind == NODE_KIND::SLICE) ) {
-                expect_char( ch, nnn, nnn_end );
-                break;
-            }
-            if ( have_one ) {
-                skip_whitespace( nnn, nnn_end );
-                if ( ch == ':' && nodes[ni].kind == NODE_KIND::SLICE ) {
-                    // skip this, it's implied
-                    //
-                    expect_char( ch, nnn, nnn_end );
-                    continue;
-                } else if ( ch == ',' ) {
-                    expect_char( ',', nnn, nnn_end );
-                }
-            }
-
-            uint arg_i;
-            if ( !parse_gdsii_record( arg_i ) ) return false;
-            nodes[prev_i].sibling_i = arg_i;
-            prev_i = arg_i;
+            break;
         }
+
+        case GDSII_KIND::BGNLIB:
+        {
+            break;
+        }
+
+        case GDSII_KIND::LIBNAME:
+        {
+            break;
+        }
+
+        case GDSII_KIND::UNITS:
+        {
+            break;
+        }
+
+        case GDSII_KIND::ENDLIB:
+        {
+            break;
+        }
+
+        case GDSII_KIND::BGNSTR:
+        {
+            break;
+        }
+
+        case GDSII_KIND::STRNAME:
+        {
+            break;
+        }
+
+        case GDSII_KIND::ENDSTR:
+        {
+            break;
+        }
+
+        case GDSII_KIND::BOUNDARY:
+        {
+            break;
+        }
+
+        case GDSII_KIND::PATH:
+        {
+            break;
+        }
+
+        case GDSII_KIND::SREF:
+        {
+            break;
+        }
+
+        case GDSII_KIND::AREF:
+        {
+            break;
+        }
+
+        case GDSII_KIND::TEXT:
+        {
+            break;
+        }
+
+        case GDSII_KIND::LAYER:
+        {
+            break;
+        }
+
+        case GDSII_KIND::DATATYPE:
+        {
+            break;
+        }
+
+        case GDSII_KIND::WIDTH:
+        {
+            break;
+        }
+
+        case GDSII_KIND::XY:
+        {
+            break;
+        }
+
+        case GDSII_KIND::ENDEL:
+        {
+            break;
+        }
+
+        case GDSII_KIND::SNAME:
+        {
+            break;
+        }
+
+        case GDSII_KIND::COLROW:
+        {
+            break;
+        }
+
+        case GDSII_KIND::TEXTTYPE:
+        {
+            break;
+        }
+
+        case GDSII_KIND::STRING:
+        {
+            break;
+        }
+
+        case GDSII_KIND::STRANS:
+        {
+            break;
+        }
+
+        case GDSII_KIND::MAG:
+        {
+            break;
+        }
+
+        case GDSII_KIND::ANGLE:
+        {
+            break;
+        }
+
+        case GDSII_KIND::PATHTYPE:
+        {
+            break;
+        }
+
+        case GDSII_KIND::PROPATTR:
+        {
+            break;
+        }
+
+        case GDSII_KIND::PROPVALUE:
+        {
+            break;
+        }
+
+        default:
+            rtn_assert( false, "unsupported GDSII record kind " + str(kind) );
+            break;
     }
 
     return true;
