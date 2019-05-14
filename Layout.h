@@ -276,6 +276,88 @@ private:
     // reallocate array if we are about to exceed its current size
     template<typename T>
     inline void perhaps_realloc( T *& array, const uint  & hdr_cnt, uint  & max_cnt, uint   add_cnt );
+
+    // GDSII
+    enum class GDSII_KIND
+    {
+        HEADER,
+        BGNLIB,
+        LIBNAME,
+        UNITS,
+        ENDLIB,
+        BGNSTR,
+        STRNAME,
+        ENDSTR,
+        BOUNDARY,
+        PATH,
+        SREF,
+        AREF,
+        TEXT,
+        LAYER,
+        DATATYPE,
+        WIDTH,
+        XY,
+        ENDEL,
+        SNAME,
+        COLROW,
+        TEXTNODE,
+        NODE,
+        TEXTTYPE,
+        PRESENTATION,
+        UNUSED,
+        STRING,
+        STRANS,
+        MAG,
+        ANGLE,
+        UNUSED2,
+        UNUSED3,
+        REFLIBS,
+        FONTS,
+        PATHTYPE,
+        GENERATIONS,
+        ATTRTABLE,
+        STYPTABLE,
+        STRTYPE,
+        ELFLAGS,
+        ELKEY,
+        LINKTYPE,
+        LINKKEYS,
+        NODETYPE,
+        PROPATTR,
+        PROPVALUE,
+        BOX,
+        BOXTYPE,
+        PLEX,
+        BGNEXTN,
+        ENDTEXTN,
+        TAPENUM,
+        TAPECODE,
+        STRCLASS,
+        RESERVED,
+        FORMAT,
+        MASK,
+        ENDMASKS,
+        LIBDIRSIZE,
+        SRFNAME,
+        LIBSECUR,
+    };
+
+    static constexpr uint32_t GDSII_KIND_CNT = 0x3c;
+
+    enum class GDSII_DATATYPE
+    {
+        NO_DATA,
+        BITARRAY,
+        INTEGER_2,
+        INTEGER_4,
+        REAL_4,
+        REAL_8,
+        STRING,
+    };
+
+    static GDSII_DATATYPE kind_to_datatype( GDSII_KIND kind );
+    static std::string    str( GDSII_KIND kind );
+    static std::string    str( GDSII_DATATYPE datatype );
 };
 
 #ifdef LAYOUT_DEBUG
@@ -309,21 +391,176 @@ inline std::ostream& operator << ( std::ostream& os, const Layout::AABB& box )
 
 inline std::ostream& operator << ( std::ostream& os, const Layout::NODE_KIND& kind ) 
 {
+    #define ncase( kind ) case Layout::NODE_KIND::kind: os << #kind; break;
     switch( kind )
     {
-        case Layout::NODE_KIND::STR:            os << "STR";       break;
-        case Layout::NODE_KIND::BOOL:           os << "BOOL";      break;
-        case Layout::NODE_KIND::INT:            os << "INT";       break;
-        case Layout::NODE_KIND::UINT:           os << "UINT";      break;
-        case Layout::NODE_KIND::REAL:           os << "REAL";      break;
-        case Layout::NODE_KIND::ID:             os << "ID";        break;
-        case Layout::NODE_KIND::CALL:           os << "CALL";      break;
-        case Layout::NODE_KIND::SLICE:          os << "SLICE";     break;
-        case Layout::NODE_KIND::ASSIGN:         os << "ASSIGN";    break;
-        case Layout::NODE_KIND::HIER:           os << "HIER";      break;
-        default:                                os << "<unknown>"; break;
+        ncase( STR )
+        ncase( BOOL )
+        ncase( INT )
+        ncase( UINT )
+        ncase( REAL )
+        ncase( ID )
+        ncase( CALL )
+        ncase( SLICE )
+        ncase( ASSIGN )
+        ncase( HIER )
+        default: os << "<unknown>"; break;
     }
     return os;
+}
+
+std::string Layout::str( Layout::GDSII_KIND kind )
+{
+    #define gcase( kind ) case Layout::GDSII_KIND::kind: return #kind;
+    switch( kind )
+    {
+        gcase( HEADER )
+        gcase( BGNLIB )
+        gcase( LIBNAME )
+        gcase( UNITS )
+        gcase( ENDLIB )
+        gcase( BGNSTR )
+        gcase( STRNAME )
+        gcase( ENDSTR )
+        gcase( BOUNDARY )
+        gcase( PATH )
+        gcase( SREF )
+        gcase( AREF )
+        gcase( TEXT )
+        gcase( LAYER )
+        gcase( DATATYPE )
+        gcase( WIDTH )
+        gcase( XY )
+        gcase( ENDEL )
+        gcase( SNAME )
+        gcase( COLROW )
+        gcase( TEXTNODE )
+        gcase( NODE )
+        gcase( TEXTTYPE )
+        gcase( PRESENTATION )
+        gcase( UNUSED )
+        gcase( STRING )
+        gcase( STRANS )
+        gcase( MAG )
+        gcase( ANGLE )
+        gcase( UNUSED2 )
+        gcase( UNUSED3 )
+        gcase( REFLIBS )
+        gcase( FONTS )
+        gcase( PATHTYPE )
+        gcase( GENERATIONS )
+        gcase( ATTRTABLE )
+        gcase( STYPTABLE )
+        gcase( STRTYPE )
+        gcase( ELFLAGS )
+        gcase( ELKEY )
+        gcase( LINKTYPE )
+        gcase( LINKKEYS )
+        gcase( NODETYPE )
+        gcase( PROPATTR )
+        gcase( PROPVALUE )
+        gcase( BOX )
+        gcase( BOXTYPE )
+        gcase( PLEX )
+        gcase( BGNEXTN )
+        gcase( ENDTEXTN )
+        gcase( TAPENUM )
+        gcase( TAPECODE )
+        gcase( STRCLASS )
+        gcase( RESERVED )
+        gcase( FORMAT )
+        gcase( MASK )
+        gcase( ENDMASKS )
+        gcase( LIBDIRSIZE )
+        gcase( SRFNAME )
+        gcase( LIBSECUR )
+        default: return "<unknown>"; 
+    }
+}
+
+std::string Layout::str( Layout::GDSII_DATATYPE datatype )
+{
+    #define dcase( type ) case GDSII_DATATYPE::type: return #type;
+    switch( datatype ) 
+    {
+        dcase( NO_DATA )
+        dcase( BITARRAY )
+        dcase( INTEGER_2 )
+        dcase( INTEGER_4 )
+        dcase( REAL_4 )
+        dcase( REAL_8 )
+        dcase( STRING )
+        default: return "<unknown>";
+    }
+}
+
+Layout::GDSII_DATATYPE Layout::kind_to_datatype( Layout::GDSII_KIND kind )
+{
+    #define kdcase( kind, type ) case GDSII_KIND::kind: return GDSII_DATATYPE::type;
+    switch( kind )
+    {
+        kdcase( HEADER,       INTEGER_2 )
+        kdcase( BGNLIB,       INTEGER_2 )
+        kdcase( LIBNAME,      STRING )
+        kdcase( UNITS,        REAL_8 )
+        kdcase( ENDLIB,       NO_DATA )
+        kdcase( BGNSTR,       INTEGER_2 )
+        kdcase( STRNAME,      STRING )
+        kdcase( ENDSTR,       NO_DATA )
+        kdcase( BOUNDARY,     NO_DATA )
+        kdcase( PATH,         NO_DATA )
+        kdcase( SREF,         NO_DATA )
+        kdcase( AREF,         NO_DATA )
+        kdcase( TEXT,         NO_DATA )
+        kdcase( LAYER,        INTEGER_2 )
+        kdcase( DATATYPE,     INTEGER_2 )
+        kdcase( WIDTH,        INTEGER_4 )
+        kdcase( XY,           INTEGER_4 )
+        kdcase( ENDEL,        NO_DATA )
+        kdcase( SNAME,        STRING )
+        kdcase( COLROW,       INTEGER_2 )
+        kdcase( TEXTNODE,     NO_DATA )
+        kdcase( NODE,         NO_DATA )
+        kdcase( TEXTTYPE,     INTEGER_2 )
+        kdcase( PRESENTATION, BITARRAY )
+        kdcase( UNUSED,       NO_DATA )
+        kdcase( STRING,       STRING )
+        kdcase( STRANS,       BITARRAY )
+        kdcase( MAG,          REAL_8 )
+        kdcase( ANGLE,        REAL_8 )
+        kdcase( UNUSED2,      NO_DATA )
+        kdcase( UNUSED3,      NO_DATA )
+        kdcase( REFLIBS,      STRING )
+        kdcase( FONTS,        STRING )
+        kdcase( PATHTYPE,     INTEGER_2 )
+        kdcase( GENERATIONS,  INTEGER_2 )
+        kdcase( ATTRTABLE,    STRING )
+        kdcase( STYPTABLE,    STRING )
+        kdcase( STRTYPE,      INTEGER_2 )
+        kdcase( ELFLAGS,      BITARRAY )
+        kdcase( ELKEY,        INTEGER_4 )
+        kdcase( LINKTYPE,     NO_DATA )
+        kdcase( LINKKEYS,     NO_DATA )
+        kdcase( NODETYPE,     INTEGER_2 )
+        kdcase( PROPATTR,     INTEGER_2 )
+        kdcase( PROPVALUE,    STRING )
+        kdcase( BOX,          NO_DATA )
+        kdcase( BOXTYPE,      INTEGER_2 )
+        kdcase( PLEX,         INTEGER_4 )
+        kdcase( BGNEXTN,      INTEGER_4 )
+        kdcase( ENDTEXTN,     INTEGER_4 )
+        kdcase( TAPENUM,      INTEGER_2 )
+        kdcase( TAPECODE,     INTEGER_2 )
+        kdcase( STRCLASS,     BITARRAY )
+        kdcase( RESERVED,     INTEGER_4 )
+        kdcase( FORMAT,       INTEGER_2 )
+        kdcase( MASK,         STRING )
+        kdcase( ENDMASKS,     NO_DATA )
+        kdcase( LIBDIRSIZE,   INTEGER_2 )
+        kdcase( SRFNAME,      STRING )
+        kdcase( LIBSECUR,     INTEGER_2 )
+        default: return GDSII_DATATYPE::NO_DATA;
+    }
 }
 
 Layout::Layout( std::string top_file )
