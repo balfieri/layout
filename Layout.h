@@ -1024,7 +1024,7 @@ bool Layout::read_gdsii( std::string file )
     return true;
 }
 
-static bool is_gdsii_allowed_char( char c ) { return isprint( c ) && c != '"' && c != ','; }
+static inline bool is_gdsii_allowed_char( char c ) { return isprint( c ) && c != '"' && c != ','; }
 
 bool Layout::parse_gdsii_record( uint& ni )
 {
@@ -1082,27 +1082,37 @@ bool Layout::parse_gdsii_record( uint& ni )
             break;
         }
 
-#if 0
-     case INTEGER_2:
-     case INTEGER_4:
-      { size_t DataSize = (DType==INTEGER_2) ? 2 : 4;
-        Record.NumVals  = PayloadSize / DataSize;
-        BYTE *B=(BYTE *)Payload; 
-        for(size_t nv=0; nv<Record.NumVals; nv++, B+=DataSize)
-         Record.iVal.push_back( ConvertInt(B, RecordTypes[RType].DType) );
-      };
-     break;
-
-     case REAL_4:
-     case REAL_8:
-      { size_t DataSize  = (DType==REAL_4) ? 4 : 8;
-        Record.NumVals   = PayloadSize / DataSize;
-        BYTE *B=(BYTE *)Payload; 
-        for(size_t nv=0; nv<Record.NumVals; nv++, B+=DataSize)
-         Record.dVal.push_back(ConvertReal(B, RecordTypes[RType].DType));
-      };
-     break;
-#endif
+        case GDSII_DATATYPE::INTEGER_2:
+        case GDSII_DATATYPE::INTEGER_4:
+        case GDSII_DATATYPE::REAL_4:
+        case GDSII_DATATYPE::REAL_8:
+        {
+            uint datum_byte_cnt = (datatype == GDSII_DATATYPE::INTEGER_2) ? 2 :
+                                  (datatype == GDSII_DATATYPE::REAL_8)    ? 8 : 4;
+            uint cnt = byte_cnt / datum_byte_cnt;
+            unsigned char * uuu = reinterpret_cast<unsigned char *>( nnn );
+            for( uint i = 0; i < cnt; i++, uuu += datum_byte_cnt )
+            {
+                if ( datatype == GDSII_DATATYPE::INTEGER_2 || datatype == GDSII_DATATYPE::INTEGER_4 ) {
+                    int64_t vi = (uuu[0] << 8) | uuu[1];
+                    if ( datatype == GDSII_DATATYPE::INTEGER_4 ) {
+                        vi = (vi << 16) | (uuu[2] << 8) | uuu[3];
+                    }
+                    if ( (vi & 0x80000000) != 0 ) {
+                        vi = (datatype == GDSII_DATATYPE::INTEGER_2) ? (0x10000 - vi) : (0x100000000LL - vi);
+                    }
+                } else {
+                    real sign = (uuu[0] & 0x80) ? -1.0 : 1.0;
+                    real exp  = (uuu[0] & 0x7f) - 64;
+                    real frac = 0.0;
+                    for( uint j = 1; j < datum_byte_cnt; j++ )
+                    {
+                        frac = (frac * 256.0) + double(uuu[j]);
+                    }
+                    real vr = sign * frac * std::pow( 2.0, 4.0*exp - 8*(datum_byte_cnt-1) );
+                }
+            }
+        }
 
         default:
         {
