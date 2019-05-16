@@ -239,7 +239,7 @@ private:
     bool write_layout( std::string file_path );         
 
     bool read_gdsii( std::string file_path );           // .gds
-    bool parse_gdsii_record( uint& node_i, uint& rec_cnt );
+    bool parse_gdsii_record( uint& node_i );
     bool write_gdsii( std::string file );
     void write_gdsii_record( std::ofstream& out, uint node_i );
     
@@ -354,6 +354,9 @@ private:
         REAL_8,
         STRING,
     };
+
+    uint       gdsii_rec_cnt;
+    GDSII_KIND gdsii_last_kind;
 
     static GDSII_DATATYPE kind_to_datatype( GDSII_KIND kind );
     static std::string    str( GDSII_KIND kind );
@@ -781,17 +784,20 @@ bool Layout::read_gdsii( std::string file )
     nodes[ni].sibling_i = uint(-1);
     hdr->root_i = ni;
     uint prev_i = uint(-1);
-    uint rec_cnt = 0;
+    gdsii_rec_cnt = 0;
     while( nnn < nnn_end )
     {
         uint child_i;
-        if ( !parse_gdsii_record( child_i, rec_cnt ) ) return false;
+        if ( !parse_gdsii_record( child_i ) ) return false;
 
         if ( prev_i == uint(-1) ) {
             nodes[ni].u.child_first_i = child_i;
         } else {
             nodes[ni].sibling_i = child_i;
         }
+
+        if ( gdsii_last_kind == GDSII_KIND::ENDLIB ) break;
+
         prev_i = child_i;
     }
     return true;
@@ -799,22 +805,22 @@ bool Layout::read_gdsii( std::string file )
 
 static inline bool is_gdsii_allowed_char( char c ) { return isprint( c ) && c != '"' && c != ','; }
 
-bool Layout::parse_gdsii_record( uint& ni, uint& rec_cnt )
+bool Layout::parse_gdsii_record( uint& ni )
 {
     //------------------------------------------------------------
     // Parse record header.
     //------------------------------------------------------------
-    rtn_assert( (nnn + 4) <= nnn_end, "unexpected end of gdsii file rec_cnt=" + std::to_string(rec_cnt) );
+    rtn_assert( (nnn + 4) <= nnn_end, "unexpected end of gdsii file rec_cnt=" + std::to_string(gdsii_rec_cnt) );
     uint32_t       byte_cnt = ( nnn[0] << 8 ) | nnn[1];
     GDSII_KIND     kind     = GDSII_KIND( nnn[2] );
-    //std::cout << std::to_string(rec_cnt) << ": " << str(kind) << " byte_cnt=" << byte_cnt << "\n";
+    //std::cout << std::to_string(gdsii_rec_cnt) << ": " << str(kind) << " byte_cnt=" << byte_cnt << "\n";
     GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
-    rtn_assert( byte_cnt >= 4, std::to_string(rec_cnt) + ": gdsii record byte_cnt must be at least 4, byte_cnt=" + std::to_string(byte_cnt) + " kind=" + str(kind) );
+    rtn_assert( byte_cnt >= 4, std::to_string(gdsii_rec_cnt) + ": gdsii record byte_cnt must be at least 4, byte_cnt=" + std::to_string(byte_cnt) + " kind=" + str(kind) );
     byte_cnt -= 4;
     nnn += 4;
-    rtn_assert( uint32_t(kind) < GDSII_KIND_CNT, std::to_string(rec_cnt) + ": bad gdsii record kind " + std::to_string(uint32_t(kind)) );
+    rtn_assert( uint32_t(kind) < GDSII_KIND_CNT, std::to_string(gdsii_rec_cnt) + ": bad gdsii record kind " + std::to_string(uint32_t(kind)) );
     rtn_assert( kind_to_datatype( kind ) == datatype, 
-                std::to_string(rec_cnt) + ": datatype=" + str(datatype) + " does not match expected datatype=" + 
+                std::to_string(gdsii_rec_cnt) + ": datatype=" + str(datatype) + " does not match expected datatype=" + 
                 str( kind_to_datatype( kind ) ) + " for record kind " + str(kind) );
     rtn_assert( (nnn + byte_cnt) <= nnn_end, "unexpected end of gdsii file" );
   
@@ -897,7 +903,8 @@ bool Layout::parse_gdsii_record( uint& ni, uint& rec_cnt )
         }
     }
 
-    rec_cnt++;
+    gdsii_rec_cnt++;
+    gdsii_last_kind = kind;
     nnn += byte_cnt;
 
     //------------------------------------------------------------
