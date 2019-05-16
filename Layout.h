@@ -329,7 +329,7 @@ private:
         BOXTYPE,
         PLEX,
         BGNEXTN,
-        ENDTEXTN,
+        ENDEXTN,
         TAPENUM,
         TAPECODE,
         STRCLASS,
@@ -463,7 +463,7 @@ std::string Layout::str( Layout::GDSII_KIND kind )
         gcase( BOXTYPE )
         gcase( PLEX )
         gcase( BGNEXTN )
-        gcase( ENDTEXTN )
+        gcase( ENDEXTN )
         gcase( TAPENUM )
         gcase( TAPECODE )
         gcase( STRCLASS )
@@ -548,7 +548,7 @@ Layout::GDSII_DATATYPE Layout::kind_to_datatype( Layout::GDSII_KIND kind )
         kdcase( BOXTYPE,      INTEGER_2 )
         kdcase( PLEX,         INTEGER_4 )
         kdcase( BGNEXTN,      INTEGER_4 )
-        kdcase( ENDTEXTN,     INTEGER_4 )
+        kdcase( ENDEXTN,      INTEGER_4 )
         kdcase( TAPENUM,      INTEGER_2 )
         kdcase( TAPECODE,     INTEGER_2 )
         kdcase( STRCLASS,     BITARRAY )
@@ -987,6 +987,12 @@ bool Layout::parse_gdsii_record( uint& ni )
             break;
         }
 
+        case GDSII_KIND::NODE:
+        {
+            // add hier
+            break;
+        }
+
         case GDSII_KIND::LAYER:
         {
             // save int
@@ -1030,6 +1036,12 @@ bool Layout::parse_gdsii_record( uint& ni )
         }
 
         case GDSII_KIND::TEXTTYPE:
+        {
+            // save int
+            break;
+        }
+
+        case GDSII_KIND::NODETYPE:
         {
             // save int
             break;
@@ -1085,6 +1097,18 @@ bool Layout::parse_gdsii_record( uint& ni )
         {
             // save string
             // if( strcasestr( Record.sVal->c_str(), "CONTEXT_INFO") ) PState->CurrentStruct->IsPCell=true;
+            break;
+        }
+
+        case GDSII_KIND::BGNEXTN:
+        {
+            // save int
+            break;
+        }
+
+        case GDSII_KIND::ENDEXTN:
+        {
+            // save int
             break;
         }
 
