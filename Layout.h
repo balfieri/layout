@@ -199,7 +199,7 @@ public:
     };
 
     // structs
-    char *              mapped_region;      // != nullptr means the whole file was sucked in by read_uncompressed()
+    uint8_t *           mapped_region;      // != nullptr means the whole file was sucked in by read_uncompressed()
     Header *            hdr;
     Header *            max;                // holds max lengths of currently allocated arrays 
 
@@ -225,10 +225,10 @@ public:
 //------------------------------------------------------------------------------
 private:
     std::string ext_name;
-    char * nnn_start;
-    char * nnn_end;
-    char * nnn;
-    uint   line_num;
+    uint8_t * nnn_start;
+    uint8_t * nnn_end;
+    uint8_t * nnn;
+    uint      line_num;
 
     uint aedt_begin_str_i;              // these are to make it easier to compare
     uint aedt_end_str_i;
@@ -248,26 +248,25 @@ private:
     bool write_aedt( std::string file );
     void write_aedt_expr( std::ofstream& out, uint node_i, std::string indent_str );
 
-    bool open_and_read( std::string file_name, char *& start, char *& end );
+    bool open_and_read( std::string file_name, uint8_t *& start, uint8_t *& end );
 
-    void skip_whitespace_to_eol( char *& xxx, char *& xxx_end );  // on this line only
-    void skip_whitespace( char *& xxx, char *& xxx_end );
-    void skip_to_eol( char *& xxx, char *& xxx_end );
-    bool eol( char *& xxx, char *& xxx_end );
-    bool expect_char( char ch, char *& xxx, char* xxx_end, bool skip_whitespace_first=false );
+    void skip_whitespace_to_eol( uint8_t *& xxx, uint8_t *& xxx_end );  // on this line only
+    void skip_whitespace( uint8_t *& xxx, uint8_t *& xxx_end );
+    void skip_to_eol( uint8_t *& xxx, uint8_t *& xxx_end );
+    bool eol( uint8_t *& xxx, uint8_t *& xxx_end );
+    bool expect_char( char ch, uint8_t *& xxx, uint8_t * xxx_end, bool skip_whitespace_first=false );
     uint get_str_i( std::string s );
-    bool parse_number( uint node_i, char *& xxx, char *& xxx_end );
-    bool parse_string( std::string& s, char *& xxx, char *& xxx_end );
-    bool parse_string_i( uint& s, char *& xxx, char *& xxx_end );
-    bool parse_name( char *& name, char *& xxx, char *& xxx_end );
-    bool parse_id( uint& id_i, char *& xxx, char *& xxx_end );
-    bool peek_id( uint& id_i, char *& xxx, char *& xxx_end );
-    bool parse_real3( real3& r3, char *& xxx, char *& xxx_end, bool has_brackets=false );
-    bool parse_real( real& r, char *& xxx, char *& xxx_end );
-    bool parse_int( _int& i, char *& xxx, char *& xxx_end );
-    bool parse_uint( uint& u, char *& xxx, char *& xxx_end );
-    bool parse_bool( bool& b, char *& xxx, char *& xxx_end );
-    std::string surrounding_lines( char *& xxx, char *& xxx_end );
+    bool parse_number( uint node_i, uint8_t *& xxx, uint8_t *& xxx_end );
+    bool parse_string( std::string& s, uint8_t *& xxx, uint8_t *& xxx_end );
+    bool parse_string_i( uint& s, uint8_t *& xxx, uint8_t *& xxx_end );
+    bool parse_id( uint& id_i, uint8_t *& xxx, uint8_t *& xxx_end );
+    bool peek_id( uint& id_i, uint8_t *& xxx, uint8_t *& xxx_end );
+    bool parse_real3( real3& r3, uint8_t *& xxx, uint8_t *& xxx_end, bool has_brackets=false );
+    bool parse_real( real& r, uint8_t *& xxx, uint8_t *& xxx_end );
+    bool parse_int( _int& i, uint8_t *& xxx, uint8_t *& xxx_end );
+    bool parse_uint( uint& u, uint8_t *& xxx, uint8_t *& xxx_end );
+    bool parse_bool( bool& b, uint8_t *& xxx, uint8_t *& xxx_end );
+    std::string surrounding_lines( uint8_t *& xxx, uint8_t *& xxx_end );
 
     // allocates an array of T on a page boundary
     template<typename T>
@@ -684,8 +683,8 @@ inline void Layout::perhaps_realloc( T *& array, const Layout::uint  & hdr_cnt, 
 
 bool Layout::read_layout( std::string layout_path )
 {
-    char * start;
-    char * end;
+    uint8_t * start;
+    uint8_t * end;
     if ( !open_and_read( layout_path, start, end ) ) return false;
     mapped_region = start;
 
@@ -693,7 +692,7 @@ bool Layout::read_layout( std::string layout_path )
     // Write out header than individual arrays.
     // Each is padded out to a page boundary in the file.
     //------------------------------------------------------------
-    char * _addr = start;
+    uint8_t * _addr = start;
     size_t page_size = getpagesize();
 
     #define _uread( array, type, cnt ) \
@@ -736,7 +735,7 @@ bool Layout::write_layout( std::string layout_path )
     { \
         size_t _byte_cnt = byte_cnt; \
         _byte_cnt += _byte_cnt % page_size; \
-        char * _addr = reinterpret_cast<char *>( addr ); \
+        uint8_t * _addr = reinterpret_cast<uint8_t *>( addr ); \
         for( ; _byte_cnt != 0;  ) \
         { \
             uint _this_byte_cnt = 1024*1024*1024; \
@@ -804,9 +803,9 @@ bool Layout::parse_gdsii_record( uint& ni )
     // Parse record header.
     //------------------------------------------------------------
     rtn_assert( (nnn + 4) <= nnn_end, "unexpected end of gdsii file" );
-    uint32_t       byte_cnt = uint32_t( nnn[0] ) + uint32_t( nnn[1] ); 
+    uint32_t       byte_cnt = ( nnn[0] << 8 ) | nnn[1];
     GDSII_KIND     kind     = GDSII_KIND( nnn[2] );
-    std::cout << str(kind) << "\n";
+    std::cout << str(kind) << " byte_cnt=" << byte_cnt << "\n";
     GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
     rtn_assert( byte_cnt >= 4, "gdsii record byte_cnt must be at least 4, byte_cnt=" + std::to_string(byte_cnt) + " kind=" + str(kind) );
     byte_cnt -= 4;
@@ -838,8 +837,9 @@ bool Layout::parse_gdsii_record( uint& ni )
         case GDSII_DATATYPE::STRING:
         {
             char c[33];
+            assert( byte_cnt <= 32 );
             if ( byte_cnt > 32 ) byte_cnt = 32;
-            if ( byte_cnt > 0 ) strncpy( c, nnn, byte_cnt );
+            if ( byte_cnt > 0 ) memcpy( c, nnn, byte_cnt );
             c[byte_cnt] = '\0';
             for( int i = byte_cnt-1; i >= 0; i-- ) 
             {
@@ -864,7 +864,7 @@ bool Layout::parse_gdsii_record( uint& ni )
                                   (datatype == GDSII_DATATYPE::REAL_8)    ? 8 : 4;
             uint cnt = byte_cnt / datum_byte_cnt;
             rtn_assert( (cnt*datum_byte_cnt) == byte_cnt, "datum_byte_cnt does not divide evenly" );
-            unsigned char * uuu = reinterpret_cast<unsigned char *>( nnn );
+            uint8_t * uuu = nnn;
             for( uint i = 0; i < cnt; i++, uuu += datum_byte_cnt )
             {
                 if ( datatype == GDSII_DATATYPE::INTEGER_2 || datatype == GDSII_DATATYPE::INTEGER_4 ) {
@@ -1242,7 +1242,7 @@ bool Layout::parse_aedt_expr( uint& ni )
         return parse_number( ni, nnn, nnn_end );
     } else {
         uint id_i;
-        char * nnn_save = nnn;
+        uint8_t * nnn_save = nnn;
         if ( !parse_id( id_i, nnn, nnn_end ) ) {
             rtn_assert( 0, "unable to parse an expression: std::string, number, or id " + surrounding_lines( nnn_save, nnn_end ) );
         }
@@ -1502,7 +1502,7 @@ std::string Layout::path_without_ext( std::string path, std::string * file_ext )
     return std::string( path_c );
 }
 
-bool Layout::open_and_read( std::string file_path, char *& start, char *& end )
+bool Layout::open_and_read( std::string file_path, uint8_t *& start, uint8_t *& end )
 {
     const char * fname = file_path.c_str();
     int fd = open( fname, O_RDONLY );
@@ -1518,14 +1518,14 @@ bool Layout::open_and_read( std::string file_path, char *& start, char *& end )
     size_t size = file_stat.st_size;
 
     // this large read should behave like an mmap() inside the o/s kernel and be as fast
-    start = aligned_alloc<char>( size );
+    start = aligned_alloc<uint8_t>( size );
     if ( start == nullptr ) {
         close( fd );
         rtn_assert( 0, "could not read file " + std::string(fname) + " - malloc() error: " + strerror( errno ) );
     }
     end = start + size;
 
-    char * addr = start;
+    uint8_t * addr = start;
     while( size != 0 ) 
     {
         size_t _this_size = 1024*1024*1024;
@@ -1541,7 +1541,7 @@ bool Layout::open_and_read( std::string file_path, char *& start, char *& end )
     return true;
 }
 
-inline void Layout::skip_whitespace( char *& xxx, char *& xxx_end )
+inline void Layout::skip_whitespace( uint8_t *& xxx, uint8_t *& xxx_end )
 {
     bool in_comment = false;
     for( ;; )
@@ -1560,7 +1560,7 @@ inline void Layout::skip_whitespace( char *& xxx, char *& xxx_end )
     }
 }
 
-inline void Layout::skip_whitespace_to_eol( char *& xxx, char *& xxx_end )
+inline void Layout::skip_whitespace_to_eol( uint8_t *& xxx, uint8_t *& xxx_end )
 {
     bool in_comment = false;
     for( ;; )
@@ -1579,7 +1579,7 @@ inline void Layout::skip_whitespace_to_eol( char *& xxx, char *& xxx_end )
     }
 }
 
-inline void Layout::skip_to_eol( char *& xxx, char *& xxx_end )
+inline void Layout::skip_to_eol( uint8_t *& xxx, uint8_t *& xxx_end )
 {
     if ( !eol( xxx, xxx_end ) ) {
         while( xxx != xxx_end )
@@ -1591,7 +1591,7 @@ inline void Layout::skip_to_eol( char *& xxx, char *& xxx_end )
     }
 }
 
-inline bool Layout::eol( char *& xxx, char *& xxx_end )
+inline bool Layout::eol( uint8_t *& xxx, uint8_t *& xxx_end )
 {
     skip_whitespace_to_eol( xxx, xxx_end );
 
@@ -1608,7 +1608,7 @@ inline bool Layout::eol( char *& xxx, char *& xxx_end )
     }
 }
 
-inline bool Layout::expect_char( char ch, char *& xxx, char* xxx_end, bool skip_whitespace_first )
+inline bool Layout::expect_char( char ch, uint8_t *& xxx, uint8_t * xxx_end, bool skip_whitespace_first )
 {
     if ( skip_whitespace_first ) skip_whitespace( xxx, xxx_end );
     rtn_assert( xxx != xxx_end, "premature end of file" );
@@ -1633,9 +1633,9 @@ inline uint Layout::get_str_i( std::string s )
     return s_i;
 }
 
-inline bool Layout::parse_number( uint node_i, char *& xxx, char *& xxx_end )
+inline bool Layout::parse_number( uint node_i, uint8_t *& xxx, uint8_t *& xxx_end )
 {
-    char * xxx_orig = xxx;
+    uint8_t * xxx_orig = xxx;
 
     _int i;
     if ( !parse_int( i, xxx, xxx_end ) ) return false;
@@ -1656,7 +1656,7 @@ inline bool Layout::parse_number( uint node_i, char *& xxx, char *& xxx_end )
     }
 }
 
-inline bool Layout::parse_string( std::string& s, char *& xxx, char *& xxx_end )
+inline bool Layout::parse_string( std::string& s, uint8_t *& xxx, uint8_t *& xxx_end )
 {
     if ( !expect_char( '\'', xxx, xxx_end, true ) ) return false;
     s = "";
@@ -1672,7 +1672,7 @@ inline bool Layout::parse_string( std::string& s, char *& xxx, char *& xxx_end )
     }
 }
 
-inline bool Layout::parse_string_i( uint& s_i, char *& xxx, char *& xxx_end )
+inline bool Layout::parse_string_i( uint& s_i, uint8_t *& xxx, uint8_t *& xxx_end )
 {
     std::string s;
     if ( !parse_string( s, xxx, xxx_end ) ) return false;
@@ -1680,44 +1680,7 @@ inline bool Layout::parse_string_i( uint& s_i, char *& xxx, char *& xxx_end )
     return true;
 }
 
-inline bool Layout::parse_name( char *& name, char *& xxx, char *& xxx_end )
-{
-    bool vld = false;
-    perhaps_realloc( strings, hdr->char_cnt, max->char_cnt, 1024 );
-    name = &strings[hdr->char_cnt];
-
-    while( xxx != xxx_end && (*xxx == ' ' || *xxx == '\t') ) xxx++;  // skip leading spaces
-
-    uint len = 0;
-    while( xxx != xxx_end )
-    {
-        char ch = *xxx;
-        if ( ch == '\n' || ch == '\r' ) break;
-
-        rtn_assert( len < 1024, "string is larger than 1024 characters" );
-        name[len++] = ch;
-        vld = true;
-        xxx++;
-    }
-
-    if ( vld ) {
-        name[len] = '\0';
-        hdr->char_cnt += len+1;
-        char * ptr;
-        for( ptr = &name[len-1]; ptr != name; ptr-- )
-        {
-            // skip trailing spaces
-            if ( *ptr != ' ' && *ptr != '\t' ) break;
-            *ptr = '\0';
-        }
-
-        return *ptr != '\0';
-    }
-
-    rtn_assert( 0, "could not parse name: " + surrounding_lines( xxx, xxx_end ) );
-}
-
-inline bool Layout::parse_id( uint& id_i, char *& xxx, char *& xxx_end )
+inline bool Layout::parse_id( uint& id_i, uint8_t *& xxx, uint8_t *& xxx_end )
 {
     skip_whitespace( xxx, xxx_end );
 
@@ -1735,13 +1698,13 @@ inline bool Layout::parse_id( uint& id_i, char *& xxx, char *& xxx_end )
     return true;
 }
 
-inline bool Layout::peek_id( uint& id_i, char *& xxx_orig, char *& xxx_end )
+inline bool Layout::peek_id( uint& id_i, uint8_t *& xxx_orig, uint8_t *& xxx_end )
 {
-    char * xxx = xxx_orig;
+    uint8_t * xxx = xxx_orig;
     return parse_id( id_i, xxx, xxx_end );
 }
 
-inline bool Layout::parse_real3( Layout::real3& r3, char *& xxx, char *& xxx_end, bool has_brackets )
+inline bool Layout::parse_real3( Layout::real3& r3, uint8_t *& xxx, uint8_t *& xxx_end, bool has_brackets )
 {
     return (!has_brackets || expect_char( '[', xxx, xxx_end, true )) &&
            parse_real( r3.c[0], xxx, xxx_end ) && 
@@ -1752,7 +1715,7 @@ inline bool Layout::parse_real3( Layout::real3& r3, char *& xxx, char *& xxx_end
            (!has_brackets || expect_char( ']', xxx, xxx_end, true ));
 }
 
-inline bool Layout::parse_real( Layout::real& r, char *& xxx, char *& xxx_end )
+inline bool Layout::parse_real( Layout::real& r, uint8_t *& xxx, uint8_t *& xxx_end )
 {
     skip_whitespace( xxx, xxx_end );   
     std::string s = "";
@@ -1811,7 +1774,7 @@ inline bool Layout::parse_real( Layout::real& r, char *& xxx, char *& xxx_end )
     return true;
 }
 
-inline bool Layout::parse_int( _int& i, char *& xxx, char *& xxx_end )
+inline bool Layout::parse_int( _int& i, uint8_t *& xxx, uint8_t *& xxx_end )
 {
     bool vld = false;
     i = 0;
@@ -1845,7 +1808,7 @@ inline bool Layout::parse_int( _int& i, char *& xxx, char *& xxx_end )
     return true;
 }
 
-inline bool Layout::parse_uint( uint& u, char *& xxx, char *& xxx_end )
+inline bool Layout::parse_uint( uint& u, uint8_t *& xxx, uint8_t *& xxx_end )
 {
     _int i;
     if ( !parse_int( i, xxx, xxx_end ) ) return false;
@@ -1854,7 +1817,7 @@ inline bool Layout::parse_uint( uint& u, char *& xxx, char *& xxx_end )
     return true;
 }
 
-inline bool Layout::parse_bool( bool& b, char *& xxx, char *& xxx_end )
+inline bool Layout::parse_bool( bool& b, uint8_t *& xxx, uint8_t *& xxx_end )
 {
     uint id_i;
     if ( !parse_id( id_i, xxx, xxx_end ) ) return false;
@@ -1862,7 +1825,7 @@ inline bool Layout::parse_bool( bool& b, char *& xxx, char *& xxx_end )
     return b || id_i == false_str_i;
 }
 
-std::string Layout::surrounding_lines( char *& xxx, char *& xxx_end )
+std::string Layout::surrounding_lines( uint8_t *& xxx, uint8_t *& xxx_end )
 {
     uint eol_cnt = 0;
     std::string s = "line " + std::to_string(line_num) + " ";
