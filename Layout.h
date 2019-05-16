@@ -769,8 +769,30 @@ bool Layout::read_gdsii( std::string file )
     if ( !open_and_read( file, nnn_start, nnn_end ) ) return false;
     nnn = nnn_start;
 
-    if ( !parse_gdsii_record( hdr->root_i ) ) return false;
-    assert( nodes[hdr->root_i].kind == NODE_KIND::HIER );
+    //------------------------------------------------------------
+    // Create a file-level HIER node and read in all of them.
+    //------------------------------------------------------------
+    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+    uint ni = hdr->node_cnt++;
+    nodes[ni].kind = NODE_KIND::HIER;
+    nodes[ni].u.child_first_i = uint(-1);
+    nodes[ni].sibling_i = uint(-1);
+    hdr->root_i = ni;
+    uint prev_i = uint(-1);
+    for( ;; )
+    {
+        skip_whitespace( nnn, nnn_end );
+        if ( nnn == nnn_end ) break;
+        uint child_i;
+        if ( !parse_gdsii_record( child_i ) ) return false;
+
+        if ( prev_i == uint(-1) ) {
+            nodes[ni].u.child_first_i = child_i;
+        } else {
+            nodes[ni].sibling_i = child_i;
+        }
+        prev_i = child_i;
+    }
     return true;
 }
 
