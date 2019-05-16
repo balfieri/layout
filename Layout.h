@@ -357,6 +357,7 @@ private:
 
     uint       gdsii_rec_cnt;
     GDSII_KIND gdsii_last_kind;
+    uint       gdsii_kind_str_i[GDSII_KIND_CNT];
 
     static GDSII_DATATYPE kind_to_datatype( GDSII_KIND kind );
     static std::string    str( GDSII_KIND kind );
@@ -773,6 +774,15 @@ bool Layout::read_gdsii( std::string file )
     line_num = 1;
     if ( !open_and_read( file, nnn_start, nnn_end ) ) return false;
     nnn = nnn_start;
+
+    //------------------------------------------------------------
+    // Make sure string indexes are created for each GDSII_KIND.
+    //------------------------------------------------------------
+    for( uint i = 0; i < GDSII_KIND_CNT; i++ )
+    {
+        GDSII_KIND kind = GDSII_KIND(i);
+        gdsii_kind_str_i[i] = get_str_i( str(kind) );
+    }
 
     //------------------------------------------------------------
     // Create a file-level HIER node and read in all of them.
