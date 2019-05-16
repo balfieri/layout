@@ -815,7 +815,7 @@ bool Layout::parse_gdsii_record( uint& ni )
     rtn_assert( (nnn + 4) <= nnn_end, "unexpected end of gdsii file rec_cnt=" + std::to_string(gdsii_rec_cnt) );
     uint32_t       byte_cnt = ( nnn[0] << 8 ) | nnn[1];
     GDSII_KIND     kind     = GDSII_KIND( nnn[2] );
-    //std::cout << std::to_string(gdsii_rec_cnt) << ": " << str(kind) << " byte_cnt=" << byte_cnt << "\n";
+    if ( (gdsii_rec_cnt % 1000000) == 0 ) std::cout << std::to_string(gdsii_rec_cnt) << ": " << str(kind) << " byte_cnt=" << byte_cnt << "\n";
     GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
     rtn_assert( byte_cnt >= 4, std::to_string(gdsii_rec_cnt) + ": gdsii record byte_cnt must be at least 4, byte_cnt=" + std::to_string(byte_cnt) + " kind=" + str(kind) );
     byte_cnt -= 4;
@@ -976,6 +976,7 @@ bool Layout::write_gdsii( std::string file )
 
 void Layout::write_gdsii_record( std::ofstream& out, uint ni )
 {
+    return;
     assert( ni != uint(-1) );
     const Node& node = nodes[ni];
     switch( node.kind ) 
@@ -1001,6 +1002,10 @@ void Layout::write_gdsii_record( std::ofstream& out, uint ni )
             break;
 
         case NODE_KIND::ID:
+            out << std::string(&strings[node.u.s_i]);
+            break;
+
+        case NODE_KIND::GDSII_KIND:
             out << std::string(&strings[node.u.s_i]);
             break;
 
@@ -1060,6 +1065,18 @@ void Layout::write_gdsii_record( std::ofstream& out, uint ni )
                 write_gdsii_record( out, child_i );
             }
             out << "$end '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
+            break;
+        }
+
+        case NODE_KIND::GDSII:
+        {
+            uint id_i = node.u.child_first_i;
+            out << "$begin 'GDSII'";
+            for( uint child_i = nodes[id_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+            {
+                write_gdsii_record( out, child_i );
+            }
+            out << "$end 'GDSII'";
             break;
         }
 
@@ -1253,6 +1270,10 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
             out << std::string(&strings[node.u.s_i]);
             break;
 
+        case NODE_KIND::GDSII_KIND:
+            out << "GDSII_KIND=" << str(node.u.gk);
+            break;
+
         case NODE_KIND::ASSIGN:
         {
             uint child_i = node.u.child_first_i;
@@ -1297,6 +1318,18 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
                 }
             }
             out << "]";
+            break;
+        }
+
+        case NODE_KIND::GDSII:
+        {
+            uint id_i = node.u.child_first_i;
+            out << "$begin 'GDSII'";
+            for( uint child_i = nodes[id_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+            {
+                write_aedt_expr( out, child_i, indent_str + "\t" );
+            }
+            out << "$end 'GDSII'";
             break;
         }
 
