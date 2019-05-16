@@ -271,7 +271,7 @@ private:
 
     // allocates an array of T on a page boundary
     template<typename T>
-    T * aligned_alloc( uint   cnt );
+    T * aligned_alloc( size_t cnt );
 
     // reallocate array if we are about to exceed its current size
     template<typename T>
@@ -656,7 +656,7 @@ bool Layout::write( std::string top_file )
 
 // returns array of T on a page boundary
 template<typename T>
-T * Layout::aligned_alloc( Layout::uint   cnt )
+T * Layout::aligned_alloc( size_t cnt )
 {
     void * mem = nullptr;
     posix_memalign( &mem, getpagesize(), cnt*sizeof(T) );
