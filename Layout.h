@@ -808,7 +808,7 @@ bool Layout::parse_gdsii_record( uint& ni )
     rtn_assert( (nnn + 4) <= nnn_end, "unexpected end of gdsii file" );
     uint32_t       byte_cnt = ( nnn[0] << 8 ) | nnn[1];
     GDSII_KIND     kind     = GDSII_KIND( nnn[2] );
-    std::cout << str(kind) << " byte_cnt=" << byte_cnt << "\n";
+    //std::cout << str(kind) << " byte_cnt=" << byte_cnt << "\n";
     GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
     rtn_assert( byte_cnt >= 4, "gdsii record byte_cnt must be at least 4, byte_cnt=" + std::to_string(byte_cnt) + " kind=" + str(kind) );
     byte_cnt -= 4;
@@ -839,9 +839,8 @@ bool Layout::parse_gdsii_record( uint& ni )
 
         case GDSII_DATATYPE::STRING:
         {
-            char c[33];
-            assert( byte_cnt <= 32 );
-            if ( byte_cnt > 32 ) byte_cnt = 32;
+            char c[1024];
+            rtn_assert( byte_cnt <= (sizeof(c)-1), "STRING too big byte_cnt=" + std::to_string(byte_cnt) );
             if ( byte_cnt > 0 ) memcpy( c, nnn, byte_cnt );
             c[byte_cnt] = '\0';
             for( int i = byte_cnt-1; i >= 0; i-- ) 
