@@ -248,6 +248,7 @@ private:
     bool write_aedt( std::string file );
     void write_aedt_expr( std::ofstream& out, uint node_i, std::string indent_str );
 
+    bool cmd( std::string c );
     bool open_and_read( std::string file_name, uint8_t *& start, uint8_t *& end );
 
     void skip_whitespace_to_eol( uint8_t *& xxx, uint8_t *& xxx_end );  // on this line only
@@ -721,6 +722,7 @@ bool Layout::read_layout( std::string layout_path )
 
 bool Layout::write_layout( std::string layout_path ) 
 {
+    cmd( "rm -f " + layout_path );
     int fd = open( layout_path.c_str(), O_CREAT|O_WRONLY|O_TRUNC|O_SYNC|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP );
     if ( fd < 0 ) std::cout << "open() for write error: " << strerror( errno ) << "\n";
     rtn_assert( fd >= 0, "could not open() file " + layout_path + " for writing - open() error: " + strerror( errno ) );
@@ -755,6 +757,7 @@ bool Layout::write_layout( std::string layout_path )
 
     fsync( fd ); // flush
     close( fd );
+    cmd( "chmod +rw " + layout_path );
 
     return true;
 }
@@ -1433,13 +1436,25 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
         case NODE_KIND::HIER:
         {
             uint id_i = node.u.child_first_i;
-            out << "$begin '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
-            for( uint child_i = nodes[id_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+            uint child_i;
+            if ( id_i != uint(-1) && nodes[id_i].kind == NODE_KIND::STR ) {
+                out << "$begin '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
+                child_i = nodes[id_i].sibling_i;
+            } else {
+                out << "$begin 'UNKNOWN'";
+                child_i = id_i;
+                id_i = uint(-1);
+            }
+            for( ; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
             {
                 write_aedt_expr( out, child_i, indent_str + "\t" );
             }
             out << indent_str;
-            out << "$end '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
+            if ( id_i != uint(-1) ) {
+                out << "$end '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
+            } else {
+                out << "$end 'UNKNOWN'";
+            }
             break;
         }
 
@@ -1500,6 +1515,11 @@ std::string Layout::path_without_ext( std::string path, std::string * file_ext )
         }
     }
     return std::string( path_c );
+}
+
+bool Layout::cmd( std::string s )
+{
+    return system( s.c_str() ) == 0;
 }
 
 bool Layout::open_and_read( std::string file_path, uint8_t *& start, uint8_t *& end )
