@@ -806,12 +806,15 @@ bool Layout::parse_gdsii_record( uint& ni )
     rtn_assert( (nnn + 4) <= nnn_end, "unexpected end of gdsii file" );
     uint32_t       byte_cnt = uint32_t( nnn[0] ) + uint32_t( nnn[1] ); 
     GDSII_KIND     kind     = GDSII_KIND( nnn[2] );
+    std::cout << str(kind) << "\n";
     GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
-    rtn_assert( byte_cnt >= 4, "gdsii record byte_cnt must be at least 4" );
+    rtn_assert( byte_cnt >= 4, "gdsii record byte_cnt must be at least 4, byte_cnt=" + std::to_string(byte_cnt) + " kind=" + str(kind) );
     byte_cnt -= 4;
     nnn += 4;
     rtn_assert( uint32_t(kind) < GDSII_KIND_CNT, "bad gdsii record kind " + std::to_string(uint32_t(kind)) );
-    rtn_assert( kind_to_datatype( kind ) == datatype, "datatype does not match expected for record kind " + str(kind) );
+    rtn_assert( kind_to_datatype( kind ) == datatype, 
+                "datatype=" + str(datatype) + " does not match expected datatype=" + 
+                str( kind_to_datatype( kind ) ) + " for record kind " + str(kind) );
     rtn_assert( (nnn + byte_cnt) <= nnn_end, "unexpected end of gdsii file" );
   
     //------------------------------------------------------------
@@ -860,6 +863,7 @@ bool Layout::parse_gdsii_record( uint& ni )
             uint datum_byte_cnt = (datatype == GDSII_DATATYPE::INTEGER_2) ? 2 :
                                   (datatype == GDSII_DATATYPE::REAL_8)    ? 8 : 4;
             uint cnt = byte_cnt / datum_byte_cnt;
+            rtn_assert( (cnt*datum_byte_cnt) == byte_cnt, "datum_byte_cnt does not divide evenly" );
             unsigned char * uuu = reinterpret_cast<unsigned char *>( nnn );
             for( uint i = 0; i < cnt; i++, uuu += datum_byte_cnt )
             {
