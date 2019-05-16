@@ -161,6 +161,83 @@ public:
         uint        root_i;                 // index of root node in nodes array
     };
 
+    enum class GDSII_KIND
+    {
+        HEADER,
+        BGNLIB,
+        LIBNAME,
+        UNITS,
+        ENDLIB,
+        BGNSTR,
+        STRNAME,
+        ENDSTR,
+        BOUNDARY,
+        PATH,
+        SREF,
+        AREF,
+        TEXT,
+        LAYER,
+        DATATYPE,
+        WIDTH,
+        XY,
+        ENDEL,
+        SNAME,
+        COLROW,
+        TEXTNODE,
+        NODE,
+        TEXTTYPE,
+        PRESENTATION,
+        UNUSED,
+        STRING,
+        STRANS,
+        MAG,
+        ANGLE,
+        UNUSED2,
+        UNUSED3,
+        REFLIBS,
+        FONTS,
+        PATHTYPE,
+        GENERATIONS,
+        ATTRTABLE,
+        STYPTABLE,
+        STRTYPE,
+        ELFLAGS,
+        ELKEY,
+        LINKTYPE,
+        LINKKEYS,
+        NODETYPE,
+        PROPATTR,
+        PROPVALUE,
+        BOX,
+        BOXTYPE,
+        PLEX,
+        BGNEXTN,
+        ENDEXTN,
+        TAPENUM,
+        TAPECODE,
+        STRCLASS,
+        RESERVED,
+        FORMAT,
+        MASK,
+        ENDMASKS,
+        LIBDIRSIZE,
+        SRFNAME,
+        LIBSECUR,
+    };
+
+    static constexpr uint32_t GDSII_KIND_CNT = 0x3c;
+
+    enum class GDSII_DATATYPE
+    {
+        NO_DATA,
+        BITARRAY,
+        INTEGER_2,
+        INTEGER_4,
+        REAL_4,
+        REAL_8,
+        STRING,
+    };
+
     enum class NODE_KIND
     {
         STR,                                // scalars
@@ -169,11 +246,13 @@ public:
         UINT,
         REAL,
         ID,
+        GDSII_KIND,
 
         ASSIGN,                             // child 0 is lhs (usually an id), child 1 is rhs
         HIER,                               // child 0 is id, other children are normal children
         CALL,                               // child 0 is id, other children are args
         SLICE,                              // child 0 is id, child 1 is index before the ':', other children are other args
+        GDSII,                              // child 0 is GDSII_KIND, others are dependent on kind
     };
             
     class Node
@@ -186,6 +265,7 @@ public:
             _int        i;                  // INT
             uint        u;                  // UINT
             real        r;                  // REAL
+            GDSII_KIND  gk;                 // GDSII_KIND
             uint        child_first_i;      // non-scalars - index into nodes[] array of first child on list
         } u;
         uint        sibling_i;              // index in nodes array of sibling on list, else uint(-1)
@@ -277,87 +357,8 @@ private:
     template<typename T>
     inline void perhaps_realloc( T *& array, const uint  & hdr_cnt, uint  & max_cnt, uint   add_cnt );
 
-    // GDSII
-    enum class GDSII_KIND
-    {
-        HEADER,
-        BGNLIB,
-        LIBNAME,
-        UNITS,
-        ENDLIB,
-        BGNSTR,
-        STRNAME,
-        ENDSTR,
-        BOUNDARY,
-        PATH,
-        SREF,
-        AREF,
-        TEXT,
-        LAYER,
-        DATATYPE,
-        WIDTH,
-        XY,
-        ENDEL,
-        SNAME,
-        COLROW,
-        TEXTNODE,
-        NODE,
-        TEXTTYPE,
-        PRESENTATION,
-        UNUSED,
-        STRING,
-        STRANS,
-        MAG,
-        ANGLE,
-        UNUSED2,
-        UNUSED3,
-        REFLIBS,
-        FONTS,
-        PATHTYPE,
-        GENERATIONS,
-        ATTRTABLE,
-        STYPTABLE,
-        STRTYPE,
-        ELFLAGS,
-        ELKEY,
-        LINKTYPE,
-        LINKKEYS,
-        NODETYPE,
-        PROPATTR,
-        PROPVALUE,
-        BOX,
-        BOXTYPE,
-        PLEX,
-        BGNEXTN,
-        ENDEXTN,
-        TAPENUM,
-        TAPECODE,
-        STRCLASS,
-        RESERVED,
-        FORMAT,
-        MASK,
-        ENDMASKS,
-        LIBDIRSIZE,
-        SRFNAME,
-        LIBSECUR,
-    };
-
-    static constexpr uint32_t GDSII_KIND_CNT = 0x3c;
-
-    enum class GDSII_DATATYPE
-    {
-        NO_DATA,
-        BITARRAY,
-        INTEGER_2,
-        INTEGER_4,
-        REAL_4,
-        REAL_8,
-        STRING,
-    };
-
     uint       gdsii_rec_cnt;
     GDSII_KIND gdsii_last_kind;
-    uint       gdsii_kind_str_i[GDSII_KIND_CNT];
 
     static GDSII_DATATYPE kind_to_datatype( GDSII_KIND kind );
     static std::string    str( GDSII_KIND kind );
@@ -776,15 +777,6 @@ bool Layout::read_gdsii( std::string file )
     nnn = nnn_start;
 
     //------------------------------------------------------------
-    // Make sure string indexes are created for each GDSII_KIND.
-    //------------------------------------------------------------
-    for( uint i = 0; i < GDSII_KIND_CNT; i++ )
-    {
-        GDSII_KIND kind = GDSII_KIND(i);
-        gdsii_kind_str_i[i] = get_str_i( str(kind) );
-    }
-
-    //------------------------------------------------------------
     // Create a file-level HIER node and read in all of them.
     //------------------------------------------------------------
     perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
@@ -834,6 +826,24 @@ bool Layout::parse_gdsii_record( uint& ni )
                 str( kind_to_datatype( kind ) ) + " for record kind " + str(kind) );
     rtn_assert( (nnn + byte_cnt) <= nnn_end, "unexpected end of gdsii file" );
   
+    //------------------------------------------------------------
+    // Create a GDSII node.
+    //------------------------------------------------------------
+    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+    ni = hdr->node_cnt++;
+    nodes[ni].kind = NODE_KIND::GDSII;
+    nodes[ni].sibling_i = uint(-1);
+
+    //------------------------------------------------------------
+    // First child node is a GDSII_KIND 
+    //------------------------------------------------------------
+    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+    uint prev_i = hdr->node_cnt++;
+    nodes[prev_i].kind = NODE_KIND::GDSII_KIND;
+    nodes[prev_i].u.gk = kind;
+    nodes[prev_i].sibling_i = uint(-1);
+    nodes[ni].u.child_first_i = prev_i;
+
     //------------------------------------------------------------
     // Parse payload.
     //------------------------------------------------------------
@@ -918,220 +928,37 @@ bool Layout::parse_gdsii_record( uint& ni )
     nnn += byte_cnt;
 
     //------------------------------------------------------------
-    // Get record type. We don't support all record types.
+    // Further processing.
     //------------------------------------------------------------
     switch( kind )
     {
-        case GDSII_KIND::HEADER:
-        {
-            // add hier
-            break;
-        }
-
         case GDSII_KIND::BGNLIB:
-        {
-            // add hier
-            break;
-        }
-
-        case GDSII_KIND::LIBNAME:
-        {
-            // saved string
-            break;
-        }
-
-        case GDSII_KIND::UNITS:
-        {
-            // PState->Data->FileUnits[0] = Record.dVal[0];
-            // PState->Data->FileUnits[1] = Record.dVal[1];
-            // PState->Data->UnitInMeters = PState->Data->FileUnits[1] / PState->Data->FileUnits[0];
-            break;
-        }
-
-        case GDSII_KIND::ENDLIB:
-        {
-            // end hier
-            break;
-        }
-
         case GDSII_KIND::BGNSTR:
-        {
-            // add hier
-            break;
-        }
-
-        case GDSII_KIND::STRNAME:
-        {
-            // PState->CurrentStruct->Name = new std::string( *(Record.sVal) );
-            // if( strcasestr( Record.sVal->c_str(), "CONTEXT_INFO") )
-            // PState->CurrentStruct->IsPCell=true;
-            break;
-        }
-
-        case GDSII_KIND::ENDSTR:
-        {
-            // end hier
-            break;
-        }
-
         case GDSII_KIND::BOUNDARY:
-        {
-            // add hier
-            break;
-        }
-
         case GDSII_KIND::PATH:
-        {
-            // add hier
-            break;
-        }
-
         case GDSII_KIND::SREF:
-        {
-            // add hier
-            break;
-        }
-
         case GDSII_KIND::AREF:
-        {
-            // add hier
-            break;
-        }
-
         case GDSII_KIND::TEXT:
-        {
-            // add hier
-            break;
-        }
-
         case GDSII_KIND::NODE:
         {
-            // add hier
-            break;
-        }
-
-        case GDSII_KIND::LAYER:
-        {
-            // save int
-            break;
-        }
-
-        case GDSII_KIND::DATATYPE:
-        {
-            // save int
-            break;
-        }
-
-        case GDSII_KIND::WIDTH:
-        {
-            // save int
-            break;
-        }
-
-        case GDSII_KIND::XY:
-        {
-            // save list of ints
-            break;
-        }
-
-        case GDSII_KIND::ENDEL:
-        {
-            // end hier
-            break;
-        }
-
-        case GDSII_KIND::SNAME:
-        {
-            // save string
-            break;
-        }
-
-        case GDSII_KIND::COLROW:
-        {
-            // save pair of ints
-            break;
-        }
-
-        case GDSII_KIND::TEXTTYPE:
-        {
-            // save int
-            break;
-        }
-
-        case GDSII_KIND::NODETYPE:
-        {
-            // save int
-            break;
-        }
-
-        case GDSII_KIND::PRESENTATION:
-        {
-            // font       = bits 10-11 (00 means font 0, 01 rneans font 1, 10 means font 2, and 11 means font 3)
-            // vertical   = bits 12-13 (00 means top, 01 means middle, and 10 means bottom)
-            // horizontal = bits 14-15 (00 means left, 01 means center, and 10 means right)
-            break;
-        }
-
-        case GDSII_KIND::STRING:
-        {
-            // save string
-            break;
-        }
-
-        case GDSII_KIND::STRANS:
-        {
-            // PState->CurrentElement->Refl     = Record.Bits[0];
-            // PState->CurrentElement->AbsMag   = Record.Bits[13];
-            // PState->CurrentElement->AbsAngle = Record.Bits[14];
-            break;
-        }
-
-        case GDSII_KIND::MAG:
-        {
-            // save double
-            break;
-        }
-
-        case GDSII_KIND::ANGLE:
-        {
-            // save double
-            break;
-        }
-
-        case GDSII_KIND::PATHTYPE:
-        {
-            // save int
-            break;
-        }
-
-        case GDSII_KIND::PROPATTR:
-        {
-            // save int
-            break;
-        }
-
-        case GDSII_KIND::PROPVALUE:
-        {
-            // save string
-            // if( strcasestr( Record.sVal->c_str(), "CONTEXT_INFO") ) PState->CurrentStruct->IsPCell=true;
-            break;
-        }
-
-        case GDSII_KIND::BGNEXTN:
-        {
-            // save int
-            break;
-        }
-
-        case GDSII_KIND::ENDEXTN:
-        {
-            // save int
+            // recurse for other children
+            for( ;; ) 
+            {
+                uint child_i;
+                if ( !parse_gdsii_record( child_i ) ) return false;
+                uint gk_i = nodes[child_i].u.child_first_i;
+                assert( nodes[gk_i].kind == NODE_KIND::GDSII_KIND );
+                GDSII_KIND gk = nodes[gk_i].u.gk;
+                if ( gk == GDSII_KIND::ENDEL || gk == GDSII_KIND::ENDSTR || gk == GDSII_KIND::ENDLIB ) break;
+                nodes[prev_i].sibling_i = child_i;
+                prev_i = child_i;
+            }
             break;
         }
 
         default:
         {
-            rtn_assert( false, "unsupported GDSII record kind " + str(kind) );
+            // nothing else to do
             break;
         }
     }
