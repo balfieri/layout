@@ -1029,6 +1029,14 @@ bool Layout::parse_gdsii_record( uint& ni )
             break;
         }
 
+        case GDSII_KIND::PRESENTATION:
+        {
+            // font       = bits 10-11 (00 means font 0, 01 rneans font 1, 10 means font 2, and 11 means font 3)
+            // vertical   = bits 12-13 (00 means top, 01 means middle, and 10 means bottom)
+            // horizontal = bits 14-15 (00 means left, 01 means center, and 10 means right)
+            break;
+        }
+
         case GDSII_KIND::STRING:
         {
             // save string
