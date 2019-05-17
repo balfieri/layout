@@ -803,7 +803,7 @@ bool Layout::read_gdsii( std::string file )
         if ( prev_i == uint(-1) ) {
             nodes[ni].u.child_first_i = child_i;
         } else {
-            nodes[ni].sibling_i = child_i;
+            nodes[prev_i].sibling_i = child_i;
         }
 
         if ( gdsii_last_kind == GDSII_KIND::ENDLIB ) break;
@@ -823,7 +823,7 @@ bool Layout::parse_gdsii_record( uint& ni )
     rtn_assert( (nnn + 4) <= nnn_end, "unexpected end of gdsii file rec_cnt=" + std::to_string(gdsii_rec_cnt) );
     uint32_t       byte_cnt = ( nnn[0] << 8 ) | nnn[1];
     GDSII_KIND     kind     = GDSII_KIND( nnn[2] );
-    if ( (gdsii_rec_cnt % 1000000) == 0 ) std::cout << std::to_string(gdsii_rec_cnt) << ": " << str(kind) << " byte_cnt=" << byte_cnt << "\n";
+    if ( (gdsii_rec_cnt % 1) == 0 ) std::cout << std::to_string(gdsii_rec_cnt) << ": " << str(kind) << " byte_cnt=" << byte_cnt << "\n";
     GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
     rtn_assert( byte_cnt >= 4, std::to_string(gdsii_rec_cnt) + ": gdsii record byte_cnt must be at least 4, byte_cnt=" + std::to_string(byte_cnt) + " kind=" + str(kind) );
     byte_cnt -= 4;
@@ -893,16 +893,13 @@ bool Layout::parse_gdsii_record( uint& ni )
             uint prev_i = uint(-1);
             for( uint i = 0; i < cnt; i++, uuu += datum_byte_cnt )
             {
-                uint child_i = ni;
-                if ( i != 0 ) {
-                    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-                    child_i = hdr->node_cnt++;
-                    nodes[child_i].sibling_i = uint(-1);
-                    if ( i == 1 ) {
-                        nodes[ni].u.child_first_i = child_i;
-                    } else {
-                        nodes[prev_i].sibling_i = child_i;
-                    }
+                perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+                uint child_i = hdr->node_cnt++;
+                nodes[child_i].sibling_i = uint(-1);
+                if ( i == 0 ) {
+                    nodes[ni].u.child_first_i = child_i;
+                } else {
+                    nodes[prev_i].sibling_i = child_i;
                 }
                 if ( datatype == GDSII_DATATYPE::INTEGER_2 || datatype == GDSII_DATATYPE::INTEGER_4 ) {
                     int64_t vi = (uuu[0] << 8) | uuu[1];
@@ -1336,7 +1333,7 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
                 out << "$begin '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
                 child_i = nodes[id_i].sibling_i;
             } else {
-                out << "$begin 'UNKNOWN'";
+                out << "$begin 'FILE'";
                 child_i = id_i;
                 id_i = uint(-1);
             }
@@ -1348,17 +1345,90 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
             if ( id_i != uint(-1) ) {
                 out << "$end '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
             } else {
-                out << "$end 'UNKNOWN'";
+                out << "$end 'FILE'\n";
             }
             break;
         }
 
         default:
         {
-            std::cout << "ERROR: unknown NODE_KIND\n";
-            exit( 1 );
-            break;
+            if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
+                GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
+                GDSII_DATATYPE datatype = kind_to_datatype( gkind );
+                switch( datatype )
+                {
+                    case GDSII_DATATYPE::NO_DATA:
+                    {
+                        switch( gkind )
+                        {
+                            case GDSII_KIND::BGNLIB:
+                            case GDSII_KIND::BGNSTR:
+                            case GDSII_KIND::BOUNDARY:
+                            case GDSII_KIND::PATH:
+                            case GDSII_KIND::SREF:
+                            case GDSII_KIND::AREF:
+                            case GDSII_KIND::TEXT:
+                            case GDSII_KIND::NODE:
+                            {
+                                out << "$begin '" << node.kind << "'";
+                                for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                                {
+                                    write_aedt_expr( out, child_i, indent_str + "\t" );
+                                }
+                                out << indent_str;
+                                out << "$end '" << node.kind << "'";
+                                break;
+                            }
+
+                            default:
+                            {
+                                out << node.kind << "()";
+                                break;
+                            }
+                        }
+                        break;
+                    }
+
+                    case GDSII_DATATYPE::BITARRAY:
+                    {
+                        out << node.kind << "(" << node.u.u << ")";
+                        break;
+                    }
+
+                    case GDSII_DATATYPE::STRING:
+                    {
+                        out << node.kind << "('" << std::string(&strings[node.u.s_i]) << "')";
+                        break;
+                    }
+
+                    case GDSII_DATATYPE::INTEGER_2:
+                    case GDSII_DATATYPE::INTEGER_4:
+                    case GDSII_DATATYPE::REAL_4:
+                    case GDSII_DATATYPE::REAL_8:
+                    {
+                        std::string vals = "";
+                        for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                        {
+                            if ( vals != "" ) vals += ", ";
+                            vals += "'" + ((nodes[child_i].kind == NODE_KIND::INT) ? std::to_string(nodes[child_i].u.i) 
+                                                                                   : std::to_string(nodes[child_i].u.r)) + "'";
+                        }
+                        out << node.kind << "(" << vals << ")";
+                        break;
+                    }
+
+                    default:
+                    {
+                        std::cout << "ERROR: unknown GDSII_DATATYPE " << int(datatype) << "\n";
+                        exit( 1 );
+                    }
+                }
+            } else {
+                std::cout << "ERROR: unknown NODE_KIND " << int(node.kind) << "\n";
+                exit( 1 );
+            }
         }
+        break;
     }
 }
 
