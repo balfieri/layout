@@ -246,15 +246,19 @@ public:
         UINT,
         REAL,
         ID,
-        GDSII_KIND,
 
         ASSIGN,                             // child 0 is lhs (usually an id), child 1 is rhs
         HIER,                               // child 0 is id, other children are normal children
         CALL,                               // child 0 is id, other children are args
         SLICE,                              // child 0 is id, child 1 is index before the ':', other children are other args
-        GDSII,                              // child 0 is GDSII_KIND, others are dependent on kind
+
+        GDSII_HEADER = 0x100,               // this is a GDSII HEADER node; other GDSII_KINDs follow sequentially
     };
             
+    static GDSII_DATATYPE kind_to_datatype( GDSII_KIND kind );
+    static std::string    str( GDSII_KIND kind );
+    static std::string    str( GDSII_DATATYPE datatype );
+
     class Node
     {
     public:
@@ -265,7 +269,6 @@ public:
             _int        i;                  // INT
             uint        u;                  // UINT
             real        r;                  // REAL
-            GDSII_KIND  gk;                 // GDSII_KIND
             uint        child_first_i;      // non-scalars - index into nodes[] array of first child on list
         } u;
         uint        sibling_i;              // index in nodes array of sibling on list, else uint(-1)
@@ -359,10 +362,6 @@ private:
 
     uint       gdsii_rec_cnt;
     GDSII_KIND gdsii_last_kind;
-
-    static GDSII_DATATYPE kind_to_datatype( GDSII_KIND kind );
-    static std::string    str( GDSII_KIND kind );
-    static std::string    str( GDSII_DATATYPE datatype );
 };
 
 #ifdef LAYOUT_DEBUG
@@ -391,26 +390,6 @@ inline std::ostream& operator << ( std::ostream& os, const Layout::real3& v )
 inline std::ostream& operator << ( std::ostream& os, const Layout::AABB& box ) 
 {
     os << box.min << ".." << box.max;
-    return os;
-}
-
-inline std::ostream& operator << ( std::ostream& os, const Layout::NODE_KIND& kind ) 
-{
-    #define ncase( kind ) case Layout::NODE_KIND::kind: os << #kind; break;
-    switch( kind )
-    {
-        ncase( STR )
-        ncase( BOOL )
-        ncase( INT )
-        ncase( UINT )
-        ncase( REAL )
-        ncase( ID )
-        ncase( CALL )
-        ncase( SLICE )
-        ncase( ASSIGN )
-        ncase( HIER )
-        default: os << "<unknown>"; break;
-    }
     return os;
 }
 
@@ -497,6 +476,35 @@ std::string Layout::str( Layout::GDSII_DATATYPE datatype )
         dcase( STRING )
         default: return "<unknown>";
     }
+}
+
+inline std::ostream& operator << ( std::ostream& os, const Layout::NODE_KIND& kind ) 
+{
+    #define ncase( kind ) case Layout::NODE_KIND::kind: os << #kind; break;
+    switch( kind )
+    {
+        ncase( STR )
+        ncase( BOOL )
+        ncase( INT )
+        ncase( UINT )
+        ncase( REAL )
+        ncase( ID )
+        ncase( HIER )
+        ncase( ASSIGN )
+        ncase( CALL )
+        ncase( SLICE )
+        default: 
+        {
+            if ( kind >= Layout::NODE_KIND::GDSII_HEADER ) {
+                Layout::GDSII_KIND gkind = Layout::GDSII_KIND(int(kind) - int(Layout::NODE_KIND::GDSII_HEADER));
+                os << "GDSII_" << Layout::str(gkind);
+            } else {
+                os << "<unknown>"; 
+            }
+            break;
+        }
+    }
+    return os;
 }
 
 Layout::GDSII_DATATYPE Layout::kind_to_datatype( Layout::GDSII_KIND kind )
@@ -831,18 +839,8 @@ bool Layout::parse_gdsii_record( uint& ni )
     //------------------------------------------------------------
     perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
     ni = hdr->node_cnt++;
-    nodes[ni].kind = NODE_KIND::GDSII;
+    nodes[ni].kind = NODE_KIND( int(NODE_KIND::GDSII_HEADER) + int(kind) );
     nodes[ni].sibling_i = uint(-1);
-
-    //------------------------------------------------------------
-    // First child node is a GDSII_KIND 
-    //------------------------------------------------------------
-    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-    uint prev_i = hdr->node_cnt++;
-    nodes[prev_i].kind = NODE_KIND::GDSII_KIND;
-    nodes[prev_i].u.gk = kind;
-    nodes[prev_i].sibling_i = uint(-1);
-    nodes[ni].u.child_first_i = prev_i;
 
     //------------------------------------------------------------
     // Parse payload.
@@ -858,7 +856,7 @@ bool Layout::parse_gdsii_record( uint& ni )
         case GDSII_DATATYPE::BITARRAY:
         {
             rtn_assert( byte_cnt == 2, "BITARRAY gdsii datatype should have 2-byte payload" );
-            uint bits = (nnn[1] << 8) | nnn[0];
+            nodes[ni].u.u = (nnn[1] << 8) | nnn[0];
             break;
         }
 
@@ -878,7 +876,7 @@ bool Layout::parse_gdsii_record( uint& ni )
                 if ( !is_gdsii_allowed_char( c[i] ) ) c[i] = '_';
             }
             std::string s = std::string( c );
-            uint s_i = get_str_i( s );
+            nodes[ni].u.s_i = get_str_i( s );
             break;
         }
 
@@ -892,8 +890,20 @@ bool Layout::parse_gdsii_record( uint& ni )
             uint cnt = byte_cnt / datum_byte_cnt;
             rtn_assert( (cnt*datum_byte_cnt) == byte_cnt, "datum_byte_cnt does not divide evenly" );
             uint8_t * uuu = nnn;
+            uint prev_i = uint(-1);
             for( uint i = 0; i < cnt; i++, uuu += datum_byte_cnt )
             {
+                uint child_i = ni;
+                if ( i != 0 ) {
+                    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+                    child_i = hdr->node_cnt++;
+                    nodes[child_i].sibling_i = uint(-1);
+                    if ( i == 1 ) {
+                        nodes[ni].u.child_first_i = child_i;
+                    } else {
+                        nodes[prev_i].sibling_i = child_i;
+                    }
+                }
                 if ( datatype == GDSII_DATATYPE::INTEGER_2 || datatype == GDSII_DATATYPE::INTEGER_4 ) {
                     int64_t vi = (uuu[0] << 8) | uuu[1];
                     if ( datatype == GDSII_DATATYPE::INTEGER_4 ) {
@@ -902,6 +912,8 @@ bool Layout::parse_gdsii_record( uint& ni )
                     if ( (vi & 0x80000000) != 0 ) {
                         vi = (datatype == GDSII_DATATYPE::INTEGER_2) ? (0x10000 - vi) : (0x100000000LL - vi);
                     }
+                    nodes[child_i].kind = NODE_KIND::INT;
+                    nodes[child_i].u.i = vi;
                 } else {
                     real sign = (uuu[0] & 0x80) ? -1.0 : 1.0;
                     real exp  = (uuu[0] & 0x7f) - 64;
@@ -910,8 +922,10 @@ bool Layout::parse_gdsii_record( uint& ni )
                     {
                         frac = (frac * 256.0) + double(uuu[j]);
                     }
-                    real r = sign * frac * std::pow( 2.0, 4.0*exp - 8*(datum_byte_cnt-1) );
+                    nodes[child_i].kind = NODE_KIND::REAL;
+                    nodes[child_i].u.r = sign * frac * std::pow( 2.0, 4.0*exp - 8*(datum_byte_cnt-1) );
                 }
+                prev_i = child_i;
             }
             break;
         }
@@ -942,15 +956,18 @@ bool Layout::parse_gdsii_record( uint& ni )
         case GDSII_KIND::NODE:
         {
             // recurse for other children
+            uint prev_i = uint(-1);
             for( ;; ) 
             {
                 uint child_i;
                 if ( !parse_gdsii_record( child_i ) ) return false;
-                uint gk_i = nodes[child_i].u.child_first_i;
-                assert( nodes[gk_i].kind == NODE_KIND::GDSII_KIND );
-                GDSII_KIND gk = nodes[gk_i].u.gk;
-                if ( gk == GDSII_KIND::ENDEL || gk == GDSII_KIND::ENDSTR || gk == GDSII_KIND::ENDLIB ) break;
-                nodes[prev_i].sibling_i = child_i;
+                GDSII_KIND gkind = GDSII_KIND( int(nodes[child_i].kind) - int(NODE_KIND::GDSII_HEADER) );
+                if ( gkind == GDSII_KIND::ENDEL || gkind == GDSII_KIND::ENDSTR || gkind == GDSII_KIND::ENDLIB ) break;
+                if ( prev_i == uint(-1) ) {
+                    nodes[ni].u.child_first_i = child_i;
+                } else {
+                    nodes[prev_i].sibling_i = child_i;
+                }
                 prev_i = child_i;
             }
             break;
@@ -1002,10 +1019,6 @@ void Layout::write_gdsii_record( std::ofstream& out, uint ni )
             break;
 
         case NODE_KIND::ID:
-            out << std::string(&strings[node.u.s_i]);
-            break;
-
-        case NODE_KIND::GDSII_KIND:
             out << std::string(&strings[node.u.s_i]);
             break;
 
@@ -1068,22 +1081,20 @@ void Layout::write_gdsii_record( std::ofstream& out, uint ni )
             break;
         }
 
-        case NODE_KIND::GDSII:
-        {
-            uint id_i = node.u.child_first_i;
-            out << "$begin 'GDSII'";
-            for( uint child_i = nodes[id_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
-            {
-                write_gdsii_record( out, child_i );
-            }
-            out << "$end 'GDSII'";
-            break;
-        }
-
         default:
         {
-            std::cout << "ERROR: unknown NODE_KIND\n";
-            exit( 1 );
+            if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
+                uint id_i = node.u.child_first_i;
+                out << "$begin '" << node.kind << "'";
+                for( uint child_i = nodes[id_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                {
+                    write_gdsii_record( out, child_i );
+                }
+                out << "$end '" << node.kind << "'";
+            } else {
+                std::cout << "ERROR: unknown NODE_KIND\n";
+                exit( 1 );
+            }
             break;
         }
     }
@@ -1270,10 +1281,6 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
             out << std::string(&strings[node.u.s_i]);
             break;
 
-        case NODE_KIND::GDSII_KIND:
-            out << "GDSII_KIND=" << str(node.u.gk);
-            break;
-
         case NODE_KIND::ASSIGN:
         {
             uint child_i = node.u.child_first_i;
@@ -1318,18 +1325,6 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
                 }
             }
             out << "]";
-            break;
-        }
-
-        case NODE_KIND::GDSII:
-        {
-            uint id_i = node.u.child_first_i;
-            out << "$begin 'GDSII'";
-            for( uint child_i = nodes[id_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
-            {
-                write_aedt_expr( out, child_i, indent_str + "\t" );
-            }
-            out << "$end 'GDSII'";
             break;
         }
 
