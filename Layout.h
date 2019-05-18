@@ -362,6 +362,9 @@ private:
 
     uint       gdsii_rec_cnt;
     GDSII_KIND gdsii_last_kind;
+    int        gdsii_fd;
+    uint8_t *  gdsii_buff;
+    uint       gdsii_buff_byte_cnt;
 };
 
 #ifdef LAYOUT_DEBUG
@@ -678,7 +681,7 @@ T * Layout::aligned_alloc( size_t cnt )
 
 // reallocate array if we are about to exceed its current size
 template<typename T>
-inline void Layout::perhaps_realloc( T *& array, const Layout::uint  & hdr_cnt, Layout::uint  & max_cnt, Layout::uint   add_cnt )
+inline void Layout::perhaps_realloc( T *& array, const Layout::uint& hdr_cnt, Layout::uint& max_cnt, Layout::uint add_cnt )
 {
     while( (hdr_cnt + add_cnt) > max_cnt ) {
         void * mem = nullptr;
@@ -703,7 +706,7 @@ bool Layout::read_layout( std::string layout_path )
     mapped_region = start;
 
     //------------------------------------------------------------
-    // Write out header than individual arrays.
+    // Read header then individual arrays.
     // Each is padded out to a page boundary in the file.
     //------------------------------------------------------------
     uint8_t * _addr = start;
@@ -741,7 +744,7 @@ bool Layout::write_layout( std::string layout_path )
     rtn_assert( fd >= 0, "could not open() file " + layout_path + " for writing - open() error: " + strerror( errno ) );
 
     //------------------------------------------------------------
-    // Write out header than individual arrays.
+    // Write out header then individual arrays.
     // Each is padded out to a page boundary in the file.
     //------------------------------------------------------------
     size_t page_size = getpagesize();
@@ -980,120 +983,113 @@ bool Layout::parse_gdsii_record( uint& ni )
     return true;
 }
 
-bool Layout::write_gdsii( std::string file )
+constexpr uint gdsii_buff_alloc_byte_cnt = 128*1024*1024;      // hide overhead of write() calls
+
+bool Layout::write_gdsii( std::string gdsii_path )
 {
-    std::ofstream out( file, std::ofstream::out );
+    posix_memalign( &gdsii_buff, getpagesize(), gdsii_buff_alloc_byte_cnt );
+    gdsii_buff_byte_cnt = 0;
+
+    cmd( "rm -f " + gdsii_path );
+    gdsii_fd = open( gdsii_path.c_str(), O_CREAT|O_WRONLY|O_TRUNC|O_SYNC|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP );
+    if ( gdsii_fd < 0 ) std::cout << "open() for write error: " << strerror( errno ) << "\n";
+
     write_gdsii_record( out, hdr->root_i );
-    out.close();
-    return false;
+
+    fsync( gdsii_fd ); // flush
+    close( gdsii_fd );
+    cmd( "chmod +rw " + gdsii_path );
+
+    delete gdsii_buff;
+    gdsii_buff = nullptr;
+
+    return true;
 }
 
 void Layout::write_gdsii_record( std::ofstream& out, uint ni )
 {
-    return;
-    assert( ni != uint(-1) );
+    if ( (gdsii_buff_byte_cnt+1024) >= gdsii_buff_alloc_byte_cnt ) {
+        // flush buffer before it is about to fill up
+        if ( ::write( gdsii_fd, gdsii_buff, gdsii_buff_byte_cnt ) <= 0 ) { 
+            close( gdsii_fd ); 
+            rtn_assert( 0, "could not write() gdsii file - write() error: " + strerror( errno ) );
+        }
+        gdsii_buff_byte_cnt = 0;
+    }
+
+    uint32_t       byte_cnt = ( nnn[0] << 8 ) | nnn[1];
+    GDSII_KIND     kind     = GDSII_KIND( nnn[2] );
+    if ( (gdsii_rec_cnt % 1) == 0 ) std::cout << std::to_string(gdsii_rec_cnt) << ": " << str(kind) << " byte_cnt=" << byte_cnt << "\n";
+    GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
+
     const Node& node = nodes[ni];
-    switch( node.kind ) 
-    {
-        case NODE_KIND::STR:
-            out << "'" << std::string(&strings[node.u.s_i]) << "'";
-            break;
+    if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
+        uint8_t  bytes[64*1024];
+        uint16_t byte_cnt = 2;   // fill in byte_cnt later
 
-        case NODE_KIND::BOOL:
-            out << (node.u.b ? "true" : "false");
-            break;
+        GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
+        GDSII_DATATYPE datatype = kind_to_datatype( gkind );
+        bytes[byte_cnt++] = int(gkind);
+        bytes[byte_cnt++] = int(datatype);
 
-        case NODE_KIND::INT:
-            out << node.u.i;
-            break;
-            
-        case NODE_KIND::UINT:
-            out << node.u.u;
-            break;
-            
-        case NODE_KIND::REAL:
-            out << node.u.r;
-            break;
-
-        case NODE_KIND::ID:
-            out << std::string(&strings[node.u.s_i]);
-            break;
-
-        case NODE_KIND::ASSIGN:
+        switch( datatype )
         {
-            uint child_i = node.u.child_first_i;
-            write_gdsii_record( out, child_i );
-            out << "=";
-            child_i = nodes[child_i].sibling_i;
-            write_gdsii_record( out, child_i );
-            break;
-        }
-
-        case NODE_KIND::CALL:
-        {
-            uint child_i = node.u.child_first_i;
-            write_gdsii_record( out, child_i );
-            out << "(";
-            bool have_one = false;
-            for( child_i = nodes[child_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+            case GDSII_DATATYPE::NO_DATA:
             {
-                if ( have_one ) out << ", ";
-                write_gdsii_record( out, child_i );
-                have_one = true;
+                break;
             }
-            out << ")";
-            break;
-        }
 
-        case NODE_KIND::SLICE:
-        {
-            uint child_i = node.u.child_first_i;
-            write_gdsii_record( out, child_i );
-            out << "[";
-            child_i = nodes[child_i].sibling_i;
-            if ( child_i != uint(-1) ) {
-                write_gdsii_record( out, child_i );
-                out << ":";
-                bool have_one = false;
-                for( child_i = nodes[child_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
-                {
-                    out << (have_one ? ", " : " ");
-                    write_gdsii_record( out, child_i );
-                    have_one = true;
-                }
-            }
-            out << "]";
-            break;
-        }
-
-        case NODE_KIND::HIER:
-        {
-            uint id_i = node.u.child_first_i;
-            out << "$begin '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
-            for( uint child_i = nodes[id_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+            case GDSII_DATATYPE::BITARRAY:
             {
-                write_gdsii_record( out, child_i );
+                bytes[byte_cnt++] = node.u.u & 0xff;
+                bytes[byte_cnt++] = (node.u.u >> 8) & 0xff;
+                break;
             }
-            out << "$end '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
-            break;
-        }
 
-        default:
+            case GDSII_DATATYPE::STRING:
+            {
+                uint len = strlen( &strings[node.u.s_i] );
+                memcpy( &bytes[byte_cnt], &strings[node.u.s_i], len );
+                byte_cnt += len;
+                break;
+            }
+
+            case GDSII_DATATYPE::INTEGER_2:
+            case GDSII_DATATYPE::INTEGER_4:
+            case GDSII_DATATYPE::REAL_4:
+            case GDSII_DATATYPE::REAL_8:
+            default:
+            {
+            }
+
+        switch( gkind )
         {
-            if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
-                uint id_i = node.u.child_first_i;
-                out << "$begin '" << node.kind << "'";
-                for( uint child_i = nodes[id_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+            case GDSII_KIND::BGNLIB:
+            case GDSII_KIND::BGNSTR:
+            case GDSII_KIND::BOUNDARY:
+            case GDSII_KIND::PATH:
+            case GDSII_KIND::SREF:
+            case GDSII_KIND::AREF:
+            case GDSII_KIND::TEXT:
+            case GDSII_KIND::NODE:
+            {
+                // recurse
+                for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
                 {
                     write_gdsii_record( out, child_i );
                 }
-                out << "$end '" << node.kind << "'";
-            } else {
-                std::cout << "ERROR: unknown NODE_KIND\n";
-                exit( 1 );
             }
-            break;
         }
+
+    } else if ( node.kind == NODE_KIND::HIER ) {
+        // assume file wrapper, just loop through children
+        for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+        {
+            write_gdsii_record( out, child_i );
+        }
+
+    } else {
+        // ignore the node for now
     }
 }
 
