@@ -996,7 +996,6 @@ bool Layout::gdsii_read_record( uint& ni )
     nnn += byte_cnt;
 
     if ( gdsii_is_hier( kind ) ) {
-    {
         // recurse for other children
         for( ;; ) 
         {
@@ -1052,6 +1051,8 @@ void Layout::gdsii_write_record( uint ni )
         std::cout << str(gkind) << " " << str(datatype) << "\n";
         bytes[byte_cnt++] = int(gkind);
         bytes[byte_cnt++] = int(datatype);
+
+        uint child_i = uint(-1);
 
         switch( datatype )
         {
