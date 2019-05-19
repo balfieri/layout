@@ -324,9 +324,10 @@ private:
     bool read_gdsii( std::string file_path );           // .gds
     bool parse_gdsii_record( uint& node_i );
     bool write_gdsii( std::string file );
-    void write_gdsii_record( std::ofstream& out, uint node_i );
-    void write_gdsii_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATA_TYPE datatype );
+    void write_gdsii_record( uint node_i );
+    void write_gdsii_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATATYPE datatype );
     void write_gdsii_bytes( const uint8_t * bytes, uint byte_cnt );
+    void flush_gdsii( void );
     
     bool read_aedt( std::string file );                 // .aedt
     bool parse_aedt_expr( uint& node_i );
@@ -377,7 +378,8 @@ private:
 
 // these are done as macros to avoid evaluating msg (it makes a big difference)
 #include <assert.h>
-#define rtn_assert( bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false ); return false; }
+#define rtn_assert(  bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false ); return false; }
+#define rtnn_assert( bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false );               }
 #define node_assert( bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false ); goto error;   }
 
 inline std::istream& operator >> ( std::istream& is, Layout::real3& v ) 
@@ -674,7 +676,7 @@ bool Layout::write( std::string top_file )
 
 // returns array of T on a page boundary
 template<typename T>
-T * Layout::aligned_alloc( size_t cnt )
+inline T * Layout::aligned_alloc( size_t cnt )
 {
     void * mem = nullptr;
     posix_memalign( &mem, getpagesize(), cnt*sizeof(T) );
@@ -693,10 +695,10 @@ inline void Layout::perhaps_realloc( T *& array, const Layout::uint& hdr_cnt, La
             assert( old_max_cnt != uint(-1) );
             max_cnt = uint(-1);
         }
-        posix_memalign( &mem, getpagesize(), max_cnt*sizeof(T) );
-        memcpy( mem, array, hdr_cnt*sizeof(T) );
+        T * new_array = aligned_alloc<T>( max_cnt );
+        memcpy( new_array, array, hdr_cnt*sizeof(T) );
         delete array;
-        array = reinterpret_cast<T *>( mem );
+        array = new_array;
     }
 }
 
@@ -989,15 +991,16 @@ constexpr uint gdsii_buff_alloc_byte_cnt = 128*1024*1024;      // hide overhead 
 
 bool Layout::write_gdsii( std::string gdsii_path )
 {
-    posix_memalign( &gdsii_buff, getpagesize(), gdsii_buff_alloc_byte_cnt );
+    gdsii_buff = aligned_alloc<uint8_t>( gdsii_buff_alloc_byte_cnt );
     gdsii_buff_byte_cnt = 0;
 
     cmd( "rm -f " + gdsii_path );
     gdsii_fd = open( gdsii_path.c_str(), O_CREAT|O_WRONLY|O_TRUNC|O_SYNC|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP );
     if ( gdsii_fd < 0 ) std::cout << "open() for write error: " << strerror( errno ) << "\n";
 
-    write_gdsii_record( out, hdr->root_i );
+    write_gdsii_record( hdr->root_i );
 
+    flush_gdsii();
     fsync( gdsii_fd ); // flush
     close( gdsii_fd );
     cmd( "chmod +rw " + gdsii_path );
@@ -1008,7 +1011,7 @@ bool Layout::write_gdsii( std::string gdsii_path )
     return true;
 }
 
-void Layout::write_gdsii_record( std::ofstream& out, uint ni )
+void Layout::write_gdsii_record( uint ni )
 {
     const Node& node = nodes[ni];
     if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
@@ -1047,10 +1050,13 @@ void Layout::write_gdsii_record( std::ofstream& out, uint ni )
             case GDSII_DATATYPE::REAL_4:
             case GDSII_DATATYPE::REAL_8:
             {
-                write_gdsii_number( bytes, byte_cnt, child_i, datatype );
-                for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
-                {
+                uint child_i = node.u.child_first_i;
+                if ( child_i != uint(-1) ) {
                     write_gdsii_number( bytes, byte_cnt, child_i, datatype );
+                    for( child_i = nodes[child_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                    {
+                        write_gdsii_number( bytes, byte_cnt, child_i, datatype );
+                    }
                 }
                 break;
             }
@@ -1083,7 +1089,7 @@ void Layout::write_gdsii_record( std::ofstream& out, uint ni )
                 // recurse
                 for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
                 {
-                    write_gdsii_record( out, child_i );
+                    write_gdsii_record( child_i );
                 }
 
                 // write the end record which has no data
@@ -1092,8 +1098,8 @@ void Layout::write_gdsii_record( std::ofstream& out, uint ni )
                 bytes[0] = 0;
                 bytes[1] = 4;
                 bytes[2] = uint8_t(endkind);
-                bytes[3] = GDSII_DATATYPE_NO_DATA;
-                write_gdsii_bytes( bytes, byte_cnt );
+                bytes[3] = uint8_t(GDSII_DATATYPE::NO_DATA);
+                write_gdsii_bytes( bytes, 4 );
                 break;
             }
 
@@ -1107,7 +1113,7 @@ void Layout::write_gdsii_record( std::ofstream& out, uint ni )
         // assume file wrapper, just loop through children
         for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
         {
-            write_gdsii_record( out, child_i );
+            write_gdsii_record( child_i );
         }
 
     } else {
@@ -1115,7 +1121,7 @@ void Layout::write_gdsii_record( std::ofstream& out, uint ni )
     }
 }
 
-void Layout::write_gdsii_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATA_TYPE datatype )
+void Layout::write_gdsii_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATATYPE datatype )
 {
     switch( datatype )
     {
@@ -1139,16 +1145,20 @@ void Layout::write_gdsii_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII
         {
             const uint64_t du = *reinterpret_cast<uint64_t *>(&nodes[ni].u.r);
             uint64_t du_sign = (du >> 63) & 1LL;
-            uint64_t du_exp  = (du >> 52) & 0x7ffLL;
+            int64_t  di_exp  = (du >> 52) & 0x7ffLL;
             uint64_t du_mant = du & 0xfffffffffffffLL;
-            bytes[byte_cnt++] = (du_sign ? 0x80 : 0x00) | ((du_exp >> 2) + 64);
-            uint datum_byte_cnt = (datatype == GDSII_DATATYPE::REAL_4) ? 4 : 8;
-            real frac = 0.0;
-            for( uint j = 1; j < datum_byte_cnt; j++ )
+            if ( di_exp != 0 ) du_mant |= 1L << 52;     // implied 1. for normalized numbers
+            di_exp -= (1 << 10)-1;                      // subtract bias
+            di_exp >>= 2;                               // GDSII exp
+            di_exp += 64;                               // GDSII bias
+            if ( di_exp < 0 ) di_exp = 0;               // clamp
+            if ( di_exp > 0x7f ) di_exp = 0x7f;         // clamp
+            bytes[byte_cnt++] = (du_sign ? 0x80 : 0x00) | di_exp;
+            int datum_byte_cnt = (datatype == GDSII_DATATYPE::REAL_4) ? 4 : 8;
+            for( int j = datum_byte_cnt-1; j >= 0; j-- )
             {
-                frac = (frac * 256.0) + double(uuu[j]);
+                bytes[byte_cnt++] = (du_mant >> (8*j)) & 0xff;
             }
-            nodes[child_i].u.r = sign * frac * std::pow( 2.0, 4.0*exp - 8*(datum_byte_cnt-1) );
             break;
         }
 
@@ -1172,14 +1182,20 @@ void Layout::write_gdsii_bytes( const uint8_t * bytes, uint byte_cnt )
         byte_cnt            -= this_byte_cnt;
         gdsii_buff_byte_cnt += this_byte_cnt;
         if ( gdsii_buff_byte_cnt == gdsii_buff_alloc_byte_cnt ) {
-            // flush the big buffer
-            if ( ::write( gdsii_fd, gdsii_buff, gdsii_buff_byte_cnt ) <= 0 ) { 
-                close( gdsii_fd ); 
-                rtn_assert( 0, "could not write() gdsii file - write() error: " + strerror( errno ) );
-            }
-            gdsii_buff_byte_cnt = 0;
+            flush_gdsii();
         }
     }
+}
+
+void Layout::flush_gdsii( void )
+{
+    if ( gdsii_buff_byte_cnt == 0 ) return;
+
+    if ( ::write( gdsii_fd, gdsii_buff, gdsii_buff_byte_cnt ) <= 0 ) { 
+        close( gdsii_fd ); 
+        rtnn_assert( false, std::string("could not write() gdsii file - write() error: ") + strerror( errno ) );
+    }
+    gdsii_buff_byte_cnt = 0;
 }
 
 bool Layout::read_aedt( std::string file )
