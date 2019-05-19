@@ -318,21 +318,23 @@ private:
     uint true_str_i;
     uint false_str_i;
 
-    bool read_layout( std::string file_path );          // .layout
-    bool write_layout( std::string file_path );         
+    bool layout_read( std::string file_path );          // .layout
+    bool layout_write( std::string file_path );         
 
-    bool read_gdsii( std::string file_path );           // .gds
-    bool parse_gdsii_record( uint& node_i );
-    bool write_gdsii( std::string file );
-    void write_gdsii_record( uint node_i );
-    void write_gdsii_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATATYPE datatype );
-    void write_gdsii_bytes( const uint8_t * bytes, uint byte_cnt );
-    void flush_gdsii( void );
+    bool gdsii_is_hier( GDSII_KIND kind );
+    GDSII_KIND gdsii_hier_end_kind( GDSII_KIND kind );
+    bool gdsii_read( std::string file_path );           // .gds
+    bool gdsii_read_record( uint& node_i );
+    bool gdsii_write( std::string file );
+    void gdsii_write_record( uint node_i );
+    void gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATATYPE datatype );
+    void gdsii_write_bytes( const uint8_t * bytes, uint byte_cnt );
+    void gdsii_flush( void );
     
-    bool read_aedt( std::string file );                 // .aedt
-    bool parse_aedt_expr( uint& node_i );
-    bool write_aedt( std::string file );
-    void write_aedt_expr( std::ofstream& out, uint node_i, std::string indent_str );
+    bool aedt_read( std::string file );                 // .aedt
+    bool aedt_read_expr( uint& node_i );
+    bool aedt_write( std::string file );
+    void aedt_write_expr( std::ofstream& out, uint node_i, std::string indent_str );
 
     bool cmd( std::string c );
     bool open_and_read( std::string file_name, uint8_t *& start, uint8_t *& end );
@@ -612,7 +614,7 @@ Layout::Layout( std::string top_file )
         //------------------------------------------------------------
         // Read uncompressed .layout
         //------------------------------------------------------------
-        if ( !read_layout( top_file ) ) return;
+        if ( !layout_read( top_file ) ) return;
     } else {
         //------------------------------------------------------------
         // Allocate initial arrays
@@ -621,9 +623,9 @@ Layout::Layout( std::string top_file )
         nodes   = aligned_alloc<Node>( max->node_cnt );
 
         if ( ext_name == std::string( ".gds" ) ) {
-            if ( !read_gdsii( top_file ) ) return;
+            if ( !gdsii_read( top_file ) ) return;
         } else if ( ext_name == std::string( ".aedt" ) ) {
-            if ( !read_aedt( top_file ) ) return;
+            if ( !aedt_read( top_file ) ) return;
         } else {
             error_msg = "unknown top file ext_name: " + ext_name;
             return;
@@ -663,10 +665,12 @@ bool Layout::write( std::string top_file )
         //------------------------------------------------------------
         // Write uncompressed .layout
         //------------------------------------------------------------
-        return write_layout( top_file );
+        return layout_write( top_file );
     } else {
         if ( ext_name == std::string( ".aedt" ) ) {
-            return write_aedt( top_file );
+            return aedt_write( top_file );
+        } else if ( ext_name == std::string( ".gds" ) ) {
+            return gdsii_write( top_file );
         } else {
             error_msg = "unknown file ext_name: " + ext_name;
             return false;
@@ -702,7 +706,7 @@ inline void Layout::perhaps_realloc( T *& array, const Layout::uint& hdr_cnt, La
     }
 }
 
-bool Layout::read_layout( std::string layout_path )
+bool Layout::layout_read( std::string layout_path )
 {
     uint8_t * start;
     uint8_t * end;
@@ -740,7 +744,7 @@ bool Layout::read_layout( std::string layout_path )
     return true;
 }
 
-bool Layout::write_layout( std::string layout_path ) 
+bool Layout::layout_write( std::string layout_path ) 
 {
     cmd( "rm -f " + layout_path );
     int fd = open( layout_path.c_str(), O_CREAT|O_WRONLY|O_TRUNC|O_SYNC|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP );
@@ -782,7 +786,50 @@ bool Layout::write_layout( std::string layout_path )
     return true;
 }
 
-bool Layout::read_gdsii( std::string file )
+bool Layout::gdsii_is_hier( GDSII_KIND kind )
+{
+    switch( kind )
+    {
+        case GDSII_KIND::BGNLIB:
+        case GDSII_KIND::BGNSTR:
+        case GDSII_KIND::BOUNDARY:
+        case GDSII_KIND::PATH:
+        case GDSII_KIND::SREF:
+        case GDSII_KIND::AREF:
+        case GDSII_KIND::TEXT:
+        case GDSII_KIND::NODE:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+Layout::GDSII_KIND Layout::gdsii_hier_end_kind( Layout::GDSII_KIND kind )
+{
+    switch( kind )
+    {
+        case GDSII_KIND::BGNLIB:                
+            return GDSII_KIND::ENDLIB;
+
+        case GDSII_KIND::BGNSTR:
+            return GDSII_KIND::ENDSTR;
+
+        case GDSII_KIND::BOUNDARY:
+        case GDSII_KIND::PATH:
+        case GDSII_KIND::SREF:
+        case GDSII_KIND::AREF:
+        case GDSII_KIND::TEXT:
+        case GDSII_KIND::NODE:
+            return GDSII_KIND::ENDEL;
+
+        default:
+            rtnn_assert( false, "bad hier kind" );
+            return GDSII_KIND::ENDEL;  // for compiler
+    }
+}
+
+bool Layout::gdsii_read( std::string file )
 {
     //------------------------------------------------------------
     // Map in file
@@ -805,7 +852,7 @@ bool Layout::read_gdsii( std::string file )
     while( nnn < nnn_end )
     {
         uint child_i;
-        if ( !parse_gdsii_record( child_i ) ) return false;
+        if ( !gdsii_read_record( child_i ) ) return false;
 
         if ( prev_i == uint(-1) ) {
             nodes[ni].u.child_first_i = child_i;
@@ -822,7 +869,7 @@ bool Layout::read_gdsii( std::string file )
 
 static inline bool is_gdsii_allowed_char( char c ) { return isprint( c ) && c != '"' && c != ','; }
 
-bool Layout::parse_gdsii_record( uint& ni )
+bool Layout::gdsii_read_record( uint& ni )
 {
     //------------------------------------------------------------
     // Parse record header.
@@ -830,9 +877,9 @@ bool Layout::parse_gdsii_record( uint& ni )
     rtn_assert( (nnn + 4) <= nnn_end, "unexpected end of gdsii file rec_cnt=" + std::to_string(gdsii_rec_cnt) );
     uint32_t       byte_cnt = ( nnn[0] << 8 ) | nnn[1];
     GDSII_KIND     kind     = GDSII_KIND( nnn[2] );
-    if ( (gdsii_rec_cnt % 1) == 0 ) std::cout << std::to_string(gdsii_rec_cnt) << ": " << str(kind) << " byte_cnt=" << byte_cnt << "\n";
     GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
     rtn_assert( byte_cnt >= 4, std::to_string(gdsii_rec_cnt) + ": gdsii record byte_cnt must be at least 4, byte_cnt=" + std::to_string(byte_cnt) + " kind=" + str(kind) );
+    std::cout << str(kind) << " " << str(datatype) << " byte_cnt=" << std::to_string(byte_cnt) << "\n";
     byte_cnt -= 4;
     nnn += 4;
     rtn_assert( uint32_t(kind) < GDSII_KIND_CNT, std::to_string(gdsii_rec_cnt) + ": bad gdsii record kind " + std::to_string(uint32_t(kind)) );
@@ -852,6 +899,7 @@ bool Layout::parse_gdsii_record( uint& ni )
     //------------------------------------------------------------
     // Parse payload.
     //------------------------------------------------------------
+    uint prev_i = uint(-1);
     switch( datatype )
     {
         case GDSII_DATATYPE::NO_DATA:
@@ -883,6 +931,7 @@ bool Layout::parse_gdsii_record( uint& ni )
                 if ( !is_gdsii_allowed_char( c[i] ) ) c[i] = '_';
             }
             std::string s = std::string( c );
+            std::cout << "    " << s << "\n";
             nodes[ni].u.s_i = get_str_i( s );
             break;
         }
@@ -897,7 +946,6 @@ bool Layout::parse_gdsii_record( uint& ni )
             uint cnt = byte_cnt / datum_byte_cnt;
             rtn_assert( (cnt*datum_byte_cnt) == byte_cnt, "datum_byte_cnt does not divide evenly" );
             uint8_t * uuu = nnn;
-            uint prev_i = uint(-1);
             for( uint i = 0; i < cnt; i++, uuu += datum_byte_cnt )
             {
                 perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
@@ -914,10 +962,11 @@ bool Layout::parse_gdsii_record( uint& ni )
                         vi = (vi << 16) | (uuu[2] << 8) | uuu[3];
                     }
                     if ( (vi & 0x80000000) != 0 ) {
-                        vi = (datatype == GDSII_DATATYPE::INTEGER_2) ? (0x10000 - vi) : (0x100000000LL - vi);
+                        vi = (datatype == GDSII_DATATYPE::INTEGER_2) ? -(0x10000 - vi) : -(0x100000000LL - vi);
                     }
                     nodes[child_i].kind = NODE_KIND::INT;
                     nodes[child_i].u.i = vi;
+                    std::cout << "    " << vi << "\n";
                 } else {
                     real sign = (uuu[0] & 0x80) ? -1.0 : 1.0;
                     real exp  = (uuu[0] & 0x7f) - 64;
@@ -928,6 +977,7 @@ bool Layout::parse_gdsii_record( uint& ni )
                     }
                     nodes[child_i].kind = NODE_KIND::REAL;
                     nodes[child_i].u.r = sign * frac * std::pow( 2.0, 4.0*exp - 8*(datum_byte_cnt-1) );
+                    std::cout << "    " << nodes[child_i].u.r << "\n";
                 }
                 prev_i = child_i;
             }
@@ -945,42 +995,21 @@ bool Layout::parse_gdsii_record( uint& ni )
     gdsii_last_kind = kind;
     nnn += byte_cnt;
 
-    //------------------------------------------------------------
-    // Further processing.
-    //------------------------------------------------------------
-    switch( kind )
+    if ( gdsii_is_hier( kind ) ) {
     {
-        case GDSII_KIND::BGNLIB:
-        case GDSII_KIND::BGNSTR:
-        case GDSII_KIND::BOUNDARY:
-        case GDSII_KIND::PATH:
-        case GDSII_KIND::SREF:
-        case GDSII_KIND::AREF:
-        case GDSII_KIND::TEXT:
-        case GDSII_KIND::NODE:
+        // recurse for other children
+        for( ;; ) 
         {
-            // recurse for other children
-            uint prev_i = uint(-1);
-            for( ;; ) 
-            {
-                uint child_i;
-                if ( !parse_gdsii_record( child_i ) ) return false;
-                GDSII_KIND gkind = GDSII_KIND( int(nodes[child_i].kind) - int(NODE_KIND::GDSII_HEADER) );
-                if ( gkind == GDSII_KIND::ENDEL || gkind == GDSII_KIND::ENDSTR || gkind == GDSII_KIND::ENDLIB ) break;
-                if ( prev_i == uint(-1) ) {
-                    nodes[ni].u.child_first_i = child_i;
-                } else {
-                    nodes[prev_i].sibling_i = child_i;
-                }
-                prev_i = child_i;
+            uint child_i;
+            if ( !gdsii_read_record( child_i ) ) return false;
+            GDSII_KIND gkind = GDSII_KIND( int(nodes[child_i].kind) - int(NODE_KIND::GDSII_HEADER) );
+            if ( gkind == GDSII_KIND::ENDEL || gkind == GDSII_KIND::ENDSTR || gkind == GDSII_KIND::ENDLIB ) break;
+            if ( prev_i == uint(-1) ) {
+                nodes[ni].u.child_first_i = child_i;
+            } else {
+                nodes[prev_i].sibling_i = child_i;
             }
-            break;
-        }
-
-        default:
-        {
-            // nothing else to do
-            break;
+            prev_i = child_i;
         }
     }
 
@@ -989,7 +1018,7 @@ bool Layout::parse_gdsii_record( uint& ni )
 
 constexpr uint gdsii_buff_alloc_byte_cnt = 128*1024*1024;      // hide overhead of write() calls
 
-bool Layout::write_gdsii( std::string gdsii_path )
+bool Layout::gdsii_write( std::string gdsii_path )
 {
     gdsii_buff = aligned_alloc<uint8_t>( gdsii_buff_alloc_byte_cnt );
     gdsii_buff_byte_cnt = 0;
@@ -998,9 +1027,9 @@ bool Layout::write_gdsii( std::string gdsii_path )
     gdsii_fd = open( gdsii_path.c_str(), O_CREAT|O_WRONLY|O_TRUNC|O_SYNC|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP );
     if ( gdsii_fd < 0 ) std::cout << "open() for write error: " << strerror( errno ) << "\n";
 
-    write_gdsii_record( hdr->root_i );
+    gdsii_write_record( hdr->root_i );
 
-    flush_gdsii();
+    gdsii_flush();
     fsync( gdsii_fd ); // flush
     close( gdsii_fd );
     cmd( "chmod +rw " + gdsii_path );
@@ -1011,7 +1040,7 @@ bool Layout::write_gdsii( std::string gdsii_path )
     return true;
 }
 
-void Layout::write_gdsii_record( uint ni )
+void Layout::gdsii_write_record( uint ni )
 {
     const Node& node = nodes[ni];
     if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
@@ -1020,6 +1049,7 @@ void Layout::write_gdsii_record( uint ni )
 
         GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
         GDSII_DATATYPE datatype = kind_to_datatype( gkind );
+        std::cout << str(gkind) << " " << str(datatype) << "\n";
         bytes[byte_cnt++] = int(gkind);
         bytes[byte_cnt++] = int(datatype);
 
@@ -1032,6 +1062,7 @@ void Layout::write_gdsii_record( uint ni )
 
             case GDSII_DATATYPE::BITARRAY:
             {
+                std::cout << "    " << node.u.u << "\n";
                 bytes[byte_cnt++] = node.u.u & 0xff;
                 bytes[byte_cnt++] = (node.u.u >> 8) & 0xff;
                 break;
@@ -1039,6 +1070,7 @@ void Layout::write_gdsii_record( uint ni )
 
             case GDSII_DATATYPE::STRING:
             {
+                std::cout << "    " << std::string(&strings[node.u.s_i]) << "\n";
                 uint len = strlen( &strings[node.u.s_i] );
                 memcpy( &bytes[byte_cnt], &strings[node.u.s_i], len );
                 byte_cnt += len;
@@ -1050,13 +1082,11 @@ void Layout::write_gdsii_record( uint ni )
             case GDSII_DATATYPE::REAL_4:
             case GDSII_DATATYPE::REAL_8:
             {
-                uint child_i = node.u.child_first_i;
-                if ( child_i != uint(-1) ) {
-                    write_gdsii_number( bytes, byte_cnt, child_i, datatype );
-                    for( child_i = nodes[child_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
-                    {
-                        write_gdsii_number( bytes, byte_cnt, child_i, datatype );
-                    }
+                gdsii_write_number( bytes, byte_cnt, ni, datatype );
+                for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                {
+                    if ( nodes[child_i].kind != NODE_KIND::INT && nodes[child_i].kind != NODE_KIND::REAL ) break; // skip GDSII children
+                    gdsii_write_number( bytes, byte_cnt, child_i, datatype );
                 }
                 break;
             }
@@ -1073,47 +1103,28 @@ void Layout::write_gdsii_record( uint ni )
         bytes[1] = byte_cnt & 0xff;
 
         // transfer bytes to buffer
-        write_gdsii_bytes( bytes, byte_cnt );
+        gdsii_write_bytes( bytes, byte_cnt );
 
-        switch( gkind )
-        {
-            case GDSII_KIND::BGNLIB:
-            case GDSII_KIND::BGNSTR:
-            case GDSII_KIND::BOUNDARY:
-            case GDSII_KIND::PATH:
-            case GDSII_KIND::SREF:
-            case GDSII_KIND::AREF:
-            case GDSII_KIND::TEXT:
-            case GDSII_KIND::NODE:
+        if ( gdsii_is_hier( gkind ) ) {
+            // recurse for rest of children
+            if ( child_i == uint(-1) ) child_i = node.u.child_first_i;
+            for( ; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
             {
-                // recurse
-                for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
-                {
-                    write_gdsii_record( child_i );
-                }
-
-                // write the end record which has no data
-                GDSII_KIND endkind = (gkind == GDSII_KIND::BGNLIB) ? GDSII_KIND::ENDLIB : 
-                                     (gkind == GDSII_KIND::BGNSTR) ? GDSII_KIND::ENDSTR : GDSII_KIND::ENDEL;
-                bytes[0] = 0;
-                bytes[1] = 4;
-                bytes[2] = uint8_t(endkind);
-                bytes[3] = uint8_t(GDSII_DATATYPE::NO_DATA);
-                write_gdsii_bytes( bytes, 4 );
-                break;
+                gdsii_write_record( child_i );
             }
 
-            default: 
-            {
-                break;
-            }
+            bytes[0] = 0;
+            bytes[1] = 4;
+            bytes[2] = uint8_t(gdsii_hier_end_kind(gkind));
+            bytes[3] = uint8_t(GDSII_DATATYPE::NO_DATA);
+            gdsii_write_bytes( bytes, 4 );
         }
 
     } else if ( node.kind == NODE_KIND::HIER ) {
         // assume file wrapper, just loop through children
         for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
         {
-            write_gdsii_record( child_i );
+            gdsii_write_record( child_i );
         }
 
     } else {
@@ -1121,15 +1132,16 @@ void Layout::write_gdsii_record( uint ni )
     }
 }
 
-void Layout::write_gdsii_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATATYPE datatype )
+void Layout::gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATATYPE datatype )
 {
     switch( datatype )
     {
         case GDSII_DATATYPE::INTEGER_2:
         case GDSII_DATATYPE::INTEGER_4:
         {
-            int32_t  i  = nodes[ni].u.i;
-            uint32_t vi = (i >= 0) ? i : ((datatype == GDSII_DATATYPE::INTEGER_2) ? (0x10000 - i) : (0x100000000LL - i));
+            int32_t i = nodes[ni].u.i;
+            std::cout << "    " << i << "\n";
+            uint32_t vi = (i >= 0) ? i : ((datatype == GDSII_DATATYPE::INTEGER_2) ? (0x10000 + i) : (0x100000000LL + i));
             bytes[byte_cnt++] = (vi >> 8) & 0xff;
             bytes[byte_cnt++] = vi & 0xff;
             if ( datatype == GDSII_DATATYPE::INTEGER_4 ) {
@@ -1143,6 +1155,7 @@ void Layout::write_gdsii_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII
         case GDSII_DATATYPE::REAL_4:
         case GDSII_DATATYPE::REAL_8:
         {
+            std::cout << "    " << nodes[ni].u.r << "\n";
             const uint64_t du = *reinterpret_cast<uint64_t *>(&nodes[ni].u.r);
             uint64_t du_sign = (du >> 63) & 1LL;
             int64_t  di_exp  = (du >> 52) & 0x7ffLL;
@@ -1169,7 +1182,7 @@ void Layout::write_gdsii_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII
     }
 }
 
-void Layout::write_gdsii_bytes( const uint8_t * bytes, uint byte_cnt )
+void Layout::gdsii_write_bytes( const uint8_t * bytes, uint byte_cnt )
 {
     while( byte_cnt != 0 )
     {
@@ -1182,12 +1195,12 @@ void Layout::write_gdsii_bytes( const uint8_t * bytes, uint byte_cnt )
         byte_cnt            -= this_byte_cnt;
         gdsii_buff_byte_cnt += this_byte_cnt;
         if ( gdsii_buff_byte_cnt == gdsii_buff_alloc_byte_cnt ) {
-            flush_gdsii();
+            gdsii_flush();
         }
     }
 }
 
-void Layout::flush_gdsii( void )
+void Layout::gdsii_flush( void )
 {
     if ( gdsii_buff_byte_cnt == 0 ) return;
 
@@ -1198,7 +1211,7 @@ void Layout::flush_gdsii( void )
     gdsii_buff_byte_cnt = 0;
 }
 
-bool Layout::read_aedt( std::string file )
+bool Layout::aedt_read( std::string file )
 {
     //------------------------------------------------------------
     // Map in file
@@ -1216,12 +1229,12 @@ bool Layout::read_aedt( std::string file )
     true_str_i       = get_str_i( "true" );
     false_str_i      = get_str_i( "false" );
 
-    if ( !parse_aedt_expr( hdr->root_i ) ) return false;
+    if ( !aedt_read_expr( hdr->root_i ) ) return false;
     assert( nodes[hdr->root_i].kind == NODE_KIND::HIER );
     return true;
 }
 
-bool Layout::parse_aedt_expr( uint& ni )
+bool Layout::aedt_read_expr( uint& ni )
 {
     perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
     ni = hdr->node_cnt++;
@@ -1245,7 +1258,7 @@ bool Layout::parse_aedt_expr( uint& ni )
         dprint( "ID START " + std::string(&strings[id_i]) );
         if ( id_i == aedt_begin_str_i ) {
             uint name_i;
-            if ( !parse_aedt_expr( name_i ) ) return false;             // STR node
+            if ( !aedt_read_expr( name_i ) ) return false;             // STR node
             rtn_assert( nodes[name_i].kind == NODE_KIND::STR, "$begin not followed by std::string" );
             dprint( "BEGIN " + std::string(&strings[nodes[name_i].u.s_i]) );
 
@@ -1268,7 +1281,7 @@ bool Layout::parse_aedt_expr( uint& ni )
                 }
 
                 uint child_i;
-                if ( !parse_aedt_expr( child_i ) ) return false;
+                if ( !aedt_read_expr( child_i ) ) return false;
                 nodes[prev_i].sibling_i = child_i;
                 prev_i = child_i;
             }
@@ -1290,7 +1303,7 @@ bool Layout::parse_aedt_expr( uint& ni )
         expect_char( ch, nnn, nnn_end );
 
         uint rhs_i;
-        if ( !parse_aedt_expr( rhs_i ) ) return false;
+        if ( !aedt_read_expr( rhs_i ) ) return false;
 
         perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
         uint ai = hdr->node_cnt++;
@@ -1331,7 +1344,7 @@ bool Layout::parse_aedt_expr( uint& ni )
             }
 
             uint arg_i;
-            if ( !parse_aedt_expr( arg_i ) ) return false;
+            if ( !aedt_read_expr( arg_i ) ) return false;
             nodes[prev_i].sibling_i = arg_i;
             prev_i = arg_i;
         }
@@ -1340,15 +1353,15 @@ bool Layout::parse_aedt_expr( uint& ni )
     return true;
 }
 
-bool Layout::write_aedt( std::string file )
+bool Layout::aedt_write( std::string file )
 {
     std::ofstream out( file, std::ofstream::out );
-    write_aedt_expr( out, hdr->root_i, "\n" );
+    aedt_write_expr( out, hdr->root_i, "\n" );
     out.close();
     return false;
 }
 
-void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_str )
+void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_str )
 {
     assert( ni != uint(-1) );
     const Node& node = nodes[ni];
@@ -1382,23 +1395,23 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
         case NODE_KIND::ASSIGN:
         {
             uint child_i = node.u.child_first_i;
-            write_aedt_expr( out, child_i, "" );
+            aedt_write_expr( out, child_i, "" );
             out << "=";
             child_i = nodes[child_i].sibling_i;
-            write_aedt_expr( out, child_i, "" );
+            aedt_write_expr( out, child_i, "" );
             break;
         }
 
         case NODE_KIND::CALL:
         {
             uint child_i = node.u.child_first_i;
-            write_aedt_expr( out, child_i, "" );
+            aedt_write_expr( out, child_i, "" );
             out << "(";
             bool have_one = false;
             for( child_i = nodes[child_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
             {
                 if ( have_one ) out << ", ";
-                write_aedt_expr( out, child_i, "" );
+                aedt_write_expr( out, child_i, "" );
                 have_one = true;
             }
             out << ")";
@@ -1408,17 +1421,17 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
         case NODE_KIND::SLICE:
         {
             uint child_i = node.u.child_first_i;
-            write_aedt_expr( out, child_i, "" );
+            aedt_write_expr( out, child_i, "" );
             out << "[";
             child_i = nodes[child_i].sibling_i;
             if ( child_i != uint(-1) ) {
-                write_aedt_expr( out, child_i, "" );
+                aedt_write_expr( out, child_i, "" );
                 out << ":";
                 bool have_one = false;
                 for( child_i = nodes[child_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
                 {
                     out << (have_one ? ", " : " ");
-                    write_aedt_expr( out, child_i, "" );
+                    aedt_write_expr( out, child_i, "" );
                     have_one = true;
                 }
             }
@@ -1440,7 +1453,7 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
             }
             for( ; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
             {
-                write_aedt_expr( out, child_i, indent_str + "\t" );
+                aedt_write_expr( out, child_i, indent_str + "\t" );
             }
             out << indent_str;
             if ( id_i != uint(-1) ) {
@@ -1474,7 +1487,7 @@ void Layout::write_aedt_expr( std::ofstream& out, uint ni, std::string indent_st
                                 out << "$begin '" << node.kind << "'";
                                 for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
                                 {
-                                    write_aedt_expr( out, child_i, indent_str + "\t" );
+                                    aedt_write_expr( out, child_i, indent_str + "\t" );
                                 }
                                 out << indent_str;
                                 out << "$end '" << node.kind << "'";
