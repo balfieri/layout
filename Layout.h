@@ -325,6 +325,8 @@ private:
     bool parse_gdsii_record( uint& node_i );
     bool write_gdsii( std::string file );
     void write_gdsii_record( std::ofstream& out, uint node_i );
+    void write_gdsii_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATA_TYPE datatype );
+    void write_gdsii_bytes( const uint8_t * bytes, uint byte_cnt );
     
     bool read_aedt( std::string file );                 // .aedt
     bool parse_aedt_expr( uint& node_i );
@@ -1008,24 +1010,10 @@ bool Layout::write_gdsii( std::string gdsii_path )
 
 void Layout::write_gdsii_record( std::ofstream& out, uint ni )
 {
-    if ( (gdsii_buff_byte_cnt+1024) >= gdsii_buff_alloc_byte_cnt ) {
-        // flush buffer before it is about to fill up
-        if ( ::write( gdsii_fd, gdsii_buff, gdsii_buff_byte_cnt ) <= 0 ) { 
-            close( gdsii_fd ); 
-            rtn_assert( 0, "could not write() gdsii file - write() error: " + strerror( errno ) );
-        }
-        gdsii_buff_byte_cnt = 0;
-    }
-
-    uint32_t       byte_cnt = ( nnn[0] << 8 ) | nnn[1];
-    GDSII_KIND     kind     = GDSII_KIND( nnn[2] );
-    if ( (gdsii_rec_cnt % 1) == 0 ) std::cout << std::to_string(gdsii_rec_cnt) << ": " << str(kind) << " byte_cnt=" << byte_cnt << "\n";
-    GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
-
     const Node& node = nodes[ni];
     if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
-        uint8_t  bytes[64*1024];
-        uint16_t byte_cnt = 2;   // fill in byte_cnt later
+        uint8_t bytes[64*1024];
+        uint    byte_cnt = 2;   // fill in byte_cnt later
 
         GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
         GDSII_DATATYPE datatype = kind_to_datatype( gkind );
@@ -1058,9 +1046,28 @@ void Layout::write_gdsii_record( std::ofstream& out, uint ni )
             case GDSII_DATATYPE::INTEGER_4:
             case GDSII_DATATYPE::REAL_4:
             case GDSII_DATATYPE::REAL_8:
+            {
+                write_gdsii_number( bytes, byte_cnt, child_i, datatype );
+                for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                {
+                    write_gdsii_number( bytes, byte_cnt, child_i, datatype );
+                }
+                break;
+            }
+
             default:
             {
+                assert( false );
+                break;
             }
+        }
+
+        // record byte count
+        bytes[0] = (byte_cnt >> 8) & 0xff;
+        bytes[1] = byte_cnt & 0xff;
+
+        // transfer bytes to buffer
+        write_gdsii_bytes( bytes, byte_cnt );
 
         switch( gkind )
         {
@@ -1078,6 +1085,21 @@ void Layout::write_gdsii_record( std::ofstream& out, uint ni )
                 {
                     write_gdsii_record( out, child_i );
                 }
+
+                // write the end record which has no data
+                GDSII_KIND endkind = (gkind == GDSII_KIND::BGNLIB) ? GDSII_KIND::ENDLIB : 
+                                     (gkind == GDSII_KIND::BGNSTR) ? GDSII_KIND::ENDSTR : GDSII_KIND::ENDEL;
+                bytes[0] = 0;
+                bytes[1] = 4;
+                bytes[2] = uint8_t(endkind);
+                bytes[3] = GDSII_DATATYPE_NO_DATA;
+                write_gdsii_bytes( bytes, byte_cnt );
+                break;
+            }
+
+            default: 
+            {
+                break;
             }
         }
 
@@ -1090,6 +1112,73 @@ void Layout::write_gdsii_record( std::ofstream& out, uint ni )
 
     } else {
         // ignore the node for now
+    }
+}
+
+void Layout::write_gdsii_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATA_TYPE datatype )
+{
+    switch( datatype )
+    {
+        case GDSII_DATATYPE::INTEGER_2:
+        case GDSII_DATATYPE::INTEGER_4:
+        {
+            int32_t  i  = nodes[ni].u.i;
+            uint32_t vi = (i >= 0) ? i : ((datatype == GDSII_DATATYPE::INTEGER_2) ? (0x10000 - i) : (0x100000000LL - i));
+            bytes[byte_cnt++] = (vi >> 8) & 0xff;
+            bytes[byte_cnt++] = vi & 0xff;
+            if ( datatype == GDSII_DATATYPE::INTEGER_4 ) {
+                vi >>= 16;
+                bytes[byte_cnt++] = (vi >> 8) & 0xff;
+                bytes[byte_cnt++] = vi & 0xff;
+            }
+            break;
+        }
+
+        case GDSII_DATATYPE::REAL_4:
+        case GDSII_DATATYPE::REAL_8:
+        {
+            const uint64_t du = *reinterpret_cast<uint64_t *>(&nodes[ni].u.r);
+            uint64_t du_sign = (du >> 63) & 1LL;
+            uint64_t du_exp  = (du >> 52) & 0x7ffLL;
+            uint64_t du_mant = du & 0xfffffffffffffLL;
+            bytes[byte_cnt++] = (du_sign ? 0x80 : 0x00) | ((du_exp >> 2) + 64);
+            uint datum_byte_cnt = (datatype == GDSII_DATATYPE::REAL_4) ? 4 : 8;
+            real frac = 0.0;
+            for( uint j = 1; j < datum_byte_cnt; j++ )
+            {
+                frac = (frac * 256.0) + double(uuu[j]);
+            }
+            nodes[child_i].u.r = sign * frac * std::pow( 2.0, 4.0*exp - 8*(datum_byte_cnt-1) );
+            break;
+        }
+
+        default:
+        {
+            assert( false );
+        }
+    }
+}
+
+void Layout::write_gdsii_bytes( const uint8_t * bytes, uint byte_cnt )
+{
+    while( byte_cnt != 0 )
+    {
+        uint32_t this_byte_cnt = byte_cnt;
+        if ( (gdsii_buff_byte_cnt+this_byte_cnt) > gdsii_buff_alloc_byte_cnt ) {
+            this_byte_cnt -= (gdsii_buff_byte_cnt+this_byte_cnt) - gdsii_buff_alloc_byte_cnt;
+        }
+        memcpy( &gdsii_buff[gdsii_buff_byte_cnt], bytes, this_byte_cnt );
+        bytes               += this_byte_cnt;
+        byte_cnt            -= this_byte_cnt;
+        gdsii_buff_byte_cnt += this_byte_cnt;
+        if ( gdsii_buff_byte_cnt == gdsii_buff_alloc_byte_cnt ) {
+            // flush the big buffer
+            if ( ::write( gdsii_fd, gdsii_buff, gdsii_buff_byte_cnt ) <= 0 ) { 
+                close( gdsii_fd ); 
+                rtn_assert( 0, "could not write() gdsii file - write() error: " + strerror( errno ) );
+            }
+            gdsii_buff_byte_cnt = 0;
+        }
     }
 }
 
