@@ -10,7 +10,7 @@ Single Layout.h file provides:
 <li>instancing all instances from one or more source files</li>
 <li>filling empty 3D space (within an arbitrary box) with a dielectric material</li>
 <li>flattening instances into uniquified structures</li>
-<li>writing out a single file with resultant edits<li>
+<li>writing out a single file with resultant edits</li>
 </ul>
 
 <p>
