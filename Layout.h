@@ -373,9 +373,9 @@ private:
 };
 
 #ifdef LAYOUT_DEBUG
-#define dprint( msg ) std::cout << (msg) << "\n"
+#define ldout if ( true )  std::cout 
 #else
-#define dprint( msg )
+#define ldout if ( false ) std::cout
 #endif
 
 // these are done as macros to avoid evaluating msg (it makes a big difference)
@@ -879,7 +879,7 @@ bool Layout::gdsii_read_record( uint& ni )
     GDSII_KIND     kind     = GDSII_KIND( nnn[2] );
     GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
     rtn_assert( byte_cnt >= 4, std::to_string(gdsii_rec_cnt) + ": gdsii record byte_cnt must be at least 4, byte_cnt=" + std::to_string(byte_cnt) + " kind=" + str(kind) );
-    std::cout << str(kind) << " " << str(datatype) << " byte_cnt=" << std::to_string(byte_cnt) << "\n";
+    ldout << str(kind) << " " << str(datatype) << " byte_cnt=" << std::to_string(byte_cnt) << "\n";
     byte_cnt -= 4;
     nnn += 4;
     rtn_assert( uint32_t(kind) < GDSII_KIND_CNT, std::to_string(gdsii_rec_cnt) + ": bad gdsii record kind " + std::to_string(uint32_t(kind)) );
@@ -899,6 +899,7 @@ bool Layout::gdsii_read_record( uint& ni )
     //------------------------------------------------------------
     // Parse payload.
     //------------------------------------------------------------
+    bool is_hier = gdsii_is_hier( kind );
     uint prev_i = uint(-1);
     switch( datatype )
     {
@@ -910,6 +911,7 @@ bool Layout::gdsii_read_record( uint& ni )
 
         case GDSII_DATATYPE::BITARRAY:
         {
+            assert( !is_hier );
             rtn_assert( byte_cnt == 2, "BITARRAY gdsii datatype should have 2-byte payload" );
             nodes[ni].u.u = (nnn[1] << 8) | nnn[0];
             break;
@@ -917,6 +919,7 @@ bool Layout::gdsii_read_record( uint& ni )
 
         case GDSII_DATATYPE::STRING:
         {
+            assert( !is_hier );
             char c[1024];
             rtn_assert( byte_cnt <= (sizeof(c)-1), "STRING too big byte_cnt=" + std::to_string(byte_cnt) );
             if ( byte_cnt > 0 ) memcpy( c, nnn, byte_cnt );
@@ -931,7 +934,7 @@ bool Layout::gdsii_read_record( uint& ni )
                 if ( !is_gdsii_allowed_char( c[i] ) ) c[i] = '_';
             }
             std::string s = std::string( c );
-            std::cout << "    " << s << "\n";
+            ldout << "    " << s << "\n";
             nodes[ni].u.s_i = get_str_i( s );
             break;
         }
@@ -966,7 +969,7 @@ bool Layout::gdsii_read_record( uint& ni )
                     }
                     nodes[child_i].kind = NODE_KIND::INT;
                     nodes[child_i].u.i = vi;
-                    std::cout << "    " << vi << "\n";
+                    ldout << "    " << vi << "\n";
                 } else {
                     real sign = (uuu[0] & 0x80) ? -1.0 : 1.0;
                     real exp  = (uuu[0] & 0x7f) - 64;
@@ -977,7 +980,7 @@ bool Layout::gdsii_read_record( uint& ni )
                     }
                     nodes[child_i].kind = NODE_KIND::REAL;
                     nodes[child_i].u.r = sign * frac * std::pow( 2.0, 4.0*exp - 8*(datum_byte_cnt-1) );
-                    std::cout << "    " << nodes[child_i].u.r << "\n";
+                    ldout << "    " << nodes[child_i].u.r << "\n";
                 }
                 prev_i = child_i;
             }
@@ -1024,7 +1027,7 @@ bool Layout::gdsii_write( std::string gdsii_path )
 
     cmd( "rm -f " + gdsii_path );
     gdsii_fd = open( gdsii_path.c_str(), O_CREAT|O_WRONLY|O_TRUNC|O_SYNC|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP );
-    if ( gdsii_fd < 0 ) std::cout << "open() for write error: " << strerror( errno ) << "\n";
+    if ( gdsii_fd < 0 ) ldout << "open() for write error: " << strerror( errno ) << "\n";
 
     gdsii_write_record( hdr->root_i );
 
@@ -1048,7 +1051,7 @@ void Layout::gdsii_write_record( uint ni )
 
         GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
         GDSII_DATATYPE datatype = kind_to_datatype( gkind );
-        std::cout << str(gkind) << " " << str(datatype) << "\n";
+        ldout << str(gkind) << " " << str(datatype) << "\n";
         bytes[byte_cnt++] = int(gkind);
         bytes[byte_cnt++] = int(datatype);
 
@@ -1063,7 +1066,7 @@ void Layout::gdsii_write_record( uint ni )
 
             case GDSII_DATATYPE::BITARRAY:
             {
-                std::cout << "    " << node.u.u << "\n";
+                ldout << "    " << node.u.u << "\n";
                 bytes[byte_cnt++] = node.u.u & 0xff;
                 bytes[byte_cnt++] = (node.u.u >> 8) & 0xff;
                 break;
@@ -1071,7 +1074,7 @@ void Layout::gdsii_write_record( uint ni )
 
             case GDSII_DATATYPE::STRING:
             {
-                std::cout << "    " << std::string(&strings[node.u.s_i]) << "\n";
+                ldout << "    " << std::string(&strings[node.u.s_i]) << "\n";
                 uint len = strlen( &strings[node.u.s_i] );
                 memcpy( &bytes[byte_cnt], &strings[node.u.s_i], len );
                 byte_cnt += len;
@@ -1083,7 +1086,6 @@ void Layout::gdsii_write_record( uint ni )
             case GDSII_DATATYPE::REAL_4:
             case GDSII_DATATYPE::REAL_8:
             {
-                gdsii_write_number( bytes, byte_cnt, ni, datatype );
                 for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
                 {
                     if ( nodes[child_i].kind != NODE_KIND::INT && nodes[child_i].kind != NODE_KIND::REAL ) break; // skip GDSII children
@@ -1141,22 +1143,21 @@ void Layout::gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII
         case GDSII_DATATYPE::INTEGER_4:
         {
             int32_t i = nodes[ni].u.i;
-            std::cout << "    " << i << "\n";
-            uint32_t vi = (i >= 0) ? i : ((datatype == GDSII_DATATYPE::INTEGER_2) ? (0x10000 + i) : (0x100000000LL + i));
-            bytes[byte_cnt++] = (vi >> 8) & 0xff;
-            bytes[byte_cnt++] = vi & 0xff;
+            ldout << "    " << i << "\n";
+            uint32_t vu = (i >= 0) ? i : ((datatype == GDSII_DATATYPE::INTEGER_2) ? (0x10000 + i) : (0x100000000LL + i));
             if ( datatype == GDSII_DATATYPE::INTEGER_4 ) {
-                vi >>= 16;
-                bytes[byte_cnt++] = (vi >> 8) & 0xff;
-                bytes[byte_cnt++] = vi & 0xff;
+                bytes[byte_cnt++] = (vu >> 24) & 0xff;
+                bytes[byte_cnt++] = (vu >> 16) & 0xff;
             }
+            bytes[byte_cnt++] = (vu >> 8) & 0xff;
+            bytes[byte_cnt++] = (vu >> 0) & 0xff;
             break;
         }
 
         case GDSII_DATATYPE::REAL_4:
         case GDSII_DATATYPE::REAL_8:
         {
-            std::cout << "    " << nodes[ni].u.r << "\n";
+            ldout << "    " << nodes[ni].u.r << "\n";
             const uint64_t du = *reinterpret_cast<uint64_t *>(&nodes[ni].u.r);
             uint64_t du_sign = (du >> 63) & 1LL;
             int64_t  di_exp  = (du >> 52) & 0x7ffLL;
@@ -1244,11 +1245,11 @@ bool Layout::aedt_read_expr( uint& ni )
     skip_whitespace( nnn, nnn_end );
     char ch = *nnn;
     if ( ch == '\'' ) {
-        dprint( "STR" );
+        ldout << "STR\n";
         nodes[ni].kind = NODE_KIND::STR;
         if ( !parse_string_i( nodes[ni].u.s_i, nnn, nnn_end ) ) return false;
     } else if ( ch == '-' || (ch >= '0' && ch <= '9') ) {
-        dprint( "NUMBER" );
+        ldout << "NUMBER\n";
         return parse_number( ni, nnn, nnn_end );
     } else {
         uint id_i;
@@ -1256,12 +1257,12 @@ bool Layout::aedt_read_expr( uint& ni )
         if ( !parse_id( id_i, nnn, nnn_end ) ) {
             rtn_assert( 0, "unable to parse an expression: std::string, number, or id " + surrounding_lines( nnn_save, nnn_end ) );
         }
-        dprint( "ID START " + std::string(&strings[id_i]) );
+        ldout << "ID START " << std::string(&strings[id_i]) << "\n";
         if ( id_i == aedt_begin_str_i ) {
             uint name_i;
             if ( !aedt_read_expr( name_i ) ) return false;             // STR node
             rtn_assert( nodes[name_i].kind == NODE_KIND::STR, "$begin not followed by std::string" );
-            dprint( "BEGIN " + std::string(&strings[nodes[name_i].u.s_i]) );
+            ldout << "BEGIN " << std::string(&strings[nodes[name_i].u.s_i]) << "\n";
 
             nodes[ni].kind = NODE_KIND::HIER;
             nodes[ni].u.child_first_i = name_i;
@@ -1275,7 +1276,7 @@ bool Layout::aedt_read_expr( uint& ni )
                         parse_id( id_i, nnn, nnn_end );
                         uint end_str_i;
                         if ( !parse_string_i( end_str_i, nnn, nnn_end ) ) return false;
-                        dprint( "END " + std::string(&strings[end_str_i]) );
+                        ldout << "END " << std::string(&strings[end_str_i]) << "\n";
                         rtn_assert( end_str_i == nodes[name_i].u.s_i, "$end id does not match $begin id " + surrounding_lines( nnn, nnn_end ) );
                         break;
                     }
@@ -1287,11 +1288,11 @@ bool Layout::aedt_read_expr( uint& ni )
                 prev_i = child_i;
             }
         } else if ( id_i == true_str_i || id_i == false_str_i ) {
-            dprint( "BOOL" );
+            ldout << "BOOL\n";
             nodes[ni].kind = NODE_KIND::BOOL;
             nodes[ni].u.b = id_i == true_str_i;
         } else {
-            dprint( "USER ID" );
+            ldout << "USER ID\n";
             nodes[ni].kind = NODE_KIND::ID;
             nodes[ni].u.s_i = id_i;
         }
@@ -1300,7 +1301,7 @@ bool Layout::aedt_read_expr( uint& ni )
     skip_whitespace( nnn, nnn_end );
     ch = *nnn;
     if ( ch == '=' ) {
-        dprint( "ASSIGN" );
+        ldout << "ASSIGN\n";
         expect_char( ch, nnn, nnn_end );
 
         uint rhs_i;
@@ -1315,7 +1316,7 @@ bool Layout::aedt_read_expr( uint& ni )
         ni = ai;
 
     } else if ( ch == '(' || ch == '[' ) {
-        dprint( (ch == '(') ? "CALL" : "SLICE" );
+        ldout << std::string( (ch == '(') ? "CALL\n" : "SLICE\n" );
         uint id_i = ni;
         perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
         ni = hdr->node_cnt++;
@@ -1534,12 +1535,12 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
 
                     default:
                     {
-                        std::cout << "ERROR: unknown GDSII_DATATYPE " << int(datatype) << "\n";
+                        ldout << "ERROR: unknown GDSII_DATATYPE " << int(datatype) << "\n";
                         exit( 1 );
                     }
                 }
             } else {
-                std::cout << "ERROR: unknown NODE_KIND " << int(node.kind) << "\n";
+                ldout << "ERROR: unknown NODE_KIND " << int(node.kind) << "\n";
                 exit( 1 );
             }
         }
@@ -1606,7 +1607,7 @@ bool Layout::open_and_read( std::string file_path, uint8_t *& start, uint8_t *& 
 {
     const char * fname = file_path.c_str();
     int fd = open( fname, O_RDONLY );
-    if ( fd < 0 ) std::cout << "open_and_read() error reading " << file_path << ": " << strerror( errno ) << "\n";
+    if ( fd < 0 ) ldout << "open_and_read() error reading " << file_path << ": " << strerror( errno ) << "\n";
     rtn_assert( fd >= 0, "could not open file " + file_path + " - open() error: " + strerror( errno ) );
 
     struct stat file_stat;
@@ -1700,10 +1701,10 @@ inline bool Layout::eol( uint8_t *& xxx, uint8_t *& xxx_end )
             if ( *xxx == '\n' && xxx == nnn ) line_num++;
             xxx++;
         }
-        dprint( "at eol" );
+        ldout << "at eol\n";
         return true;
     } else {
-        dprint( "not at eol, char='" + std::string( 1, *xxx ) + "'" );
+        ldout << "not at eol, char='" + std::string( 1, *xxx ) + "'\n";
         return false;
     }
 }
@@ -1729,7 +1730,7 @@ inline uint Layout::get_str_i( std::string s )
     char * to_s = &strings[s_i];
     hdr->char_cnt += s_len + 1;
     memcpy( to_s, s.c_str(), s_len+1 );
-    dprint( "str_i[" + s + "]=" + std::to_string(s_i) + " strings[]=" + std::string(&strings[s_i]) );
+    ldout << "str_i[" + s + "]=" + std::to_string(s_i) + " strings[]=" + std::string(&strings[s_i]) << "\n";
     return s_i;
 }
 
@@ -1870,7 +1871,7 @@ inline bool Layout::parse_real( Layout::real& r, uint8_t *& xxx, uint8_t *& xxx_
     rtn_assert( s.length() != 0, "unable to parse real in " + ext_name + " file " + surrounding_lines( xxx, xxx_end ) );
 
     r = std::atof( s.c_str() );
-    dprint( "real=" + std::to_string( r ) );
+    ldout << "real=" + std::to_string( r ) << "\n";
     return true;
 }
 
