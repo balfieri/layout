@@ -278,6 +278,7 @@ public:
     };
 
     // structs
+    std::string         file_path;          // pathname of file passed to Layout()
     uint8_t *           mapped_region;      // != nullptr means the whole file was sucked in by read_uncompressed()
     Header *            hdr;
     Header *            max;                // holds max lengths of currently allocated arrays 
@@ -288,8 +289,11 @@ public:
     uint *              structures;         // node indexes of structures
     uint *              instances;          // node indexes of instances
 
-    // maps of names to array indexes
-    std::map<std::string, uint>         str_to_str_i;          // maps std::string to unique location in strings[]
+    // maps of strings to array indexes
+    std::map<std::string, uint>         str_to_str_i;           // maps std::string to unique location in strings[]
+
+    // utilities
+    std::string name( const Node& node ) const;                 // attempt to find name for a node
 
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
@@ -319,8 +323,9 @@ private:
     bool layout_read( std::string file_path );          // .layout
     bool layout_write( std::string file_path );         
 
-    bool gdsii_is_hier( GDSII_KIND kind );
-    GDSII_KIND gdsii_hier_end_kind( GDSII_KIND kind );
+    bool gdsii_is_hier( GDSII_KIND kind ) const;
+    GDSII_KIND gdsii_hier_end_kind( GDSII_KIND kind ) const;
+    bool gdsii_is_name( GDSII_KIND kind ) const;
     bool gdsii_read( std::string file_path );           // .gds
     bool gdsii_read_record( uint& node_i );
     bool gdsii_write( std::string file );
@@ -594,6 +599,7 @@ Layout::Layout( std::string top_file )
     mapped_region = nullptr;
     nnn = nullptr;
     line_num = 1;
+    file_path = top_file;
 
     hdr = aligned_alloc<Header>( 1 );
     memset( hdr, 0, sizeof( Header ) );
@@ -682,6 +688,35 @@ bool Layout::write( std::string top_file )
             return false;
         }
     }
+}
+
+std::string Layout::name( const Layout::Node& node ) const
+{
+    switch( node.kind ) 
+    {
+        case NODE_KIND::HIER:
+        {
+            break;
+        }
+
+        default:
+        {
+            if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
+                GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
+                if ( gdsii_is_name( gkind ) ) return std::string( &strings[node.u.s_i] );
+                if ( gdsii_is_hier( gkind ) ) {
+                    for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
+                    {
+                        std::string n = name( nodes[child_i] );
+                        if ( n != "" ) return n;
+                    }
+                }
+            } 
+            break;
+        }
+    }
+
+    return "";
 }
 
 // returns array of T on a page boundary
@@ -796,7 +831,7 @@ bool Layout::layout_write( std::string layout_path )
     return true;
 }
 
-bool Layout::gdsii_is_hier( GDSII_KIND kind )
+bool Layout::gdsii_is_hier( GDSII_KIND kind ) const
 {
     switch( kind )
     {
@@ -815,7 +850,7 @@ bool Layout::gdsii_is_hier( GDSII_KIND kind )
     }
 }
 
-Layout::GDSII_KIND Layout::gdsii_hier_end_kind( Layout::GDSII_KIND kind )
+Layout::GDSII_KIND Layout::gdsii_hier_end_kind( Layout::GDSII_KIND kind ) const
 {
     switch( kind )
     {
@@ -834,8 +869,23 @@ Layout::GDSII_KIND Layout::gdsii_hier_end_kind( Layout::GDSII_KIND kind )
             return GDSII_KIND::ENDEL;
 
         default:
-            rtnn_assert( false, "bad hier kind" );
+            assert( false );
             return GDSII_KIND::ENDEL;  // for compiler
+    }
+}
+
+bool Layout::gdsii_is_name( Layout::GDSII_KIND kind ) const
+{
+    switch( kind )
+    {
+        case GDSII_KIND::LIBNAME:
+        case GDSII_KIND::STRNAME:
+        case GDSII_KIND::SNAME:
+        case GDSII_KIND::SRFNAME:
+            return true;
+
+        default:
+            return false;
     }
 }
 
