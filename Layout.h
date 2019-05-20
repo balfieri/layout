@@ -158,6 +158,8 @@ public:
         uint        char_cnt;               // in std::string array
 
         uint        node_cnt;               // in nodes array  
+        uint        structure_cnt;          // in structures array
+        uint        instance_cnt;           // in instances array
         uint        root_i;                 // index of root node in nodes array
     };
 
@@ -275,13 +277,6 @@ public:
         uint        sibling_i;              // index in nodes array of sibling on list, else uint(-1)
     };
 
-    enum class INSTANCE_KIND
-    {
-        LAYOUT,                             // instance is another Layout (by name)
-        LAYOUT_PTR,                         // instance is another Layout (read in and with a resolved pointer)
-        NODE,                               // instance is a node within this Layout
-    };
-
     // structs
     uint8_t *           mapped_region;      // != nullptr means the whole file was sucked in by read_uncompressed()
     Header *            hdr;
@@ -290,6 +285,8 @@ public:
     // arrays
     char *              strings;
     Node *              nodes;
+    uint *              structures;         // node indexes of structures
+    uint *              instances;          // node indexes of instances
 
     // maps of names to array indexes
     std::map<std::string, uint>         str_to_str_i;          // maps std::string to unique location in strings[]
@@ -608,6 +605,8 @@ Layout::Layout( std::string top_file )
     max = aligned_alloc<Header>( 1 );
     max->node_cnt =  1024;
     max->char_cnt = max->node_cnt * 128;
+    max->structure_cnt = 64;
+    max->instance_cnt = 64;
 
     //------------------------------------------------------------
     // Read depends on file ext_name
@@ -624,8 +623,10 @@ Layout::Layout( std::string top_file )
         //------------------------------------------------------------
         // Allocate initial arrays
         //------------------------------------------------------------
-        strings = aligned_alloc<char>( max->char_cnt );
-        nodes   = aligned_alloc<Node>( max->node_cnt );
+        strings    = aligned_alloc<char>( max->char_cnt );
+        nodes      = aligned_alloc<Node>( max->node_cnt );
+        structures = aligned_alloc<uint>( max->structure_cnt );
+        instances  = aligned_alloc<uint>( max->instance_cnt );
 
         if ( ext_name == std::string( ".gds" ) ) {
             if ( !gdsii_read( top_file ) ) return;
@@ -743,6 +744,8 @@ bool Layout::layout_read( std::string layout_path )
     memcpy( max, hdr, sizeof( Header ) );
     _uread( strings,     char,        hdr->char_cnt );
     _uread( nodes,       Node,        hdr->node_cnt );
+    _uread( structures,  uint,        hdr->structure_cnt );
+    _uread( instances,   uint,        hdr->instance_cnt );
 
     is_good = true;
 
@@ -783,6 +786,8 @@ bool Layout::layout_write( std::string layout_path )
     _uwrite( hdr,         1                  * sizeof(hdr[0]) );
     _uwrite( strings,     hdr->char_cnt      * sizeof(strings[0]) );
     _uwrite( nodes,       hdr->node_cnt      * sizeof(nodes[0]) );
+    _uwrite( structures,  hdr->structure_cnt * sizeof(structures[0]) );
+    _uwrite( instances,   hdr->instance_cnt  * sizeof(instances[0]) );
 
     fsync( fd ); // flush
     close( fd );
@@ -1002,6 +1007,16 @@ bool Layout::gdsii_read_record( uint& ni )
     nnn += byte_cnt;
 
     if ( gdsii_is_hier( kind ) ) {
+        if ( kind == GDSII_KIND::BGNSTR ) {
+            // record in structures[] array
+            perhaps_realloc( structures, hdr->structure_cnt, max->structure_cnt, 1 );
+            structures[hdr->structure_cnt++] = ni;
+        } else if ( kind == GDSII_KIND::SREF || kind == GDSII_KIND::AREF ) {
+            // record in instances[] array
+            perhaps_realloc( instances, hdr->instance_cnt, max->instance_cnt, 1 );
+            instances[hdr->instance_cnt++] = ni;
+        }
+
         // recurse for other children
         for( ;; ) 
         {
