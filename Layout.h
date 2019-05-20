@@ -258,6 +258,7 @@ public:
     static GDSII_DATATYPE kind_to_datatype( GDSII_KIND kind );
     static std::string    str( GDSII_KIND kind );
     static std::string    str( GDSII_DATATYPE datatype );
+    static std::string    str( NODE_KIND kind );
 
     class Node
     {
@@ -487,9 +488,9 @@ std::string Layout::str( Layout::GDSII_DATATYPE datatype )
     }
 }
 
-inline std::ostream& operator << ( std::ostream& os, const Layout::NODE_KIND& kind ) 
+std::string Layout::str( Layout::NODE_KIND kind )
 {
-    #define ncase( kind ) case Layout::NODE_KIND::kind: os << #kind; break;
+    #define ncase( kind ) case Layout::NODE_KIND::kind: return #kind; 
     switch( kind )
     {
         ncase( STR )
@@ -506,13 +507,17 @@ inline std::ostream& operator << ( std::ostream& os, const Layout::NODE_KIND& ki
         {
             if ( kind >= Layout::NODE_KIND::GDSII_HEADER ) {
                 Layout::GDSII_KIND gkind = Layout::GDSII_KIND(int(kind) - int(Layout::NODE_KIND::GDSII_HEADER));
-                os << "GDSII_" << Layout::str(gkind);
+                return "GDSII_" + Layout::str(gkind);
             } else {
-                os << "<unknown>"; 
+                return "<unknown>"; 
             }
-            break;
         }
     }
+}
+
+inline std::ostream& operator << ( std::ostream& os, const Layout::NODE_KIND& kind ) 
+{
+    os << Layout::str( kind );
     return os;
 }
 
@@ -1133,7 +1138,7 @@ void Layout::gdsii_write_record( uint ni )
         }
 
     } else {
-        // ignore the node for now
+        rtnn_assert( false, "ignoring node kind " + str(node.kind) );
     }
 }
 
