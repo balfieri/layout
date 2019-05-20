@@ -972,15 +972,16 @@ bool Layout::gdsii_read_record( uint& ni )
                     ldout << "    " << vi << "\n";
                 } else {
                     real sign = (uuu[0] & 0x80) ? -1.0 : 1.0;
-                    real exp  = (uuu[0] & 0x7f) - 64;
-                    real frac = 0.0;
+                    real exp  = (uuu[0] & 0x7f);
+                    int64_t ifrac = 0.0;
                     for( uint j = 1; j < datum_byte_cnt; j++ )
                     {
-                        frac = (frac * 256.0) + double(uuu[j]);
+                        ifrac = (ifrac << 8) | uuu[j];
                     }
                     nodes[child_i].kind = NODE_KIND::REAL;
-                    nodes[child_i].u.r = sign * frac * std::pow( 2.0, 4.0*exp - 8*(datum_byte_cnt-1) );
-                    ldout << "    " << nodes[child_i].u.r << "\n";
+                    real rexp = 4.0*(exp-64) - 8*(datum_byte_cnt-1);
+                    nodes[child_i].u.r = sign * double(ifrac) * std::pow( 2.0, rexp );
+                    ldout << "sign=" << ((sign < 0.0) ? "1" : "0") << " exp=" << exp << " rexp=" << rexp << " ifrac=" << ifrac << " r=" << nodes[child_i].u.r << "\n";
                 }
                 prev_i = child_i;
             }
@@ -1159,21 +1160,34 @@ void Layout::gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII
         {
             ldout << "    " << nodes[ni].u.r << "\n";
             const uint64_t du = *reinterpret_cast<uint64_t *>(&nodes[ni].u.r);
-            uint64_t du_sign = (du >> 63) & 1LL;
-            int64_t  di_exp  = (du >> 52) & 0x7ffLL;
-            uint64_t du_mant = du & 0xfffffffffffffLL;
-            if ( di_exp != 0 ) du_mant |= 1L << 52;     // implied 1. for normalized numbers
-            di_exp -= (1 << 10)-1;                      // subtract bias
-            di_exp >>= 2;                               // GDSII exp
-            di_exp += 64;                               // GDSII bias
-            if ( di_exp < 0 ) di_exp = 0;               // clamp
-            if ( di_exp > 0x7f ) di_exp = 0x7f;         // clamp
-            bytes[byte_cnt++] = (du_sign ? 0x80 : 0x00) | di_exp;
+            uint64_t sign  = (du >> 63) & 1LL;
+            int64_t  rexp  = (du >> 52) & 0x7ffLL;
+            uint64_t ifrac = du & 0xfffffffffffffLL;
+            if ( rexp != 0 ) ifrac |= 1L << 52;     // implied 1. for normalized numbers
+            rexp -= (1 << 10)-1;                    // subtract double exp bias
             int datum_byte_cnt = (datatype == GDSII_DATATYPE::REAL_4) ? 4 : 8;
+            if ( datum_byte_cnt == 4 ) {
+                // fit into 24 bits
+                ifrac >>= (53-24);
+                rexp  += 53-24;
+            } else {
+                // fit into 56 bits
+                ifrac <<= (56-53);
+                rexp  -= 56-53;
+            }
+            ldout << "mid: rexp " << rexp << " ifrac=" << ifrac << "\n";
+            while( (rexp & 0x3LL) != 0 )
+            {
+                rexp++;
+                ifrac >>= 1;
+            }
+            int64_t exp = (rexp >> 2) + 65;
+            bytes[byte_cnt++] = (sign ? 0x80 : 0x00) | exp;
             for( int j = datum_byte_cnt-1; j >= 0; j-- )
             {
-                bytes[byte_cnt++] = (du_mant >> (8*j)) & 0xff;
+                bytes[byte_cnt++] = (ifrac >> (8*j)) & 0xff;
             }
+            ldout << "sign=" << sign << " exp=" << exp << " rexp=" << rexp << " ifrac=" << ifrac << " r=" << nodes[ni].u.r << "\n";
             break;
         }
 
