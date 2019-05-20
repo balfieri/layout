@@ -974,9 +974,10 @@ bool Layout::gdsii_read_record( uint& ni )
                     real sign = (uuu[0] & 0x80) ? -1.0 : 1.0;
                     real exp  = (uuu[0] & 0x7f);
                     int64_t ifrac = 0.0;
-                    for( uint j = 1; j < datum_byte_cnt; j++ )
+                    for( uint j = 0; j < datum_byte_cnt; j++ )
                     {
-                        ifrac = (ifrac << 8) | uuu[j];
+                        ldout << "bytes[" << j << "]=" << int(uuu[j]) << "\n";
+                        if ( j != 0 ) ifrac = (ifrac << 8) | uuu[j];
                     }
                     nodes[child_i].kind = NODE_KIND::REAL;
                     real rexp = 4.0*(exp-64) - 8*(datum_byte_cnt-1);
@@ -1181,13 +1182,17 @@ void Layout::gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII
                 rexp++;
                 ifrac >>= 1;
             }
-            int64_t exp = (rexp >> 2) + 65;
-            bytes[byte_cnt++] = (sign ? 0x80 : 0x00) | exp;
-            for( int j = datum_byte_cnt-1; j >= 0; j-- )
+            uint8_t exp = (rexp >> 2) + 65;
+            bytes[byte_cnt++] = (sign << 7) | exp;
+            for( int j = datum_byte_cnt-2; j >= 0; j-- )
             {
                 bytes[byte_cnt++] = (ifrac >> (8*j)) & 0xff;
             }
-            ldout << "sign=" << sign << " exp=" << exp << " rexp=" << rexp << " ifrac=" << ifrac << " r=" << nodes[ni].u.r << "\n";
+            for( int j = 0; j < datum_byte_cnt; j++ )
+            {
+                ldout << "bytes[" << j << "]=" << int(bytes[byte_cnt-datum_byte_cnt+j]) << "\n";
+            }
+            ldout << "sign=" << sign << " exp=" << int(exp) << " rexp=" << rexp << " ifrac=" << ifrac << " r=" << nodes[ni].u.r << "\n";
             break;
         }
 
