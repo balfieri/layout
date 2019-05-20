@@ -1492,37 +1492,14 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
             if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
                 GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
                 GDSII_DATATYPE datatype = kind_to_datatype( gkind );
+                if ( gdsii_is_hier( gkind ) ) {
+                    out << "$begin '" << node.kind << "'";
+                }
+                uint child_i = uint(-1);
                 switch( datatype )
                 {
                     case GDSII_DATATYPE::NO_DATA:
                     {
-                        switch( gkind )
-                        {
-                            case GDSII_KIND::BGNLIB:
-                            case GDSII_KIND::BGNSTR:
-                            case GDSII_KIND::BOUNDARY:
-                            case GDSII_KIND::PATH:
-                            case GDSII_KIND::SREF:
-                            case GDSII_KIND::AREF:
-                            case GDSII_KIND::TEXT:
-                            case GDSII_KIND::NODE:
-                            {
-                                out << "$begin '" << node.kind << "'";
-                                for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
-                                {
-                                    aedt_write_expr( out, child_i, indent_str + "\t" );
-                                }
-                                out << indent_str;
-                                out << "$end '" << node.kind << "'";
-                                break;
-                            }
-
-                            default:
-                            {
-                                out << node.kind << "()";
-                                break;
-                            }
-                        }
                         break;
                     }
 
@@ -1543,13 +1520,17 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
                     case GDSII_DATATYPE::REAL_8:
                     {
                         std::string vals = "";
-                        for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                        for( child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
                         {
+                            if ( nodes[child_i].kind != NODE_KIND::INT && nodes[child_i].kind != NODE_KIND::REAL ) break;
                             if ( vals != "" ) vals += ", ";
-                            vals += "'" + ((nodes[child_i].kind == NODE_KIND::INT) ? std::to_string(nodes[child_i].u.i) 
-                                                                                   : std::to_string(nodes[child_i].u.r)) + "'";
+                            vals += (nodes[child_i].kind == NODE_KIND::INT) ? std::to_string(nodes[child_i].u.i) : std::to_string(nodes[child_i].u.r);
                         }
-                        out << node.kind << "(" << vals << ")";
+                        if ( gdsii_is_hier( gkind ) ) {
+                            out << indent_str << "\tARGS(" << vals << ")";
+                        } else {
+                            out << node.kind << "(" << vals << ")";
+                        }
                         break;
                     }
 
@@ -1558,6 +1539,17 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
                         ldout << "ERROR: unknown GDSII_DATATYPE " << int(datatype) << "\n";
                         exit( 1 );
                     }
+                }
+
+                if ( gdsii_is_hier( gkind ) ) {
+                    if ( child_i == uint(-1) ) child_i = node.u.child_first_i;
+                    for( ; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                    {
+                        aedt_write_expr( out, child_i, indent_str + "\t" );
+                    }
+                    out << indent_str;
+                    out << "$end '" << node.kind << "'";
+                    break;
                 }
             } else {
                 ldout << "ERROR: unknown NODE_KIND " << int(node.kind) << "\n";
