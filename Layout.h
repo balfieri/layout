@@ -934,10 +934,6 @@ bool Layout::gdsii_read_record( uint& ni )
                 if ( is_gdsii_allowed_char( c[i] ) ) break;
                 c[i] = '\0';
             }
-            for( int i = 0; i < byte_cnt && c[i] != '\0'; i++ )
-            {
-                if ( !is_gdsii_allowed_char( c[i] ) ) c[i] = '_';
-            }
             std::string s = std::string( c );
             ldout << "    " << s << "\n";
             nodes[ni].u.s_i = get_str_i( s );
@@ -1085,6 +1081,7 @@ void Layout::gdsii_write_record( uint ni )
                 uint len = strlen( &strings[node.u.s_i] );
                 memcpy( &bytes[byte_cnt], &strings[node.u.s_i], len );
                 byte_cnt += len;
+                if ( byte_cnt & 1 ) bytes[byte_cnt++] = '\0';  // must have even number of bytes
                 break;
             }
 
@@ -1093,7 +1090,7 @@ void Layout::gdsii_write_record( uint ni )
             case GDSII_DATATYPE::REAL_4:
             case GDSII_DATATYPE::REAL_8:
             {
-                for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                for( child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
                 {
                     if ( nodes[child_i].kind != NODE_KIND::INT && nodes[child_i].kind != NODE_KIND::REAL ) break; // skip GDSII children
                     gdsii_write_number( bytes, byte_cnt, child_i, datatype );
@@ -1535,8 +1532,7 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
                         break;
                     }
 
-                    case GDSII_DATATYPE::STRING:
-                    {
+                    case GDSII_DATATYPE::STRING: {
                         out << node.kind << "('" << std::string(&strings[node.u.s_i]) << "')";
                         break;
                     }
