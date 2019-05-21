@@ -106,7 +106,6 @@ public:
     {
     public:
         uint        version;                // version
-        uint        byte_cnt;               // total in-memory bytes including this header
 
         uint        char_cnt;               // in strings array
         uint        material_cnt;           // in materials array
@@ -596,6 +595,8 @@ Layout::Layout( std::string top_file )
     max = aligned_alloc<Header>( 1 );
     max->node_cnt =  1024;
     max->char_cnt = max->node_cnt * 128;
+    max->material_cnt = 16;
+    max->layer_cnt = 8;
     max->structure_cnt = 64;
     max->instance_cnt = 64;
 
@@ -615,6 +616,8 @@ Layout::Layout( std::string top_file )
         // Allocate initial arrays
         //------------------------------------------------------------
         strings    = aligned_alloc<char>( max->char_cnt );
+        materials  = aligned_alloc<Material>( max->material_cnt );
+        layers     = aligned_alloc<Layer>( max->layer_cnt );
         nodes      = aligned_alloc<Node>( max->node_cnt );
         structures = aligned_alloc<uint>( max->structure_cnt );
         instances  = aligned_alloc<uint>( max->instance_cnt );
@@ -627,13 +630,6 @@ Layout::Layout( std::string top_file )
             error_msg = "unknown top file ext_name: " + ext_name;
             return;
         }
-
-        //------------------------------------------------------------
-        // Add up byte count.
-        //------------------------------------------------------------
-        hdr->byte_cnt = uint  ( 1                 ) * sizeof( hdr ) +
-                        uint  ( hdr->node_cnt     ) * sizeof( nodes[0] ) +
-                        uint  ( hdr->char_cnt     ) * sizeof( strings[0] );
 
         is_good = true;
     }
@@ -763,6 +759,8 @@ bool Layout::layout_read( std::string layout_path )
     max = aligned_alloc<Header>( 1 );
     memcpy( max, hdr, sizeof( Header ) );
     _uread( strings,     char,        hdr->char_cnt );
+    _uread( materials,   Material,    hdr->material_cnt );
+    _uread( layers,      Layer,       hdr->layer_cnt );
     _uread( nodes,       Node,        hdr->node_cnt );
     _uread( structures,  uint,        hdr->structure_cnt );
     _uread( instances,   uint,        hdr->instance_cnt );
@@ -805,6 +803,8 @@ bool Layout::layout_write( std::string layout_path )
 
     _uwrite( hdr,         1                  * sizeof(hdr[0]) );
     _uwrite( strings,     hdr->char_cnt      * sizeof(strings[0]) );
+    _uwrite( materials,   hdr->material_cnt  * sizeof(materials[0]) );
+    _uwrite( layers,      hdr->layer_cnt     * sizeof(layers[0]) );
     _uwrite( nodes,       hdr->node_cnt      * sizeof(nodes[0]) );
     _uwrite( structures,  hdr->structure_cnt * sizeof(structures[0]) );
     _uwrite( instances,   hdr->instance_cnt  * sizeof(instances[0]) );
