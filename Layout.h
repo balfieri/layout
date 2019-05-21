@@ -100,7 +100,10 @@ public:
     Layout( std::string top_file );
     ~Layout(); 
 
+    // type of output file depends on file extension:
     bool write( std::string file_path );
+
+    // following data structures will be populated
 
     class Header                            // header (of future binary file)
     {
@@ -116,8 +119,9 @@ public:
         uint        root_i;                 // index of root node in nodes array
     };
 
-    // returns index into strings[] for s
+    // returns index into strings[] for s;
     // creates new index if s is not already in strings[]
+    //
     uint str_get( std::string s );
 
     class Material
@@ -135,10 +139,15 @@ public:
         real        thermal_expansion_coefficient;
     };
 
+    // this will clear materials and set up default set of common materials
+    //
+    void        materials_init( void );
+
     // these return index in materials[] array or uint(-1) when failure or not found
     // set() will override material properties if name already exists
+    //
     uint        material_set( std::string name, const Material& material );
-    uint        material_get( std::string name ) const;         
+    uint        material_get( std::string name );
 
     class Layer                             // layer mapping
     {
@@ -153,8 +162,9 @@ public:
 
     // these return index in layers[] array or uint(-1) when failure or not found
     // set() will override layer properties if name already exists
-    uint        layer_set( uint layer_i, const Layer& layer );
-    uint        layer_get( std::string name ) const;         
+    //
+    void        layer_set( uint layer_i, const Layer& layer );
+    uint        layer_get( std::string name );
 
     enum class NODE_KIND
     {
@@ -191,7 +201,8 @@ public:
     };
 
     // attempt to find name for a node
-    std::string name( const Node& node ) const;
+    //
+    std::string node_name( const Node& node ) const;
 
     enum class GDSII_KIND                   // these are in the order defined by the GDSII spec
     {
@@ -671,7 +682,57 @@ bool Layout::write( std::string top_file )
     }
 }
 
-std::string Layout::name( const Layout::Node& node ) const
+void Layout::materials_init( void )
+{
+}
+
+uint Layout::material_set( std::string name, const Material& material )
+{
+    uint mi = material_get( name );
+    if ( mi == uint(-1) ) {
+        perhaps_realloc( materials, hdr->material_cnt, max->material_cnt, 1 );
+        mi = hdr->material_cnt++;
+    }
+    materials[mi] = material;
+    return mi;
+}
+
+uint Layout::material_get( std::string name ) 
+{
+    uint name_i = str_get( name );
+
+    for( uint mi = 0; mi < hdr->material_cnt; mi++ )
+    {
+        if ( materials[mi].name_i == name_i ) return mi;
+    }
+
+    return uint(-1);
+}
+
+void Layout::layer_set( uint layer_i, const Layer& layer )
+{
+    assert( layer_i != uint(-1) );
+    assert( layer_i <= hdr->layer_cnt );
+    if( layer_i == hdr->layer_cnt ) {
+        perhaps_realloc( layers, hdr->material_cnt, max->material_cnt, 1 );
+        hdr->layer_cnt++;
+    }
+    layers[layer_i] = layer;
+}
+
+uint Layout::layer_get( std::string name )
+{
+    uint name_i = str_get( name );
+
+    for( uint li = 0; li < hdr->layer_cnt; li++ )
+    {
+        if ( layers[li].name_i == name_i ) return li;
+    }
+
+    return uint(-1);
+}
+
+std::string Layout::node_name( const Layout::Node& node ) const
 {
     switch( node.kind ) 
     {
@@ -688,7 +749,7 @@ std::string Layout::name( const Layout::Node& node ) const
                 if ( gdsii_is_hier( gkind ) ) {
                     for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
                     {
-                        std::string n = name( nodes[child_i] );
+                        std::string n = node_name( nodes[child_i] );
                         if ( n != "" ) return n;
                     }
                 }
