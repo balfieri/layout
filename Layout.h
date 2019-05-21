@@ -92,31 +92,70 @@ public:
     typedef int32_t  _int;                  // by default, we use 32-bit integers
     typedef double   real;
 
+    // static functions for manipulating file paths
+    static void        dissect_path( std::string path, std::string& dir_name, std::string& base_name, std::string& ext_name ); // utility
+    static std::string path_without_ext( std::string path, std::string * file_ext=nullptr );  // returns path without file extension part
+
+    // constructor reads in file
     Layout( std::string top_file );
     ~Layout(); 
 
     bool write( std::string file_path );
-
-    static void        dissect_path( std::string path, std::string& dir_name, std::string& base_name, std::string& ext_name ); // utility
-    static std::string path_without_ext( std::string path, std::string * file_ext=nullptr );  // returns path without file extension part
-
-    static const uint VERSION = 0xB0BA1f01; // current version 
-
-    bool                is_good;            // set to true if constructor succeeds
-    std::string         error_msg;          // if !is_good
 
     class Header                            // header (of future binary file)
     {
     public:
         uint        version;                // version
         uint        byte_cnt;               // total in-memory bytes including this header
-        uint        char_cnt;               // in std::string array
 
+        uint        char_cnt;               // in strings array
+        uint        material_cnt;           // in materials array
+        uint        layer_cnt;              // in layers array
         uint        node_cnt;               // in nodes array  
         uint        structure_cnt;          // in structures array
         uint        instance_cnt;           // in instances array
         uint        root_i;                 // index of root node in nodes array
     };
+
+    // returns index into strings[] for s
+    // creates new index if s is not already in strings[]
+    uint str_get( std::string s );
+
+    class Material
+    {
+    public:
+        uint        name_i;                 // index of material name in strings[]
+        real        relative_permittivity;           
+        real        permeability;
+        real        conductivity;
+        real        thermal_conductivity;
+        real        mass_density;
+        real        specific_heat;
+        real        youngs_modulus;
+        real        poissons_ratio;
+        real        thermal_expansion_coefficient;
+    };
+
+    // these return index in materials[] array or uint(-1) when failure or not found
+    // set() will override material properties if name already exists
+    uint        material_set( std::string name, const Material& material );
+    uint        material_get( std::string name ) const;         
+
+    class Layer                             // layer mapping
+    {
+    public:
+        uint        name_i;                 // index of layer name in strings[]
+        uint        gdsii_num;              // layer number of main material in GDSII file
+        uint        dielectric_gdsii_num;   // layer number of dielectric material in GDSII file
+        real        thickness;              // thickness in um
+        uint        material_i;             // index of main material in materials[]
+        uint        dielectric_material_i;  // index of dielectric material in materials[]
+    };
+
+    // these return index in layers[] array or uint(-1) when failure or not found
+    // set() will override layer properties if name already exists
+    uint        layer_set( uint layer_i, const Layer& layer );
+    uint        layer_get( std::string name ) const;         
 
     enum class NODE_KIND
     {
@@ -135,6 +174,8 @@ public:
         GDSII_HEADER = 0x100,               // this is a GDSII HEADER node; other GDSII_KINDs follow sequentially
     };
             
+    static std::string  str( NODE_KIND kind );
+    
     class Node
     {
     public:
@@ -149,6 +190,9 @@ public:
         } u;
         uint        sibling_i;              // index in nodes array of sibling on list, else uint(-1)
     };
+
+    // attempt to find name for a node
+    std::string name( const Node& node ) const;
 
     enum class GDSII_KIND                   // these are in the order defined by the GDSII spec
     {
@@ -215,6 +259,7 @@ public:
     };
 
     static constexpr uint32_t GDSII_KIND_CNT = 0x3c;
+    static std::string str( GDSII_KIND kind );
 
     enum class GDSII_DATATYPE
     {
@@ -228,9 +273,12 @@ public:
     };
 
     static GDSII_DATATYPE kind_to_datatype( GDSII_KIND kind );
-    static std::string    str( GDSII_KIND kind );
     static std::string    str( GDSII_DATATYPE datatype );
-    static std::string    str( NODE_KIND kind );
+
+    // global scalars
+    static const uint   VERSION = 0xB0BA1f01; // current version 
+    bool                is_good;            // set to true if constructor succeeds
+    std::string         error_msg;          // if !is_good
 
     // structs
     std::string         file_path;          // pathname of file passed to Layout()
@@ -240,15 +288,11 @@ public:
 
     // arrays
     char *              strings;
+    Material *          materials;
+    Layer *             layers;
     Node *              nodes;
     uint *              structures;         // node indexes of structures
     uint *              instances;          // node indexes of instances
-
-    // maps of strings to array indexes
-    std::map<std::string, uint>         str_to_str_i;           // maps std::string to unique location in strings[]
-
-    // utilities
-    std::string name( const Node& node ) const;                 // attempt to find name for a node
 
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
@@ -264,12 +308,24 @@ public:
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
 private:
+    // maps of strings to array indexes
+    std::map<std::string, uint>         str_to_str_i;           // maps std::string to unique location in strings[]
+
+    // state used during reading of files
     std::string ext_name;
     uint8_t * nnn_start;
     uint8_t * nnn_end;
     uint8_t * nnn;
     uint      line_num;
 
+    // state used during reading and and writing of GDSII files
+    uint       gdsii_rec_cnt;
+    GDSII_KIND gdsii_last_kind;
+    int        gdsii_fd;
+    uint8_t *  gdsii_buff;
+    uint       gdsii_buff_byte_cnt;
+
+    // state used during reading and and writing of AEDT files
     uint aedt_begin_str_i;              // these are to make it easier to compare
     uint aedt_end_str_i;
     uint true_str_i;
@@ -302,7 +358,6 @@ private:
     void skip_to_eol( uint8_t *& xxx, uint8_t *& xxx_end );
     bool eol( uint8_t *& xxx, uint8_t *& xxx_end );
     bool expect_char( char ch, uint8_t *& xxx, uint8_t * xxx_end, bool skip_whitespace_first=false );
-    uint get_str_i( std::string s );
     bool parse_number( uint node_i, uint8_t *& xxx, uint8_t *& xxx_end );
     bool parse_string( std::string& s, uint8_t *& xxx, uint8_t *& xxx_end );
     bool parse_string_i( uint& s, uint8_t *& xxx, uint8_t *& xxx_end );
@@ -321,12 +376,6 @@ private:
     // reallocate array if we are about to exceed its current size
     template<typename T>
     inline void perhaps_realloc( T *& array, const uint  & hdr_cnt, uint  & max_cnt, uint   add_cnt );
-
-    uint       gdsii_rec_cnt;
-    GDSII_KIND gdsii_last_kind;
-    int        gdsii_fd;
-    uint8_t *  gdsii_buff;
-    uint       gdsii_buff_byte_cnt;
 };
 
 #ifdef LAYOUT_DEBUG
@@ -927,7 +976,7 @@ bool Layout::gdsii_read_record( uint& ni )
             }
             std::string s = std::string( c );
             ldout << "    " << s << "\n";
-            nodes[ni].u.s_i = get_str_i( s );
+            nodes[ni].u.s_i = str_get( s );
             break;
         }
 
@@ -1248,10 +1297,10 @@ bool Layout::aedt_read( std::string file )
     // Parse .aedt file contents
     // Parse the first $begin .. $end.
     //------------------------------------------------------------
-    aedt_begin_str_i = get_str_i( "$begin" );
-    aedt_end_str_i   = get_str_i( "$end" );
-    true_str_i       = get_str_i( "true" );
-    false_str_i      = get_str_i( "false" );
+    aedt_begin_str_i = str_get( "$begin" );
+    aedt_end_str_i   = str_get( "$end" );
+    true_str_i       = str_get( "true" );
+    false_str_i      = str_get( "false" );
 
     if ( !aedt_read_expr( hdr->root_i ) ) return false;
     assert( nodes[hdr->root_i].kind == NODE_KIND::HIER );
@@ -1731,7 +1780,7 @@ inline bool Layout::expect_char( char ch, uint8_t *& xxx, uint8_t * xxx_end, boo
     return true;
 }
 
-inline uint Layout::get_str_i( std::string s )
+inline uint Layout::str_get( std::string s )
 {
     auto it = str_to_str_i.find( s );
     if ( it != str_to_str_i.end() ) return it->second;
@@ -1790,7 +1839,7 @@ inline bool Layout::parse_string_i( uint& s_i, uint8_t *& xxx, uint8_t *& xxx_en
 {
     std::string s;
     if ( !parse_string( s, xxx, xxx_end ) ) return false;
-    s_i = get_str_i( s );
+    s_i = str_get( s );
     return true;
 }
 
@@ -1808,7 +1857,7 @@ inline bool Layout::parse_id( uint& id_i, uint8_t *& xxx, uint8_t *& xxx_end )
         xxx++;
     }
     if ( id == "" ) return false;
-    id_i = get_str_i( id );
+    id_i = str_get( id );
     return true;
 }
 
