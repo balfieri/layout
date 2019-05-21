@@ -633,6 +633,8 @@ Layout::Layout( std::string top_file )
         structures = aligned_alloc<uint>( max->structure_cnt );
         instances  = aligned_alloc<uint>( max->instance_cnt );
 
+        materials_init();
+
         if ( ext_name == std::string( ".gds" ) ) {
             if ( !gdsii_read( top_file ) ) return;
         } else if ( ext_name == std::string( ".aedt" ) ) {
@@ -684,6 +686,86 @@ bool Layout::write( std::string top_file )
 
 void Layout::materials_init( void )
 {
+    // common materials
+    //
+    hdr->material_cnt = 0;
+    uint mi = hdr->material_cnt++;
+    materials[mi] = Material{ str_get( "vacuum" ),
+                              1.0,              // relative_permittivity
+                              1.0,              // permeability
+                              0.0,              // conductivity
+                              0.0,              // thermal_conductivity
+                              0.0,              // mass_density
+                              0.0,              // specific_heat
+                              0.0,              // youngs_modulus
+                              0.0,              // poissons_ratio
+                              0.0 };            // thermal_expansion_coefficient
+    mi = hdr->material_cnt++;
+    materials[mi] = Material{ str_get( "air" ),
+                              1.0006,           // relative_permittivity
+                              1.0000004,        // permeability
+                              0.0,              // conductivity
+                              0.026,            // thermal_conductivity
+                              1.1614,           // mass_density
+                              1007,             // specific_heat
+                              0.0,              // youngs_modulus
+                              0.0,              // poissons_ratio
+                              0.0 };            // thermal_expansion_coefficient
+    mi = hdr->material_cnt++;
+    materials[mi] = Material{ str_get( "silicon_dioxide" ),
+                              4.0,              // relative_permittivity
+                              0.0,              // permeability
+                              0.0,              // conductivity
+                              1.5,              // thermal_conductivity
+                              2220,             // mass_density
+                              745,              // specific_heat
+                              0.0,              // youngs_modulus
+                              0.0,              // poissons_ratio
+                              4.5e-06 };        // thermal_expansion_coefficient
+    mi = hdr->material_cnt++;
+    materials[mi] = Material{ str_get( "silicon" ),
+                              11.9,             // relative_permittivity
+                              0.0,              // permeability
+                              0.0,              // conductivity
+                              148,              // thermal_conductivity
+                              2330,             // mass_density
+                              712,              // specific_heat
+                              135000000000,     // youngs_modulus
+                              0.25,             // poissons_ratio
+                              2.54e-06 };       // thermal_expansion_coefficient
+    mi = hdr->material_cnt++;
+    materials[mi] = Material{ str_get( "silicon_20Ohm_cm" ),
+                              11.9,             // relative_permittivity
+                              0.0,              // permeability
+                              5.0,              // conductivity
+                              148,              // thermal_conductivity
+                              2330,             // mass_density
+                              712,              // specific_heat
+                              135000000000,     // youngs_modulus
+                              0.25,             // poissons_ratio
+                              2.54e-06 };       // thermal_expansion_coefficient
+    mi = hdr->material_cnt++;
+    materials[mi] = Material{ str_get( "aluminum" ),
+                              10000.0,          // relative_permittivity
+                              1.000021,         // permeability
+                              38000000,         // conductivity
+                              237.5,            // thermal_conductivity
+                              2689,             // mass_density
+                              951,              // specific_heat
+                              69000000000,      // youngs_modulus
+                              0.31,             // poissons_ratio
+                              2.33e-05 };       // thermal_expansion_coefficient
+    mi = hdr->material_cnt++;
+    materials[mi] = Material{ str_get( "copper" ),
+                              10000.0,          // relative_permittivity
+                              0.999991,         // permeability
+                              58000000,         // conductivity
+                              400,              // thermal_conductivity
+                              8933,             // mass_density
+                              385,              // specific_heat
+                              120000000000,     // youngs_modulus
+                              0.38,             // poissons_ratio
+                              1.77e-05 };       // thermal_expansion_coefficient
 }
 
 uint Layout::material_set( std::string name, const Material& material )
