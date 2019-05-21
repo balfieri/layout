@@ -730,7 +730,7 @@ void Layout::materials_init( void )
                               0.0,              // poissons_ratio
                               0.0 };            // thermal_expansion_coefficient
     mi = hdr->material_cnt++;
-    materials[mi] = Material{ str_get( "silicon_dioxide" ),
+    materials[mi] = Material{ str_get( "SiO2" ),
                               4.0,              // relative_permittivity
                               0.0,              // permeability
                               0.0,              // conductivity
@@ -741,7 +741,7 @@ void Layout::materials_init( void )
                               0.0,              // poissons_ratio
                               4.5e-06 };        // thermal_expansion_coefficient
     mi = hdr->material_cnt++;
-    materials[mi] = Material{ str_get( "silicon" ),
+    materials[mi] = Material{ str_get( "Si" ),
                               11.9,             // relative_permittivity
                               0.0,              // permeability
                               0.0,              // conductivity
@@ -752,7 +752,7 @@ void Layout::materials_init( void )
                               0.25,             // poissons_ratio
                               2.54e-06 };       // thermal_expansion_coefficient
     mi = hdr->material_cnt++;
-    materials[mi] = Material{ str_get( "silicon_20Ohm_cm" ),
+    materials[mi] = Material{ str_get( "Si20ohm" ),
                               11.9,             // relative_permittivity
                               0.0,              // permeability
                               5.0,              // conductivity
@@ -763,7 +763,7 @@ void Layout::materials_init( void )
                               0.25,             // poissons_ratio
                               2.54e-06 };       // thermal_expansion_coefficient
     mi = hdr->material_cnt++;
-    materials[mi] = Material{ str_get( "aluminum" ),
+    materials[mi] = Material{ str_get( "Al" ),
                               10000.0,          // relative_permittivity
                               1.000021,         // permeability
                               38000000,         // conductivity
@@ -774,7 +774,7 @@ void Layout::materials_init( void )
                               0.31,             // poissons_ratio
                               2.33e-05 };       // thermal_expansion_coefficient
     mi = hdr->material_cnt++;
-    materials[mi] = Material{ str_get( "copper" ),
+    materials[mi] = Material{ str_get( "Cu" ),
                               10000.0,          // relative_permittivity
                               0.999991,         // permeability
                               58000000,         // conductivity
