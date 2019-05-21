@@ -105,51 +105,6 @@ public:
     bool                is_good;            // set to true if constructor succeeds
     std::string         error_msg;          // if !is_good
 
-    class real3
-    {
-    public:
-        real c[3];
-        
-        real3( void ) {}
-        real3( real c0, real c1, real c2 ) { c[0] = c0; c[1] = c1; c[2] = c2; }
-
-        real   dot( const real3 &v2 ) const;
-        real3  cross( const real3 &v2 ) const;
-        real   length( void ) const;
-        real   length_sqr( void ) const ;
-        real3& normalize( void );
-        real3  normalized( void ) const;
-        real3  operator + ( const real3& v ) const;
-        real3  operator - ( const real3& v ) const;
-        real3  operator * ( const real3& v ) const;
-        real3  operator * ( real s ) const;
-        real3  operator / ( const real3& v ) const;
-        real3  operator / ( real s ) const;
-        real3& operator += ( const real3 &v2 );
-        real3& operator -= ( const real3 &v2 );
-        real3& operator *= ( const real3 &v2 );
-        real3& operator *= ( const real s );
-        real3& operator /= ( const real3 &v2 );
-        real3& operator /= ( const real s );
-    };
-
-    class AABB                              // axis aligned bounding box
-    {
-    public:
-        real3           min;                // bounding box min
-        real3           max;                // bounding box max
-
-        AABB( void ) {}
-        AABB( const real3& p );             // init with one point
-        AABB( const real3& p0, const real3& p1, const real3& p2 );
-
-        void pad( real p );
-        void expand( const AABB& other );
-        void expand( const real3& p );
-        bool encloses( const AABB& other ) const;
-        bool hit( const real3& origin, const real3& direction, const real3& direction_inv, real tmin, real tmax ) const; 
-    };
-
     class Header                            // header (of future binary file)
     {
     public:
@@ -163,7 +118,39 @@ public:
         uint        root_i;                 // index of root node in nodes array
     };
 
-    enum class GDSII_KIND
+    enum class NODE_KIND
+    {
+        STR,                                // scalars
+        BOOL,
+        INT,
+        UINT,
+        REAL,
+        ID,
+
+        ASSIGN,                             // child 0 is lhs (usually an id), child 1 is rhs
+        HIER,                               // child 0 is id, other children are normal children
+        CALL,                               // child 0 is id, other children are args
+        SLICE,                              // child 0 is id, child 1 is index before the ':', other children are other args
+
+        GDSII_HEADER = 0x100,               // this is a GDSII HEADER node; other GDSII_KINDs follow sequentially
+    };
+            
+    class Node
+    {
+    public:
+        NODE_KIND   kind;                   // kind of node
+        union {
+            uint        s_i;                // STR or ID - index into std::string array of std::string value
+            bool        b;                  // BOOL
+            _int        i;                  // INT
+            uint        u;                  // UINT
+            real        r;                  // REAL
+            uint        child_first_i;      // non-scalars - index into nodes[] array of first child on list
+        } u;
+        uint        sibling_i;              // index in nodes array of sibling on list, else uint(-1)
+    };
+
+    enum class GDSII_KIND                   // these are in the order defined by the GDSII spec
     {
         HEADER,
         BGNLIB,
@@ -240,42 +227,10 @@ public:
         STRING,
     };
 
-    enum class NODE_KIND
-    {
-        STR,                                // scalars
-        BOOL,
-        INT,
-        UINT,
-        REAL,
-        ID,
-
-        ASSIGN,                             // child 0 is lhs (usually an id), child 1 is rhs
-        HIER,                               // child 0 is id, other children are normal children
-        CALL,                               // child 0 is id, other children are args
-        SLICE,                              // child 0 is id, child 1 is index before the ':', other children are other args
-
-        GDSII_HEADER = 0x100,               // this is a GDSII HEADER node; other GDSII_KINDs follow sequentially
-    };
-            
     static GDSII_DATATYPE kind_to_datatype( GDSII_KIND kind );
     static std::string    str( GDSII_KIND kind );
     static std::string    str( GDSII_DATATYPE datatype );
     static std::string    str( NODE_KIND kind );
-
-    class Node
-    {
-    public:
-        NODE_KIND   kind;                   // kind of node
-        union {
-            uint        s_i;                // STR or ID - index into std::string array of std::string value
-            bool        b;                  // BOOL
-            _int        i;                  // INT
-            uint        u;                  // UINT
-            real        r;                  // REAL
-            uint        child_first_i;      // non-scalars - index into nodes[] array of first child on list
-        } u;
-        uint        sibling_i;              // index in nodes array of sibling on list, else uint(-1)
-    };
 
     // structs
     std::string         file_path;          // pathname of file passed to Layout()
@@ -353,7 +308,6 @@ private:
     bool parse_string_i( uint& s, uint8_t *& xxx, uint8_t *& xxx_end );
     bool parse_id( uint& id_i, uint8_t *& xxx, uint8_t *& xxx_end );
     bool peek_id( uint& id_i, uint8_t *& xxx, uint8_t *& xxx_end );
-    bool parse_real3( real3& r3, uint8_t *& xxx, uint8_t *& xxx_end, bool has_brackets=false );
     bool parse_real( real& r, uint8_t *& xxx, uint8_t *& xxx_end );
     bool parse_int( _int& i, uint8_t *& xxx, uint8_t *& xxx_end );
     bool parse_uint( uint& u, uint8_t *& xxx, uint8_t *& xxx_end );
@@ -386,24 +340,6 @@ private:
 #define rtn_assert(  bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false ); return false; }
 #define rtnn_assert( bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false );               }
 #define node_assert( bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false ); goto error;   }
-
-inline std::istream& operator >> ( std::istream& is, Layout::real3& v ) 
-{
-    is >> v.c[0] >> v.c[1] >> v.c[2];
-    return is;
-}
-
-inline std::ostream& operator << ( std::ostream& os, const Layout::real3& v ) 
-{
-    os << "[" << v.c[0] << "," << v.c[1] << "," << v.c[2] << "]";
-    return os;
-}
-
-inline std::ostream& operator << ( std::ostream& os, const Layout::AABB& box ) 
-{
-    os << box.min << ".." << box.max;
-    return os;
-}
 
 std::string Layout::str( Layout::GDSII_KIND kind )
 {
@@ -1882,17 +1818,6 @@ inline bool Layout::peek_id( uint& id_i, uint8_t *& xxx_orig, uint8_t *& xxx_end
     return parse_id( id_i, xxx, xxx_end );
 }
 
-inline bool Layout::parse_real3( Layout::real3& r3, uint8_t *& xxx, uint8_t *& xxx_end, bool has_brackets )
-{
-    return (!has_brackets || expect_char( '[', xxx, xxx_end, true )) &&
-           parse_real( r3.c[0], xxx, xxx_end ) && 
-           (!has_brackets || expect_char( ',', xxx, xxx_end, true )) &&
-           parse_real( r3.c[1], xxx, xxx_end ) && 
-           (!has_brackets || expect_char( ',', xxx, xxx_end, true )) &&
-           parse_real( r3.c[2], xxx, xxx_end ) &&
-           (!has_brackets || expect_char( ']', xxx, xxx_end, true ));
-}
-
 inline bool Layout::parse_real( Layout::real& r, uint8_t *& xxx, uint8_t *& xxx_end )
 {
     skip_whitespace( xxx, xxx_end );   
@@ -2014,211 +1939,6 @@ std::string Layout::surrounding_lines( uint8_t *& xxx, uint8_t *& xxx_end )
         xxx++;
     }
     return s;
-}
-
-inline Layout::AABB::AABB( const Layout::real3& p )
-{
-    min = p;
-    max = p;
-}  
-
-inline Layout::AABB::AABB( const Layout::real3& p0, const Layout::real3& p1, const Layout::real3& p2 ) 
-{
-    min = p0;
-    max = p0;
-    expand( p1 );
-    expand( p2 );
-}  
-
-inline Layout::real Layout::real3::dot( const Layout::real3 &v2 ) const
-{
-    return c[0] * v2.c[0] + c[1] * v2.c[1] + c[2] * v2.c[2];
-}
-
-inline Layout::real3 Layout::real3::cross( const Layout::real3 &v2 ) const
-{
-    return real3( (c[1]*v2.c[2]   - c[2]*v2.c[1]),
-                  (-(c[0]*v2.c[2] - c[2]*v2.c[0])),
-                  (c[0]*v2.c[1]   - c[1]*v2.c[0]) );
-}
-
-inline Layout::real Layout::real3::length( void ) const
-{ 
-    return std::sqrt( c[0]*c[0] + c[1]*c[1] + c[2]*c[2] ); 
-}
-
-inline Layout::real Layout::real3::length_sqr( void ) const 
-{ 
-    return c[0]*c[0] + c[1]*c[1] + c[2]*c[2];
-}
-
-inline Layout::real3& Layout::real3::normalize( void )
-{
-    *this /= length();
-    return *this;
-}
-
-inline Layout::real3 Layout::real3::normalized( void ) const
-{
-    return *this / length();
-}
-
-inline Layout::real3 Layout::real3::operator + ( const Layout::real3& v2 ) const
-{
-    real3 r;
-    r.c[0] = c[0] + v2.c[0];
-    r.c[1] = c[1] + v2.c[1];
-    r.c[2] = c[2] + v2.c[2];
-    return r;
-}
-
-inline Layout::real3 Layout::real3::operator - ( const Layout::real3& v2 ) const
-{
-    real3 r;
-    r.c[0] = c[0] - v2.c[0];
-    r.c[1] = c[1] - v2.c[1];
-    r.c[2] = c[2] - v2.c[2];
-    return r;
-}
-
-inline Layout::real3 Layout::real3::operator * ( const Layout::real3& v2 ) const
-{
-    real3 r;
-    r.c[0] = c[0] * v2.c[0];
-    r.c[1] = c[1] * v2.c[1];
-    r.c[2] = c[2] * v2.c[2];
-    return r;
-}
-
-inline Layout::real3 operator * ( Layout::real s, const Layout::real3& v ) 
-{
-    return Layout::real3( s*v.c[0], s*v.c[1], s*v.c[2] );
-}
-
-inline Layout::real3 Layout::real3::operator * ( Layout::real s ) const
-{
-    real3 r;
-    r.c[0] = c[0] * s;
-    r.c[1] = c[1] * s;
-    r.c[2] = c[2] * s;
-    return r;
-}
-
-inline Layout::real3 Layout::real3::operator / ( const Layout::real3& v2 ) const
-{
-    real3 r;
-    r.c[0] = c[0] / v2.c[0];
-    r.c[1] = c[1] / v2.c[1];
-    r.c[2] = c[2] / v2.c[2];
-    return r;
-}
-
-inline Layout::real3 Layout::real3::operator / ( Layout::real s ) const
-{
-    real3 r;
-    r.c[0] = c[0] / s;
-    r.c[1] = c[1] / s;
-    r.c[2] = c[2] / s;
-    return r;
-}
-
-inline Layout::real3& Layout::real3::operator += ( const Layout::real3 &v2 )
-{
-    c[0] += v2.c[0];
-    c[1] += v2.c[1];
-    c[2] += v2.c[2];
-    return *this;
-}
-
-inline Layout::real3& Layout::real3::operator -= ( const Layout::real3 &v2 )
-{
-    c[0] -= v2.c[0];
-    c[1] -= v2.c[1];
-    c[2] -= v2.c[2];
-    return *this;
-}
-
-inline Layout::real3& Layout::real3::operator *= ( const Layout::real3 &v2 )
-{
-    c[0] *= v2.c[0];
-    c[1] *= v2.c[1];
-    c[2] *= v2.c[2];
-    return *this;
-}
-
-inline Layout::real3& Layout::real3::operator *= ( const Layout::real s )
-{
-    c[0] *= s;
-    c[1] *= s;
-    c[2] *= s;
-    return *this;
-}
-
-inline Layout::real3& Layout::real3::operator /= ( const Layout::real3 &v2 )
-{
-    c[0] /= v2.c[0];
-    c[1] /= v2.c[1];
-    c[2] /= v2.c[2];
-    return *this;
-}
-
-inline Layout::real3& Layout::real3::operator /= ( const Layout::real s )
-{
-    c[0] /= s;
-    c[1] /= s;
-    c[2] /= s;
-    return *this;
-}
-
-inline void Layout::AABB::pad( Layout::real p ) 
-{
-    min -= real3( p, p, p );
-    max += real3( p, p, p );
-}
-
-inline void Layout::AABB::expand( const Layout::AABB& other )
-{
-    for( uint i = 0; i < 3; i++ )
-    {
-        if ( other.min.c[i] < min.c[i] ) min.c[i] = other.min.c[i];
-        if ( other.max.c[i] > max.c[i] ) max.c[i] = other.max.c[i];
-    }
-}
-
-inline void Layout::AABB::expand( const Layout::real3& p ) 
-{
-    if ( p.c[0] < min.c[0] ) min.c[0] = p.c[0];
-    if ( p.c[1] < min.c[1] ) min.c[1] = p.c[1];
-    if ( p.c[2] < min.c[2] ) min.c[2] = p.c[2];
-    if ( p.c[0] > max.c[0] ) max.c[0] = p.c[0];
-    if ( p.c[1] > max.c[1] ) max.c[1] = p.c[1];
-    if ( p.c[2] > max.c[2] ) max.c[2] = p.c[2];
-}
-
-inline bool Layout::AABB::encloses( const AABB& other ) const
-{
-    return min.c[0] <= other.min.c[0] &&
-           min.c[1] <= other.min.c[1] &&
-           min.c[2] <= other.min.c[2] &&
-           max.c[0] >= other.max.c[0] &&
-           max.c[1] >= other.max.c[1] &&
-           max.c[2] >= other.max.c[2];
-}
-
-inline bool Layout::AABB::hit( const Layout::real3& origin, const Layout::real3& direction, const Layout::real3& direction_inv, 
-                              Layout::real tmin, Layout::real tmax ) const 
-{
-    (void)direction;
-    for( uint a = 0; a < 3; a++ ) 
-    {
-        real dir_inv = direction_inv.c[a];
-        real v0 = (min.c[a] - origin.c[a]) * dir_inv;
-        real v1 = (max.c[a] - origin.c[a]) * dir_inv;
-        tmin = std::fmax( tmin, std::fmin( v0, v1 ) );
-        tmax = std::fmin( tmax, std::fmax( v0, v1 ) );
-    }
-    bool r = tmax >= std::fmax( tmin, real(0.0) );
-    return r;
 }
 
 #endif
