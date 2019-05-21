@@ -341,7 +341,7 @@ private:
     uint true_str_i;
     uint false_str_i;
 
-    void init( bool init_arrays=true );
+    void init( bool alloc_arrays );
 
     bool layout_read( std::string file_path );          // .layout
     bool layout_write( std::string file_path );         
@@ -630,7 +630,7 @@ void Layout::init( bool alloc_arrays )
 
 Layout::Layout( void )
 {
-    init();
+    init( true );
     is_good = true;
 }
 
