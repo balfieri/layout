@@ -96,7 +96,7 @@ public:
     static void        dissect_path( std::string path, std::string& dir_name, std::string& base_name, std::string& ext_name ); // utility
     static std::string path_without_ext( std::string path, std::string * file_ext=nullptr );  // returns path without file extension part
 
-    // constructor reads in file
+    Layout( void );
     Layout( std::string top_file );
     ~Layout(); 
 
@@ -340,6 +340,8 @@ private:
     uint aedt_end_str_i;
     uint true_str_i;
     uint false_str_i;
+
+    void init( bool init_arrays=true );
 
     bool layout_read( std::string file_path );          // .layout
     bool layout_write( std::string file_path );         
@@ -587,42 +589,31 @@ Layout::GDSII_DATATYPE Layout::kind_to_datatype( Layout::GDSII_KIND kind )
     }
 }
 
-Layout::Layout( std::string top_file )
+void Layout::init( bool alloc_arrays )
 {
     is_good = false;
     error_msg = "<unknown error>";
     mapped_region = nullptr;
     nnn = nullptr;
     line_num = 1;
-    file_path = top_file;
+    file_path = "";
 
-    hdr = aligned_alloc<Header>( 1 );
-    memset( hdr, 0, sizeof( Header ) );
-    hdr->version = VERSION;
-
-    //------------------------------------------------------------
-    // Initial lengths of arrays are large in virtual memory
-    //------------------------------------------------------------
-    max = aligned_alloc<Header>( 1 );
-    max->node_cnt =  1024;
-    max->char_cnt = max->node_cnt * 128;
-    max->material_cnt = 16;
-    max->layer_cnt = 8;
-    max->structure_cnt = 64;
-    max->instance_cnt = 64;
-
-    //------------------------------------------------------------
-    // Read depends on file ext_name
-    //------------------------------------------------------------
-    std::string dir_name;
-    std::string base_name;
-    dissect_path( top_file, dir_name, base_name, ext_name );
-    if ( ext_name == std::string( ".layout" ) ) {
+    if ( alloc_arrays ) {
         //------------------------------------------------------------
-        // Read uncompressed .layout
+        // Initial lengths of arrays are large in virtual memory
         //------------------------------------------------------------
-        if ( !layout_read( top_file ) ) return;
-    } else {
+        hdr = aligned_alloc<Header>( 1 );
+        memset( hdr, 0, sizeof( Header ) );
+        hdr->version = VERSION;
+
+        max = aligned_alloc<Header>( 1 );
+        max->node_cnt =  1024;
+        max->char_cnt = max->node_cnt * 128;
+        max->material_cnt = 16;
+        max->layer_cnt = 8;
+        max->structure_cnt = 64;
+        max->instance_cnt = 64;
+
         //------------------------------------------------------------
         // Allocate initial arrays
         //------------------------------------------------------------
@@ -634,7 +625,34 @@ Layout::Layout( std::string top_file )
         instances  = aligned_alloc<uint>( max->instance_cnt );
 
         materials_init();
+    }
+}
 
+Layout::Layout( void )
+{
+    init();
+    is_good = true;
+}
+
+Layout::Layout( std::string top_file ) 
+{
+    //------------------------------------------------------------
+    // Read depends on file ext_name
+    //------------------------------------------------------------
+    std::string dir_name;
+    std::string base_name;
+    dissect_path( top_file, dir_name, base_name, ext_name );
+    if ( ext_name == std::string( ".layout" ) ) {
+        //------------------------------------------------------------
+        // Read uncompressed .layout
+        //------------------------------------------------------------
+        init( false );
+        if ( !layout_read( top_file ) ) return;
+    } else {
+        //------------------------------------------------------------
+        // Parse .gds or .aedt
+        //------------------------------------------------------------
+        init( true );
         if ( ext_name == std::string( ".gds" ) ) {
             if ( !gdsii_read( top_file ) ) return;
         } else if ( ext_name == std::string( ".aedt" ) ) {
