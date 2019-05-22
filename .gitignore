@@ -1,3 +1,4 @@
 gen
 *crg*
 *.dSYM*
+*.DS_Store

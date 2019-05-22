@@ -149,12 +149,13 @@ public:
     uint        material_set( std::string name, const Material& material );
     uint        material_get( std::string name );
 
-    class Layer                             // layer mapping
+    class Layer                             // layer stackup (one layer)
     {
     public:
         uint        name_i;                 // index of layer name in strings[]
         uint        gdsii_num;              // layer number of main material in GDSII file
         uint        dielectric_gdsii_num;   // layer number of dielectric material in GDSII file
+        bool        same_zoffset_as_prev;   // starts at same zoffset as previous layer in stackkup?
         real        thickness;              // thickness in um
         uint        material_i;             // index of main material in materials[]
         uint        dielectric_material_i;  // index of dielectric material in materials[]
@@ -303,6 +304,19 @@ public:
     Node *              nodes;
     uint *              structures;         // node indexes of structures
     uint *              instances;          // node indexes of instances
+
+    // current dimensions
+    real width( void );         // x
+    real length( void );        // y
+    real height( void );        // z
+
+    // instancing
+    void inst_layout( const Layout * other, real x, real y, uint dest_layer_first, uint dest_layer_last );
+    void inst_layout( const Layout * other, real x, real y );
+
+    // fill
+    void fill_dielectrics( void );
+    void fill_material( uint material_i, real x, real y, real z, real w, real l, real h );
 
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
@@ -732,7 +746,7 @@ void Layout::materials_init( void )
     mi = hdr->material_cnt++;
     materials[mi] = Material{ str_get( "SiO2" ),
                               4.0,              // relative_permittivity
-                              0.0,              // permeability
+                              1.0000010,        // permeability
                               0.0,              // conductivity
                               1.5,              // thermal_conductivity
                               2220,             // mass_density
@@ -743,7 +757,7 @@ void Layout::materials_init( void )
     mi = hdr->material_cnt++;
     materials[mi] = Material{ str_get( "Si" ),
                               11.9,             // relative_permittivity
-                              0.0,              // permeability
+                              1.0000010,        // permeability
                               0.0,              // conductivity
                               148,              // thermal_conductivity
                               2330,             // mass_density
@@ -754,7 +768,7 @@ void Layout::materials_init( void )
     mi = hdr->material_cnt++;
     materials[mi] = Material{ str_get( "Si20ohm" ),
                               11.9,             // relative_permittivity
-                              0.0,              // permeability
+                              1.0000020,        // permeability
                               5.0,              // conductivity
                               148,              // thermal_conductivity
                               2330,             // mass_density
