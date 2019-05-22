@@ -306,9 +306,9 @@ public:
     uint *              instances;          // node indexes of instances
 
     // current dimensions
-    real width( void );         // x
-    real length( void );        // y
-    real height( void );        // z
+    real width( void ) const;
+    real length( void ) const;
+    real height( void ) const;
 
     // instancing
     void inst_layout( const Layout * other, real x, real y, uint dest_layer_first, uint dest_layer_last );
@@ -873,6 +873,38 @@ std::string Layout::node_name( const Layout::Node& node ) const
     }
 
     return "";
+}
+
+Layout::real Layout::width( void ) const
+{
+    return 0;
+}
+
+Layout::real Layout::length( void ) const
+{
+    return 0;
+}
+
+Layout::real Layout::height( void ) const
+{
+    return 0;
+}
+
+void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_first, uint dest_layer_last )
+{
+}
+
+void Layout::inst_layout( const Layout * other, real x, real y )
+{
+    inst_layout( other, x, y, 0, hdr->layer_cnt-1 );
+}
+
+void Layout::fill_dielectrics( void )
+{
+}
+
+void Layout::fill_material( uint material_i, real x, real y, real z, real w, real l, real h )
+{
 }
 
 // returns array of T on a page boundary
