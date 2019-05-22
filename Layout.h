@@ -619,6 +619,7 @@ void Layout::init( bool alloc_arrays )
         hdr = aligned_alloc<Header>( 1 );
         memset( hdr, 0, sizeof( Header ) );
         hdr->version = VERSION;
+        hdr->root_i = uint(-1);
 
         max = aligned_alloc<Header>( 1 );
         max->node_cnt =  1024;
@@ -1289,7 +1290,7 @@ bool Layout::gdsii_write( std::string gdsii_path )
     gdsii_fd = open( gdsii_path.c_str(), O_CREAT|O_WRONLY|O_TRUNC|O_SYNC|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP );
     if ( gdsii_fd < 0 ) ldout << "open() for write error: " << strerror( errno ) << "\n";
 
-    gdsii_write_record( hdr->root_i );
+    if ( hdr->root_i != uint(-1) ) gdsii_write_record( hdr->root_i );
 
     gdsii_flush();
     fsync( gdsii_fd ); // flush
