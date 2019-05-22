@@ -199,11 +199,12 @@ public:
             uint        child_first_i;      // non-scalars - index into nodes[] array of first child on list
         } u;
         uint        sibling_i;              // index in nodes array of sibling on list, else uint(-1)
+
     };
 
-    // attempt to find name for a node
-    //
-    std::string node_name( const Node& node ) const;
+    bool        node_is_element( const Node& node ) const;      // return true if node is an element
+    std::string node_name( const Node& node ) const;            // find name for node
+    uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
 
     enum class GDSII_KIND                   // these are in the order defined by the GDSII spec
     {
@@ -361,6 +362,7 @@ private:
     bool layout_write( std::string file_path );         
 
     bool gdsii_is_hier( GDSII_KIND kind ) const;
+    bool gdsii_is_element( GDSII_KIND kind ) const;
     GDSII_KIND gdsii_hier_end_kind( GDSII_KIND kind ) const;
     bool gdsii_is_name( GDSII_KIND kind ) const;
     bool gdsii_read( std::string file_path );           // .gds
@@ -847,7 +849,16 @@ uint Layout::layer_get( std::string name )
     return uint(-1);
 }
 
-std::string Layout::node_name( const Layout::Node& node ) const
+bool Layout::node_is_element( const Node& node ) const
+{
+    if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
+        GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
+        return gdsii_is_element( gkind );
+    }
+    return false;
+}
+
+std::string Layout::node_name( const Node& node ) const
 {
     switch( node.kind ) 
     {
@@ -876,6 +887,16 @@ std::string Layout::node_name( const Layout::Node& node ) const
     return "";
 }
 
+uint Layout::node_layer( const Node& node ) const
+{
+    assert( node_is_element( node ) );
+    for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
+    {
+        if ( int(nodes[child_i].kind) == (int(NODE_KIND::GDSII_HEADER) + int(GDSII_KIND::LAYER)) ) return nodes[child_i].u.i;
+    }
+    return uint(-1);
+}
+
 Layout::real Layout::width( void ) const
 {
     return 0;
@@ -891,21 +912,99 @@ Layout::real Layout::height( void ) const
     return 0;
 }
 
-void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_first, uint dest_layer_last )
-{
-}
-
 void Layout::inst_layout( const Layout * other, real x, real y )
 {
     inst_layout( other, x, y, 0, hdr->layer_cnt-1 );
 }
 
+void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_first, uint dest_layer_last )
+{
+    //-----------------------------------------------------
+    // Go through all layers and make a bit mask of 
+    // all source layers that are desired.
+    //-----------------------------------------------------
+    std::vector<bool> is_desired;
+    uint sz = 0;
+    for( uint i = dest_layer_first; i <= dest_layer_last; i++ )
+    {
+        uint src_layer_i = layers[i].gdsii_num;
+        if ( sz <= src_layer_i ) {
+            is_desired.resize( src_layer_i+1 );
+            while( sz <= src_layer_i )
+            {
+                is_desired[sz++] = false;
+            }
+        }
+        is_desired[src_layer_i] = true;
+    }
+
+    //-----------------------------------------------------
+    // Go through all STRuctures in other.
+    // Copy any elements with source layers that are desired.
+    // Change element LAYERs to dest layers.
+    // Make a note of STRucts from which we copied elements.
+    // Note: we may have to copy elements multiple times if they
+    // are used on multiple destination layers.
+    //-----------------------------------------------------
+    std::map<uint, bool> str_was_copied;
+    for( uint s = 0; s < other->hdr->structure_cnt; s++ )
+    {
+        bool was_copied = false;
+        const Node * str = &other->nodes[other->structures[s]];
+        for( uint child_i = str->u.child_first_i; child_i != uint(-1); child_i++ )
+        {
+            const Node& child = other->nodes[child_i];
+            if ( node_is_element( child ) && is_desired[node_layer( child )] ) {    // TODO: could be multiple times
+                if ( !was_copied ) {
+                    // TODO: copy BGNSTR node
+                    was_copied = true;
+                }
+                // TODO: copy entire element, but change LAYER 
+            }
+        }
+    }
+
+    //-----------------------------------------------------
+    // Go through all {A,S}REFs in other.
+    // If its STRuct was copied, then we need to copy the REF
+    // translated by [x,y].
+    //-----------------------------------------------------
+    for( uint32_t dl = dest_layer_first; dl <= dest_layer_last; dl++ )
+    {
+    }
+}
+
 void Layout::fill_dielectrics( void )
 {
+    //-----------------------------------------------------
+    // For each layer:
+    //-----------------------------------------------------
+    for( uint32_t i = 0; i < hdr->layer_cnt; i++ )
+    {
+        //-----------------------------------------------------
+        // Build a 2D kd-tree, which is a space-divided binary tree.
+        // It will make it very easy to figure out where there
+        // are empty spaces.
+        //-----------------------------------------------------
+
+        //-----------------------------------------------------
+        // Walk the kd-tree down to the leaf level.
+        // For leaves that have a triangle or rectangle, it's
+        // trivial to determine the remaining empty space.
+        // For empty leaves, it's obviously the entire rectangle.
+        //-----------------------------------------------------
+    }
 }
 
 void Layout::fill_material( uint material_i, real x, real y, real z, real w, real l, real h )
 {
+    //-----------------------------------------------------
+    // For now, we require that the space consumed by
+    // the fill material is outside the space consumed by
+    // the layout.  Thus we need only add a box of the 
+    // material at origin [x,y,z] and dimensions [w,l,h].
+    // Simple.
+    //-----------------------------------------------------
 }
 
 // returns array of T on a page boundary
@@ -1030,6 +1129,23 @@ bool Layout::gdsii_is_hier( GDSII_KIND kind ) const
     {
         case GDSII_KIND::BGNLIB:
         case GDSII_KIND::BGNSTR:
+        case GDSII_KIND::BOUNDARY:
+        case GDSII_KIND::PATH:
+        case GDSII_KIND::SREF:
+        case GDSII_KIND::AREF:
+        case GDSII_KIND::TEXT:
+        case GDSII_KIND::NODE:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+bool Layout::gdsii_is_element( GDSII_KIND kind ) const
+{
+    switch( kind )
+    {
         case GDSII_KIND::BOUNDARY:
         case GDSII_KIND::PATH:
         case GDSII_KIND::SREF:
