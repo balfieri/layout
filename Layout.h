@@ -104,6 +104,14 @@ public:
     bool write( std::string file_path );
 
     // following data structures will be populated
+    //
+    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    // NOTE: THERE ARE NO POINTERS IN THESE DATA STRUCTURES.
+    //       WE STORE INDEXES INTO ARRAYS INSTEAD.
+    //       ARRAYS ARE ALL PAGE-ALIGNED SO THAT FILE WRITE/READ
+    //       TURNS INTO MMAP() EFFECTIVELY.  ALSO, THEY
+    //       CAN BE EASILY RELOCATED.
+    //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     class Header                            // header (of future binary file)
     {
@@ -152,13 +160,15 @@ public:
     class Layer                             // layer stackup (one layer)
     {
     public:
-        uint        name_i;                 // index of layer name in strings[]
-        uint        gdsii_num;              // layer number of main material in GDSII file
-        uint        dielectric_gdsii_num;   // layer number of dielectric material in GDSII file
-        bool        same_zoffset_as_prev;   // starts at same zoffset as previous layer in stackkup?
-        real        thickness;              // thickness in um
-        uint        material_i;             // index of main material in materials[]
-        uint        dielectric_material_i;  // index of dielectric material in materials[]
+        uint        name_i;                 	// index of layer name in strings[]
+        uint        gdsii_num;              	// layer number of main material in GDSII file
+        uint        dielectric_gdsii_num;   	// layer number of dielectric material in GDSII file
+        uint        gdsii_datatype;         	// which datatype to use - uint(-1) means all
+        uint        dielectric_gdsii_datatype; 	// which datatype to use - uint(-1) means all
+        bool        same_zoffset_as_prev;   	// starts at same zoffset as previous layer in stackkup?
+        real        thickness;              	// thickness in um
+        uint        material_i;             	// index of main material in materials[]
+        uint        dielectric_material_i;  	// index of dielectric material in materials[]
     };
 
     // these return index in layers[] array or uint(-1) when failure or not found
@@ -929,6 +939,7 @@ void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_
     {
         uint src_layer_i = layers[i].gdsii_num;
         if ( sz <= src_layer_i ) {
+            // TODO: datatype only
             is_desired.resize( src_layer_i+1 );
             while( sz <= src_layer_i )
             {
