@@ -931,9 +931,9 @@ void Layout::inst_layout( const Layout * other, real x, real y )
 void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_first, uint dest_layer_last )
 {
     //-----------------------------------------------------
-    // Go through all dest layers and make a note of 
-    // all source layers that are desired.  Do this by 
-    // keeping a list of all dest layers that desire it.
+    // Go through all dest layers and note 
+    // all source layers that are desired.  
+    // Keep a list of all dest layers that desire each source layer.
     //-----------------------------------------------------
     std::vector<std::vector<uint>> desirees;
     uint sz = 0;
@@ -947,12 +947,15 @@ void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_
     }
 
     //-----------------------------------------------------
-    // Go through all STRuctures in other.
-    // Copy any elements with source layers that are desired.
-    // Change element LAYERs to dest layers.
-    // Make a note of STRucts from which we copied elements.
-    // Note: we have to copy elements multiple times if they
-    // are desired by multiple destination layers.
+    // Go through all source STRuctures.
+    // Copy any elements on desired source layers.
+    // Change element LAYER to dest LAYER.
+    // If the same element is desired by multiple dest layers,
+    // then we need to copy that element multiple times, but
+    // we can keep these in the same STRucture because all
+    // instances will be translated by [x,y] for this call.  
+    // Make a note of each source structure we copied and
+    // the corresponding dest structure.
     //-----------------------------------------------------
     std::map<uint, bool> str_was_copied;
     for( uint s = 0; s < other->hdr->structure_cnt; s++ )
@@ -976,8 +979,9 @@ void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_
 
     //-----------------------------------------------------
     // Go through all {A,S}REFs in other.
-    // If its STRuct was copied, then we need to copy the REF
-    // translated by [x,y].
+    // If its structure was copied, then we need to copy the REF
+    // translated further by [x,y] and have this refer to the corresponding
+    // dest structure.
     //-----------------------------------------------------
     for( uint32_t dl = dest_layer_first; dl <= dest_layer_last; dl++ )
     {
