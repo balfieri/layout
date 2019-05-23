@@ -940,9 +940,7 @@ void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_
     for( uint i = dest_layer_first; i <= dest_layer_last; i++ )
     {
         uint src_layer_i = layers[i].gdsii_num;
-        if ( sz <= src_layer_i ) {
-            desirees.resize( src_layer_i+1 );
-        }
+        if ( sz <= src_layer_i ) desirees.resize( src_layer_i+1 );
         uint di = desirees[src_layer_i].size();
         desirees[src_layer_i].resize( di+1 );
         desirees[src_layer_i][di] = i;
