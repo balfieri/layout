@@ -885,6 +885,7 @@ std::string Layout::node_name( const Node& node ) const
                 if ( gdsii_is_hier( gkind ) ) {
                     for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
                     {
+                        assert( child_i != 0 );
                         std::string n = node_name( nodes[child_i] );
                         if ( n != "" ) return n;
                     }
@@ -962,10 +963,12 @@ void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_
     {
         bool was_copied = false;
         const Node * str = &other->nodes[other->structures[s]];
-        for( uint child_i = str->u.child_first_i; child_i != uint(-1); child_i++ )
+        for( uint child_i = str->u.child_first_i; child_i != uint(-1); child_i = other->nodes[child_i].sibling_i )
         {
             const Node& child = other->nodes[child_i];
-            if ( node_is_element( child ) && is_desired[node_layer( child )] ) {    // TODO: could be multiple times
+            if ( !other->node_is_element( child ) ) continue;
+            uint child_layer = other->node_layer( child );
+            if ( child_layer < is_desired.size() && is_desired[child_layer] ) {
                 if ( !was_copied ) {
                     // TODO: copy BGNSTR node
                     was_copied = true;
@@ -1221,7 +1224,8 @@ bool Layout::gdsii_read( std::string file )
     //------------------------------------------------------------
     // Create a file-level HIER node and read in all of them.
     //------------------------------------------------------------
-    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 2 );
+    hdr->node_cnt++;  // make sure index 0 is not used (for debug)
     uint ni = hdr->node_cnt++;
     nodes[ni].kind = NODE_KIND::HIER;
     nodes[ni].u.child_first_i = uint(-1);
@@ -1237,6 +1241,7 @@ bool Layout::gdsii_read( std::string file )
         if ( prev_i == uint(-1) ) {
             nodes[ni].u.child_first_i = child_i;
         } else {
+            assert( child_i != 0 );
             nodes[prev_i].sibling_i = child_i;
         }
 
@@ -1329,6 +1334,7 @@ bool Layout::gdsii_read_record( uint& ni )
             {
                 perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
                 uint child_i = hdr->node_cnt++;
+                assert( child_i != 0 );
                 nodes[child_i].sibling_i = uint(-1);
                 if ( i == 0 ) {
                     nodes[ni].u.child_first_i = child_i;
@@ -1397,6 +1403,7 @@ bool Layout::gdsii_read_record( uint& ni )
             if ( prev_i == uint(-1) ) {
                 nodes[ni].u.child_first_i = child_i;
             } else {
+                assert( child_i != 0 );
                 nodes[prev_i].sibling_i = child_i;
             }
             prev_i = child_i;
@@ -1477,6 +1484,7 @@ void Layout::gdsii_write_record( uint ni )
             {
                 for( child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
                 {
+                    assert( child_i != 0 );
                     if ( nodes[child_i].kind != NODE_KIND::INT && nodes[child_i].kind != NODE_KIND::REAL ) break; // skip GDSII children
                     gdsii_write_number( bytes, byte_cnt, child_i, datatype );
                 }
@@ -1516,6 +1524,7 @@ void Layout::gdsii_write_record( uint ni )
         // assume file wrapper, just loop through children
         for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
         {
+            assert( child_i != 0 );
             gdsii_write_record( child_i );
         }
 
@@ -1690,6 +1699,7 @@ bool Layout::aedt_read_expr( uint& ni )
 
                 uint child_i;
                 if ( !aedt_read_expr( child_i ) ) return false;
+                assert( child_i != 0 );
                 nodes[prev_i].sibling_i = child_i;
                 prev_i = child_i;
             }
@@ -1717,8 +1727,8 @@ bool Layout::aedt_read_expr( uint& ni )
         uint ai = hdr->node_cnt++;
         nodes[ai].kind = NODE_KIND::ASSIGN;
         nodes[ai].u.child_first_i = ni;
-        nodes[ni].sibling_i = rhs_i;
         nodes[ai].sibling_i = uint(-1);
+        nodes[ni].sibling_i = rhs_i;
         ni = ai;
 
     } else if ( ch == '(' || ch == '[' ) {
@@ -1753,6 +1763,7 @@ bool Layout::aedt_read_expr( uint& ni )
 
             uint arg_i;
             if ( !aedt_read_expr( arg_i ) ) return false;
+            assert( arg_i != 0 );
             nodes[prev_i].sibling_i = arg_i;
             prev_i = arg_i;
         }
