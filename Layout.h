@@ -931,23 +931,21 @@ void Layout::inst_layout( const Layout * other, real x, real y )
 void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_first, uint dest_layer_last )
 {
     //-----------------------------------------------------
-    // Go through all layers and make a bit mask of 
-    // all source layers that are desired.
+    // Go through all dest layers and make a note of 
+    // all source layers that are desired.  Do this by 
+    // keeping a list of all dest layers that desire it.
     //-----------------------------------------------------
-    std::vector<bool> is_desired;
+    std::vector<std::vector<uint>> desirees;
     uint sz = 0;
     for( uint i = dest_layer_first; i <= dest_layer_last; i++ )
     {
         uint src_layer_i = layers[i].gdsii_num;
         if ( sz <= src_layer_i ) {
-            // TODO: datatype only
-            is_desired.resize( src_layer_i+1 );
-            while( sz <= src_layer_i )
-            {
-                is_desired[sz++] = false;
-            }
+            desirees.resize( src_layer_i+1 );
         }
-        is_desired[src_layer_i] = true;
+        uint di = desirees[src_layer_i].size();
+        desirees[src_layer_i].resize( di+1 );
+        desirees[src_layer_i][di] = i;
     }
 
     //-----------------------------------------------------
@@ -955,8 +953,8 @@ void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_
     // Copy any elements with source layers that are desired.
     // Change element LAYERs to dest layers.
     // Make a note of STRucts from which we copied elements.
-    // Note: we may have to copy elements multiple times if they
-    // are used on multiple destination layers.
+    // Note: we have to copy elements multiple times if they
+    // are desired by multiple destination layers.
     //-----------------------------------------------------
     std::map<uint, bool> str_was_copied;
     for( uint s = 0; s < other->hdr->structure_cnt; s++ )
@@ -968,7 +966,7 @@ void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_
             const Node& child = other->nodes[child_i];
             if ( !other->node_is_element( child ) ) continue;
             uint child_layer = other->node_layer( child );
-            if ( child_layer < is_desired.size() && is_desired[child_layer] ) {
+            if ( child_layer < desirees.size() && desirees[child_layer].size() != 0 ) {
                 if ( !was_copied ) {
                     // TODO: copy BGNSTR node
                     was_copied = true;
