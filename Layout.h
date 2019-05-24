@@ -109,8 +109,9 @@ public:
     // NOTE: THERE ARE NO POINTERS IN THESE DATA STRUCTURES.
     //       WE STORE INDEXES INTO ARRAYS INSTEAD.
     //       ARRAYS ARE ALL PAGE-ALIGNED SO THAT FILE WRITE/READ
-    //       TURNS INTO MMAP() EFFECTIVELY.  ALSO, THEY
-    //       CAN BE EASILY RELOCATED.
+    //       TURNS INTO MMAP() EFFECTIVELY.  
+    //       INDEXES ALLOW ARRAYS TO BE EASILY RELOCATED DURING
+    //       RESIZING OR READING IN FROM A FILE.
     //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     class Header                            // header (of future binary file)
