@@ -179,57 +179,7 @@ public:
 
     enum class NODE_KIND
     {
-        STR,                                // scalars
-        BOOL,
-        INT,
-        UINT,
-        REAL,
-        ID,
-
-        ASSIGN,                             // child 0 is lhs (usually an id), child 1 is rhs
-        HIER,                               // child 0 is id, other children are normal children
-        CALL,                               // child 0 is id, other children are args
-        SLICE,                              // child 0 is id, child 1 is index before the ':', other children are other args
-
-        GDSII_HEADER = 0x100,               // this is a GDSII HEADER node; other GDSII_KINDs follow sequentially
-    };
-            
-    static std::string  str( NODE_KIND kind );
-    
-    class Node
-    {
-    public:
-        NODE_KIND   kind;                   // kind of node
-        union {
-            uint        s_i;                // STR or ID - index into std::string array of std::string value
-            bool        b;                  // BOOL
-            _int        i;                  // INT
-            uint        u;                  // UINT
-            real        r;                  // REAL
-            uint        child_first_i;      // non-scalars - index into nodes[] array of first child on list
-        } u;
-        uint        sibling_i;              // index in nodes array of sibling on list, else uint(-1)
-
-    };
-
-    bool        node_is_scalar( const Node& node ) const;       // return true if node is a scalar 
-    bool        node_is_element( const Node& node ) const;      // return true if node is an element
-    bool        node_is_hier( const Node& node ) const;         // return true if node is a hierarchy
-    bool        node_is_ref( const Node& node ) const;          // return true if node is an AREF or SREF
-    uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
-    std::string node_name( const Node& node ) const;            // find name for node
-    uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
-
-    enum class COPY_KIND
-    {
-        ONE,                                // copy only the one source node, no children
-        SCALAR_CHILDREN,                    // copy scalar children only (INT, REAL, etc.)
-        DEEP,                               // copy all children and descendents
-    };
-    uint        node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind, uint new_layer=uint(-1) );
-
-    enum class GDSII_KIND                   // these are in the order defined by the GDSII spec
-    {
+        // these match the exact order given in the GDSII spec, so that they have int values that match
         HEADER,
         BGNLIB,
         LIBNAME,
@@ -289,12 +239,29 @@ public:
         ENDMASKS,
         LIBDIRSIZE,
         SRFNAME,
-        LIBSECUR,
+        LIBSECUR,                               
+        // END OF GDSII KINDS
+
+        // scalars
+        STR,                                
+        BOOL,
+        INT,
+        UINT,
+        REAL,
+        ID,
+
+        // non-scalars
+        ASSIGN,                                 // child 0 is lhs (usually an id), child 1 is rhs
+        HIER,                                   // child 0 is id, other children are normal children
+        CALL,                                   // child 0 is id, other children are args
+        SLICE,                                  // child 0 is id, child 1 is index before the ':', other children are other args
     };
+            
+    static constexpr uint32_t GDSII_KIND_CNT = uint(NODE_KIND::LIBSECUR) + 1;
 
-    static constexpr uint32_t GDSII_KIND_CNT = 0x3c;
-    static std::string str( GDSII_KIND kind );
-
+    static std::string  str( NODE_KIND kind );
+    NODE_KIND           hier_end_kind( NODE_KIND kind ) const;      // returns corresponding end kind for hier kind
+    
     enum class GDSII_DATATYPE
     {
         NO_DATA,
@@ -306,7 +273,41 @@ public:
         STRING,
     };
 
-    static GDSII_DATATYPE kind_to_datatype( GDSII_KIND kind );
+    class Node
+    {
+    public:
+        NODE_KIND   kind;                   // kind of node
+        union {
+            uint        s_i;                // STR or ID - index into std::string array of std::string value
+            bool        b;                  // BOOL
+            _int        i;                  // INT
+            uint        u;                  // UINT
+            real        r;                  // REAL
+            uint        child_first_i;      // non-scalars - index into nodes[] array of first child on list
+        } u;
+        uint        sibling_i;              // index in nodes array of sibling on list, else uint(-1)
+
+    };
+
+    bool        node_is_gdsii( const Node& node ) const;        // return true if node is a GDSII node
+    bool        node_is_scalar( const Node& node ) const;       // return true if node is a scalar 
+    bool        node_is_element( const Node& node ) const;      // return true if node is a GDSII element
+    bool        node_is_name( const Node& node ) const;         // return true if node is a name node
+    bool        node_is_hier( const Node& node ) const;         // return true if node is a hierarchy
+    bool        node_is_ref( const Node& node ) const;          // return true if node is an AREF or SREF
+    uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
+    std::string node_name( const Node& node ) const;            // find name for node
+    uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
+
+    enum class COPY_KIND
+    {
+        ONE,                                // copy only the one source node, no children
+        SCALAR_CHILDREN,                    // copy scalar children only (INT, REAL, etc.)
+        DEEP,                               // copy all children and descendents
+    };
+    uint        node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind, uint new_layer=uint(-1) );
+
+    static GDSII_DATATYPE kind_to_datatype( NODE_KIND kind );
     static std::string    str( GDSII_DATATYPE datatype );
 
     // global scalars
@@ -376,7 +377,7 @@ private:
 
     // state used during reading and and writing of GDSII files
     uint       gdsii_rec_cnt;
-    GDSII_KIND gdsii_last_kind;
+    NODE_KIND  gdsii_last_kind;
     int        gdsii_fd;
     uint8_t *  gdsii_buff;
     uint       gdsii_buff_byte_cnt;
@@ -392,10 +393,6 @@ private:
     bool layout_read( std::string file_path );          // .layout
     bool layout_write( std::string file_path );         
 
-    bool gdsii_is_hier( GDSII_KIND kind ) const;
-    bool gdsii_is_element( GDSII_KIND kind ) const;
-    GDSII_KIND gdsii_hier_end_kind( GDSII_KIND kind ) const;
-    bool gdsii_is_name( GDSII_KIND kind ) const;
     bool gdsii_read( std::string file_path );           // .gds
     bool gdsii_read_record( uint& node_i );
     bool gdsii_write( std::string file );
@@ -449,71 +446,84 @@ private:
 #define rtnn_assert( bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false );               }
 #define node_assert( bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false ); goto error;   }
 
-std::string Layout::str( Layout::GDSII_KIND kind )
+std::string Layout::str( Layout::NODE_KIND kind )
 {
-    #define gcase( kind ) case Layout::GDSII_KIND::kind: return #kind;
+    #define ncase( kind ) case Layout::NODE_KIND::kind: return #kind;
     switch( kind )
     {
-        gcase( HEADER )
-        gcase( BGNLIB )
-        gcase( LIBNAME )
-        gcase( UNITS )
-        gcase( ENDLIB )
-        gcase( BGNSTR )
-        gcase( STRNAME )
-        gcase( ENDSTR )
-        gcase( BOUNDARY )
-        gcase( PATH )
-        gcase( SREF )
-        gcase( AREF )
-        gcase( TEXT )
-        gcase( LAYER )
-        gcase( DATATYPE )
-        gcase( WIDTH )
-        gcase( XY )
-        gcase( ENDEL )
-        gcase( SNAME )
-        gcase( COLROW )
-        gcase( TEXTNODE )
-        gcase( NODE )
-        gcase( TEXTTYPE )
-        gcase( PRESENTATION )
-        gcase( UNUSED )
-        gcase( STRING )
-        gcase( STRANS )
-        gcase( MAG )
-        gcase( ANGLE )
-        gcase( UNUSED2 )
-        gcase( UNUSED3 )
-        gcase( REFLIBS )
-        gcase( FONTS )
-        gcase( PATHTYPE )
-        gcase( GENERATIONS )
-        gcase( ATTRTABLE )
-        gcase( STYPTABLE )
-        gcase( STRTYPE )
-        gcase( ELFLAGS )
-        gcase( ELKEY )
-        gcase( LINKTYPE )
-        gcase( LINKKEYS )
-        gcase( NODETYPE )
-        gcase( PROPATTR )
-        gcase( PROPVALUE )
-        gcase( BOX )
-        gcase( BOXTYPE )
-        gcase( PLEX )
-        gcase( BGNEXTN )
-        gcase( ENDEXTN )
-        gcase( TAPENUM )
-        gcase( TAPECODE )
-        gcase( STRCLASS )
-        gcase( RESERVED )
-        gcase( FORMAT )
-        gcase( MASK )
-        gcase( ENDMASKS )
-        gcase( LIBDIRSIZE )
-        gcase( SRFNAME )
-        gcase( LIBSECUR )
+        ncase( HEADER )
+        ncase( BGNLIB )
+        ncase( LIBNAME )
+        ncase( UNITS )
+        ncase( ENDLIB )
+        ncase( BGNSTR )
+        ncase( STRNAME )
+        ncase( ENDSTR )
+        ncase( BOUNDARY )
+        ncase( PATH )
+        ncase( SREF )
+        ncase( AREF )
+        ncase( TEXT )
+        ncase( LAYER )
+        ncase( DATATYPE )
+        ncase( WIDTH )
+        ncase( XY )
+        ncase( ENDEL )
+        ncase( SNAME )
+        ncase( COLROW )
+        ncase( TEXTNODE )
+        ncase( NODE )
+        ncase( TEXTTYPE )
+        ncase( PRESENTATION )
+        ncase( UNUSED )
+        ncase( STRING )
+        ncase( STRANS )
+        ncase( MAG )
+        ncase( ANGLE )
+        ncase( UNUSED2 )
+        ncase( UNUSED3 )
+        ncase( REFLIBS )
+        ncase( FONTS )
+        ncase( PATHTYPE )
+        ncase( GENERATIONS )
+        ncase( ATTRTABLE )
+        ncase( STYPTABLE )
+        ncase( STRTYPE )
+        ncase( ELFLAGS )
+        ncase( ELKEY )
+        ncase( LINKTYPE )
+        ncase( LINKKEYS )
+        ncase( NODETYPE )
+        ncase( PROPATTR )
+        ncase( PROPVALUE )
+        ncase( BOX )
+        ncase( BOXTYPE )
+        ncase( PLEX )
+        ncase( BGNEXTN )
+        ncase( ENDEXTN )
+        ncase( TAPENUM )
+        ncase( TAPECODE )
+        ncase( STRCLASS )
+        ncase( RESERVED )
+        ncase( FORMAT )
+        ncase( MASK )
+        ncase( ENDMASKS )
+        ncase( LIBDIRSIZE )
+        ncase( SRFNAME )
+        ncase( LIBSECUR )
+
+        ncase( STR )
+        ncase( BOOL )
+        ncase( INT )
+        ncase( UINT )
+        ncase( REAL )
+        ncase( ID )
+
+        ncase( HIER )
+        ncase( ASSIGN )
+        ncase( CALL )
+        ncase( SLICE )
+
         default: return "<unknown>"; 
     }
 }
@@ -534,42 +544,15 @@ std::string Layout::str( Layout::GDSII_DATATYPE datatype )
     }
 }
 
-std::string Layout::str( Layout::NODE_KIND kind )
-{
-    #define ncase( kind ) case Layout::NODE_KIND::kind: return #kind; 
-    switch( kind )
-    {
-        ncase( STR )
-        ncase( BOOL )
-        ncase( INT )
-        ncase( UINT )
-        ncase( REAL )
-        ncase( ID )
-        ncase( HIER )
-        ncase( ASSIGN )
-        ncase( CALL )
-        ncase( SLICE )
-        default: 
-        {
-            if ( kind >= Layout::NODE_KIND::GDSII_HEADER ) {
-                Layout::GDSII_KIND gkind = Layout::GDSII_KIND(int(kind) - int(Layout::NODE_KIND::GDSII_HEADER));
-                return "GDSII_" + Layout::str(gkind);
-            } else {
-                return "<unknown>"; 
-            }
-        }
-    }
-}
-
 inline std::ostream& operator << ( std::ostream& os, const Layout::NODE_KIND& kind ) 
 {
     os << Layout::str( kind );
     return os;
 }
 
-Layout::GDSII_DATATYPE Layout::kind_to_datatype( Layout::GDSII_KIND kind )
+Layout::GDSII_DATATYPE Layout::kind_to_datatype( Layout::NODE_KIND kind )
 {
-    #define kdcase( kind, type ) case GDSII_KIND::kind: return GDSII_DATATYPE::type;
+    #define kdcase( kind, type ) case NODE_KIND::kind: return GDSII_DATATYPE::type;
     switch( kind )
     {
         kdcase( HEADER,       INTEGER_2 )
@@ -880,6 +863,11 @@ uint Layout::layer_get( std::string name )
     return uint(-1);
 }
 
+inline bool Layout::node_is_gdsii( const Node& node ) const
+{
+    return int(node.kind) >= 0 && int(node.kind) < GDSII_KIND_CNT;
+}
+
 inline bool Layout::node_is_scalar( const Node& node ) const
 {
     switch( node.kind ) 
@@ -898,72 +886,107 @@ inline bool Layout::node_is_scalar( const Node& node ) const
     }
 }
 
-inline bool Layout::node_is_element( const Node& node ) const
+bool Layout::node_is_hier( const Node& node ) const
 {
-    if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
-        GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
-        return gdsii_is_element( gkind );
-    }
-    return false;
-}
-
-inline bool Layout::node_is_hier( const Node& node ) const
-{
-    switch( node.kind ) 
+    switch( node.kind )
     {
+        case NODE_KIND::BGNLIB:
+        case NODE_KIND::BGNSTR:
+        case NODE_KIND::BOUNDARY:
+        case NODE_KIND::PATH:
+        case NODE_KIND::SREF:
+        case NODE_KIND::AREF:
+        case NODE_KIND::TEXT:
+        case NODE_KIND::NODE:
         case NODE_KIND::HIER:
-        {
             return true;
-        }
 
         default:
-        {
-            if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
-                GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
-                return gdsii_is_hier( gkind );
-            } else {
-                return false;
-            }
-        }
+            return false;
+    }
+}
+
+bool Layout::node_is_element( const Node& node ) const
+{
+    switch( node.kind )
+    {
+        case NODE_KIND::BOUNDARY:
+        case NODE_KIND::PATH:
+        case NODE_KIND::SREF:
+        case NODE_KIND::AREF:
+        case NODE_KIND::TEXT:
+        case NODE_KIND::NODE:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+Layout::NODE_KIND Layout::hier_end_kind( Layout::NODE_KIND kind ) const
+{
+    switch( kind )
+    {
+        case NODE_KIND::BGNLIB:                
+            return NODE_KIND::ENDLIB;
+
+        case NODE_KIND::BGNSTR:
+            return NODE_KIND::ENDSTR;
+
+        case NODE_KIND::BOUNDARY:
+        case NODE_KIND::PATH:
+        case NODE_KIND::SREF:
+        case NODE_KIND::AREF:
+        case NODE_KIND::TEXT:
+        case NODE_KIND::NODE:
+            return NODE_KIND::ENDEL;
+
+        default:
+            assert( false );
+            return NODE_KIND::ENDEL;  // for compiler
+    }
+}
+
+bool Layout::node_is_name( const Node& node ) const
+{
+    switch( node.kind )
+    {
+        case NODE_KIND::LIBNAME:
+        case NODE_KIND::STRNAME:
+        case NODE_KIND::SNAME:
+        case NODE_KIND::SRFNAME:
+            return true;
+
+        default:
+            return false;
     }
 }
 
 inline bool Layout::node_is_ref( const Node& node ) const
 {
-    if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
-        GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
-        return gkind == GDSII_KIND::AREF || gkind == GDSII_KIND::SREF;
+    switch( node.kind )
+    {
+        case NODE_KIND::AREF:
+        case NODE_KIND::SREF:
+            return true;
+
+        default:
+            return false;
     }
-    return false;
 }
 
 inline uint Layout::node_name_i( const Node& node ) const
 {
-    switch( node.kind ) 
-    {
-        case NODE_KIND::HIER:
+    if ( node_is_name( node ) ) {
+        return node.u.s_i;
+    } else if ( node_is_hier( node ) ) {
+        for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
         {
-            break;
-        }
-
-        default:
-        {
-            if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
-                GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
-                if ( gdsii_is_name( gkind ) ) return node.u.s_i;
-                if ( gdsii_is_hier( gkind ) ) {
-                    for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
-                    {
-                        assert( child_i != 0 );
-                        uint name_i = node_name_i( nodes[child_i] );
-                        if ( name_i != uint(-1) ) return name_i;
-                    }
-                }
-            } 
-            break;
+            assert( child_i != 0 );
+            uint name_i = node_name_i( nodes[child_i] );
+            if ( name_i != uint(-1) ) return name_i;
         }
     }
-
     return uint(-1);
 }
 
@@ -979,7 +1002,7 @@ uint Layout::node_layer( const Node& node ) const
     assert( node_is_element( node ) );
     for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
     {
-        if ( int(nodes[child_i].kind) == (int(NODE_KIND::GDSII_HEADER) + int(GDSII_KIND::LAYER)) ) return nodes[child_i].u.i;
+        if ( nodes[child_i].kind == NODE_KIND::LAYER ) return nodes[child_i].u.i;
     }
     return uint(-1);
 }
@@ -1001,7 +1024,7 @@ inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND 
     //-----------------------------------------------------
     // Optionally change LAYER.
     //-----------------------------------------------------
-    if ( new_layer != uint(-1) && (int(src_node.kind) - int(NODE_KIND::GDSII_HEADER)) == int(GDSII_KIND::LAYER) ) {
+    if ( new_layer != uint(-1) && src_node.kind == NODE_KIND::LAYER ) {
         dst_node.u.i = new_layer;
     }
 
@@ -1284,81 +1307,6 @@ bool Layout::layout_write( std::string layout_path )
     return true;
 }
 
-bool Layout::gdsii_is_hier( GDSII_KIND kind ) const
-{
-    switch( kind )
-    {
-        case GDSII_KIND::BGNLIB:
-        case GDSII_KIND::BGNSTR:
-        case GDSII_KIND::BOUNDARY:
-        case GDSII_KIND::PATH:
-        case GDSII_KIND::SREF:
-        case GDSII_KIND::AREF:
-        case GDSII_KIND::TEXT:
-        case GDSII_KIND::NODE:
-            return true;
-
-        default:
-            return false;
-    }
-}
-
-bool Layout::gdsii_is_element( GDSII_KIND kind ) const
-{
-    switch( kind )
-    {
-        case GDSII_KIND::BOUNDARY:
-        case GDSII_KIND::PATH:
-        case GDSII_KIND::SREF:
-        case GDSII_KIND::AREF:
-        case GDSII_KIND::TEXT:
-        case GDSII_KIND::NODE:
-            return true;
-
-        default:
-            return false;
-    }
-}
-
-Layout::GDSII_KIND Layout::gdsii_hier_end_kind( Layout::GDSII_KIND kind ) const
-{
-    switch( kind )
-    {
-        case GDSII_KIND::BGNLIB:                
-            return GDSII_KIND::ENDLIB;
-
-        case GDSII_KIND::BGNSTR:
-            return GDSII_KIND::ENDSTR;
-
-        case GDSII_KIND::BOUNDARY:
-        case GDSII_KIND::PATH:
-        case GDSII_KIND::SREF:
-        case GDSII_KIND::AREF:
-        case GDSII_KIND::TEXT:
-        case GDSII_KIND::NODE:
-            return GDSII_KIND::ENDEL;
-
-        default:
-            assert( false );
-            return GDSII_KIND::ENDEL;  // for compiler
-    }
-}
-
-bool Layout::gdsii_is_name( Layout::GDSII_KIND kind ) const
-{
-    switch( kind )
-    {
-        case GDSII_KIND::LIBNAME:
-        case GDSII_KIND::STRNAME:
-        case GDSII_KIND::SNAME:
-        case GDSII_KIND::SRFNAME:
-            return true;
-
-        default:
-            return false;
-    }
-}
-
 bool Layout::gdsii_read( std::string file )
 {
     //------------------------------------------------------------
@@ -1392,7 +1340,7 @@ bool Layout::gdsii_read( std::string file )
             nodes[prev_i].sibling_i = child_i;
         }
 
-        if ( gdsii_last_kind == GDSII_KIND::ENDLIB ) break;
+        if ( gdsii_last_kind == NODE_KIND::ENDLIB ) break;
 
         prev_i = child_i;
     }
@@ -1408,7 +1356,7 @@ bool Layout::gdsii_read_record( uint& ni )
     //------------------------------------------------------------
     rtn_assert( (nnn + 4) <= nnn_end, "unexpected end of gdsii file rec_cnt=" + std::to_string(gdsii_rec_cnt) );
     uint32_t       byte_cnt = ( nnn[0] << 8 ) | nnn[1];
-    GDSII_KIND     kind     = GDSII_KIND( nnn[2] );
+    NODE_KIND      kind     = NODE_KIND( nnn[2] );
     GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
     rtn_assert( byte_cnt >= 4, std::to_string(gdsii_rec_cnt) + ": gdsii record byte_cnt must be at least 4, byte_cnt=" + std::to_string(byte_cnt) + " kind=" + str(kind) );
     ldout << str(kind) << " " << str(datatype) << " byte_cnt=" << std::to_string(byte_cnt) << "\n";
@@ -1425,13 +1373,13 @@ bool Layout::gdsii_read_record( uint& ni )
     //------------------------------------------------------------
     perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
     ni = hdr->node_cnt++;
-    nodes[ni].kind = NODE_KIND( int(NODE_KIND::GDSII_HEADER) + int(kind) );
+    nodes[ni].kind = kind;
     nodes[ni].sibling_i = uint(-1);
 
     //------------------------------------------------------------
     // Parse payload.
     //------------------------------------------------------------
-    bool is_hier = gdsii_is_hier( kind );
+    bool is_hier = node_is_hier( nodes[ni] );
     uint prev_i = uint(-1);
     switch( datatype )
     {
@@ -1529,12 +1477,12 @@ bool Layout::gdsii_read_record( uint& ni )
     gdsii_last_kind = kind;
     nnn += byte_cnt;
 
-    if ( gdsii_is_hier( kind ) ) {
-        if ( kind == GDSII_KIND::BGNSTR ) {
+    if ( is_hier ) {
+        if ( kind == NODE_KIND::BGNSTR ) {
             // record in structures[] array
             perhaps_realloc( structures, hdr->structure_cnt, max->structure_cnt, 1 );
             structures[hdr->structure_cnt++] = ni;
-        } else if ( kind == GDSII_KIND::SREF || kind == GDSII_KIND::AREF ) {
+        } else if ( kind == NODE_KIND::SREF || kind == NODE_KIND::AREF ) {
             // record in instances[] array
             perhaps_realloc( instances, hdr->instance_cnt, max->instance_cnt, 1 );
             instances[hdr->instance_cnt++] = ni;
@@ -1545,8 +1493,8 @@ bool Layout::gdsii_read_record( uint& ni )
         {
             uint child_i;
             if ( !gdsii_read_record( child_i ) ) return false;
-            GDSII_KIND gkind = GDSII_KIND( int(nodes[child_i].kind) - int(NODE_KIND::GDSII_HEADER) );
-            if ( gkind == GDSII_KIND::ENDEL || gkind == GDSII_KIND::ENDSTR || gkind == GDSII_KIND::ENDLIB ) break;
+            NODE_KIND kind = nodes[child_i].kind;
+            if ( kind == NODE_KIND::ENDEL || kind == NODE_KIND::ENDSTR || kind == NODE_KIND::ENDLIB ) break;
             if ( prev_i == uint(-1) ) {
                 nodes[ni].u.child_first_i = child_i;
             } else {
@@ -1587,14 +1535,13 @@ bool Layout::gdsii_write( std::string gdsii_path )
 void Layout::gdsii_write_record( uint ni )
 {
     const Node& node = nodes[ni];
-    if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
+    if ( node_is_gdsii( node ) ) {
         uint8_t bytes[64*1024];
         uint    byte_cnt = 2;   // fill in byte_cnt later
 
-        GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
-        GDSII_DATATYPE datatype = kind_to_datatype( gkind );
-        ldout << str(gkind) << " " << str(datatype) << "\n";
-        bytes[byte_cnt++] = int(gkind);
+        GDSII_DATATYPE datatype = kind_to_datatype( node.kind );
+        ldout << str(node.kind) << " " << str(datatype) << "\n";
+        bytes[byte_cnt++] = int(node.kind);
         bytes[byte_cnt++] = int(datatype);
 
         uint child_i = uint(-1);
@@ -1652,7 +1599,7 @@ void Layout::gdsii_write_record( uint ni )
         // transfer bytes to buffer
         gdsii_write_bytes( bytes, byte_cnt );
 
-        if ( gdsii_is_hier( gkind ) ) {
+        if ( node_is_hier( node ) ) {
             // recurse for rest of children
             if ( child_i == uint(-1) ) child_i = node.u.child_first_i;
             for( ; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
@@ -1662,7 +1609,7 @@ void Layout::gdsii_write_record( uint ni )
 
             bytes[0] = 0;
             bytes[1] = 4;
-            bytes[2] = uint8_t(gdsii_hier_end_kind(gkind));
+            bytes[2] = uint8_t(hier_end_kind(node.kind));
             bytes[3] = uint8_t(GDSII_DATATYPE::NO_DATA);
             gdsii_write_bytes( bytes, 4 );
         }
@@ -2032,10 +1979,9 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
 
         default:
         {
-            if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
-                GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
-                GDSII_DATATYPE datatype = kind_to_datatype( gkind );
-                if ( gdsii_is_hier( gkind ) ) {
+            if ( node_is_gdsii( node ) ) {
+                GDSII_DATATYPE datatype = kind_to_datatype( node.kind );
+                if ( node_is_hier( node ) ) {
                     out << "$begin '" << node.kind << "'";
                 }
                 uint child_i = uint(-1);
@@ -2069,7 +2015,7 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
                             if ( vals != "" ) vals += ", ";
                             vals += (nodes[child_i].kind == NODE_KIND::INT) ? std::to_string(nodes[child_i].u.i) : std::to_string(nodes[child_i].u.r);
                         }
-                        if ( gdsii_is_hier( gkind ) ) {
+                        if ( node_is_hier( node ) ) {
                             out << indent_str << "\tARGS(" << vals << ")";
                         } else {
                             out << node.kind << "(" << vals << ")";
@@ -2084,7 +2030,7 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
                     }
                 }
 
-                if ( gdsii_is_hier( gkind ) ) {
+                if ( node_is_hier( node ) ) {
                     if ( child_i == uint(-1) ) child_i = node.u.child_first_i;
                     for( ; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
                     {
