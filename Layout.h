@@ -215,6 +215,8 @@ public:
     bool        node_is_scalar( const Node& node ) const;       // return true if node is a scalar 
     bool        node_is_element( const Node& node ) const;      // return true if node is an element
     bool        node_is_hier( const Node& node ) const;         // return true if node is a hierarchy
+    bool        node_is_ref( const Node& node ) const;          // return true if node is an AREF or SREF
+    uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
     std::string node_name( const Node& node ) const;            // find name for node
     uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
 
@@ -926,7 +928,16 @@ inline bool Layout::node_is_hier( const Node& node ) const
     }
 }
 
-inline std::string Layout::node_name( const Node& node ) const
+inline bool Layout::node_is_ref( const Node& node ) const
+{
+    if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
+        GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
+        return gkind == GDSII_KIND::AREF || gkind == GDSII_KIND::SREF;
+    }
+    return false;
+}
+
+inline uint Layout::node_name_i( const Node& node ) const
 {
     switch( node.kind ) 
     {
@@ -939,13 +950,13 @@ inline std::string Layout::node_name( const Node& node ) const
         {
             if ( int(node.kind) >= int(NODE_KIND::GDSII_HEADER) ) {
                 GDSII_KIND gkind = GDSII_KIND( int(node.kind) - int(NODE_KIND::GDSII_HEADER) );
-                if ( gdsii_is_name( gkind ) ) return std::string( &strings[node.u.s_i] );
+                if ( gdsii_is_name( gkind ) ) return node.u.s_i;
                 if ( gdsii_is_hier( gkind ) ) {
                     for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
                     {
                         assert( child_i != 0 );
-                        std::string n = node_name( nodes[child_i] );
-                        if ( n != "" ) return n;
+                        uint name_i = node_name_i( nodes[child_i] );
+                        if ( name_i != uint(-1) ) return name_i;
                     }
                 }
             } 
@@ -953,6 +964,13 @@ inline std::string Layout::node_name( const Node& node ) const
         }
     }
 
+    return uint(-1);
+}
+
+inline std::string Layout::node_name( const Node& node ) const
+{
+    uint name_i = node_name_i( node );
+    if ( name_i != uint(-1) ) return &strings[name_i];
     return "";
 }
 
@@ -1052,51 +1070,65 @@ void Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_la
     // Go through all source STRuctures, which can be nested.
     // Give each destination structure a unique name:
     // <struct_name>.<layout_id>.<dst_layer_first>.<dst_layer_last>.
-    //
-    // ELEMENTS:
-    // Change element LAYER to dest LAYER.
-    // If the same element is desired by multiple dest layers,
-    // then we need to copy that element multiple times, but
-    // we can keep these in the same STRucture because all
-    // instances will be translated by [x,y] for this call.  
-    // Make a note of each source structure we copied and
-    // the corresponding dest structure.
-    //
-    // REFS:
-    // Copy the {A,S}REF if the structure it references
-    // has had anything copied from it.
-    // Change the SNAME to the destination structure name
-    // that was already copied above.
     //-----------------------------------------------------
-    std::map<uint, bool> str_was_copied;
+    std::map<uint64_t, bool> struct_was_copied;
     for( uint s = 0; s < src_layout->hdr->structure_cnt; s++ )
     {
         uint src_struct_i = src_layout->structures[s];
         const Node& src_struct = src_layout->nodes[src_struct_i];
+        uint64_t src_struct_addr = reinterpret_cast<uint64_t>( &src_struct );
         uint   dst_struct_i = uint(-1);
         Node * dst_struct = nullptr;
         uint   dst_elem_prev_i = uint(-1);
         for( uint src_child_i = src_struct.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
         {
-            const Node& src_elem = src_layout->nodes[src_child_i];
-            if ( !src_layout->node_is_element( src_elem ) ) continue;
+            const Node& src_node = src_layout->nodes[src_child_i];
 
-            uint src_elem_layer = src_layout->node_layer( src_elem );
-            if ( src_elem_layer < desirees.size() && desirees[src_elem_layer].size() != 0 ) {
-                if ( dst_struct == nullptr ) {
-                    dst_struct_i = node_copy( src_layout, src_struct_i, COPY_KIND::SCALAR_CHILDREN );    // don't copy children
-                    dst_struct   = &nodes[dst_struct_i];
-                }
-                for( uint d = 0; d < desirees[src_elem_layer].size(); d++ )
-                {
-                    uint dst_elem_layer = desirees[src_elem_layer][d];
-                    uint dst_child_i = node_copy( src_layout, src_child_i, COPY_KIND::DEEP, dst_elem_layer ); // copy children and replace LAYER 
-                    if ( dst_struct->u.child_first_i == uint(-1) ) {
-                        dst_struct->u.child_first_i = dst_child_i;
-                    } else {
-                        nodes[dst_elem_prev_i].sibling_i = dst_child_i;
+            if ( src_layout->node_is_element( src_node ) ) {
+                //-----------------------------------------------------
+                // ELEMENT
+                //
+                // Change element LAYER to dest LAYER.
+                // If the same element is desired by multiple dest layers,
+                // then we need to copy that element multiple times, but
+                // we can keep these in the same STRucture because all
+                // instances will be translated by [x,y] for this call.  
+                //-----------------------------------------------------
+                uint src_elem_layer = src_layout->node_layer( src_node );
+                if ( src_elem_layer < desirees.size() && desirees[src_elem_layer].size() != 0 ) {
+                    if ( dst_struct == nullptr ) {
+                        // TODO: change STRNAME 
+                        dst_struct_i = node_copy( src_layout, src_struct_i, COPY_KIND::SCALAR_CHILDREN );    // don't copy children
+                        dst_struct   = &nodes[dst_struct_i];
+                        struct_was_copied[src_struct_addr] = true;
                     }
-                    dst_elem_prev_i = dst_child_i;
+                    for( uint d = 0; d < desirees[src_elem_layer].size(); d++ )
+                    {
+                        uint dst_elem_layer = desirees[src_elem_layer][d];
+                        uint dst_child_i = node_copy( src_layout, src_child_i, COPY_KIND::DEEP, dst_elem_layer ); // copy children and replace LAYER 
+                        if ( dst_struct->u.child_first_i == uint(-1) ) {
+                            dst_struct->u.child_first_i = dst_child_i;
+                        } else {
+                            nodes[dst_elem_prev_i].sibling_i = dst_child_i;
+                        }
+                        dst_elem_prev_i = dst_child_i;
+                    }
+                }
+            } else if ( src_layout->node_is_ref( src_node ) ) {
+                //-----------------------------------------------------
+                // REF
+                //
+                // Copy the {A,S}REF if the structure it references
+                // has had anything copied from it.
+                // Change the SNAME to the destination structure name
+                // that was already copied above.
+                //-----------------------------------------------------
+                std::string src_sname = src_layout->node_name( src_node );
+                uint src_struct_i = uint(-1);  // TODO: need name to node_i function
+                const Node& src_struct = src_layout->nodes[src_struct_i];
+                uint64_t src_struct_addr = reinterpret_cast<uint64_t>( &src_struct );
+                if ( struct_was_copied.find( src_struct_addr ) != struct_was_copied.end() ) {
+                    // TODO: copy REF but change SNAME
                 }
             }
         }
