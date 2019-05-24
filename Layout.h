@@ -332,8 +332,8 @@ public:
     real height( void ) const;
 
     // instancing
-    void inst_layout( const Layout * other, real x, real y, uint dest_layer_first, uint dest_layer_last );
-    void inst_layout( const Layout * other, real x, real y );
+    void inst_layout( const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last );
+    void inst_layout( const Layout * src_layout, real x, real y );
 
     // fill
     void fill_dielectrics( void );
@@ -1027,12 +1027,12 @@ inline Layout::real Layout::height( void ) const
     return 0;
 }
 
-void Layout::inst_layout( const Layout * other, real x, real y )
+void Layout::inst_layout( const Layout * src_layout, real x, real y )
 {
-    inst_layout( other, x, y, 0, hdr->layer_cnt-1 );
+    inst_layout( src_layout, x, y, 0, hdr->layer_cnt-1 );
 }
 
-void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_first, uint dest_layer_last )
+void Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last )
 {
     //-----------------------------------------------------
     // Go through all dest layers and note 
@@ -1041,7 +1041,7 @@ void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_
     //-----------------------------------------------------
     std::vector<std::vector<uint>> desirees;
     uint sz = 0;
-    for( uint i = dest_layer_first; i <= dest_layer_last; i++ )
+    for( uint i = dst_layer_first; i <= dst_layer_last; i++ )
     {
         uint src_layer_i = layers[i].gdsii_num;
         if ( sz <= src_layer_i ) desirees.resize( src_layer_i+1 );
@@ -1060,28 +1060,28 @@ void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_
     // the corresponding dest structure.
     //-----------------------------------------------------
     std::map<uint, bool> str_was_copied;
-    for( uint s = 0; s < other->hdr->structure_cnt; s++ )
+    for( uint s = 0; s < src_layout->hdr->structure_cnt; s++ )
     {
-        uint src_struct_i = other->structures[s];
-        const Node * src_struct = &other->nodes[src_struct_i];
+        uint src_struct_i = src_layout->structures[s];
+        const Node * src_struct = &src_layout->nodes[src_struct_i];
         uint   dst_struct_i = uint(-1);
         Node * dst_struct = nullptr;
         uint   dst_elem_prev_i = uint(-1);
-        for( uint src_child_i = src_struct->u.child_first_i; src_child_i != uint(-1); src_child_i = other->nodes[src_child_i].sibling_i )
+        for( uint src_child_i = src_struct->u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
         {
-            const Node& src_elem = other->nodes[src_child_i];
-            if ( !other->node_is_element( src_elem ) ) continue;
+            const Node& src_elem = src_layout->nodes[src_child_i];
+            if ( !src_layout->node_is_element( src_elem ) ) continue;
 
-            uint src_elem_layer = other->node_layer( src_elem );
+            uint src_elem_layer = src_layout->node_layer( src_elem );
             if ( src_elem_layer < desirees.size() && desirees[src_elem_layer].size() != 0 ) {
                 if ( dst_struct == nullptr ) {
-                    dst_struct_i = node_copy( other, src_struct_i, COPY_KIND::SCALAR_CHILDREN );    // don't copy children
+                    dst_struct_i = node_copy( src_layout, src_struct_i, COPY_KIND::SCALAR_CHILDREN );    // don't copy children
                     dst_struct   = &nodes[dst_struct_i];
                 }
                 for( uint d = 0; d < desirees[src_elem_layer].size(); d++ )
                 {
                     uint dst_elem_layer = desirees[src_elem_layer][d];
-                    uint dst_child_i = node_copy( other, src_child_i, COPY_KIND::DEEP, dst_elem_layer ); // copy children and replace LAYER 
+                    uint dst_child_i = node_copy( src_layout, src_child_i, COPY_KIND::DEEP, dst_elem_layer ); // copy children and replace LAYER 
                     if ( dst_struct->u.child_first_i == uint(-1) ) {
                         dst_struct->u.child_first_i = dst_child_i;
                     } else {
@@ -1099,7 +1099,7 @@ void Layout::inst_layout( const Layout * other, real x, real y, uint dest_layer_
     // translated further by [x,y] and have this refer to the corresponding
     // dest structure.
     //-----------------------------------------------------
-    for( uint32_t dl = dest_layer_first; dl <= dest_layer_last; dl++ )
+    for( uint32_t dl = dst_layer_first; dl <= dst_layer_last; dl++ )
     {
     }
 }
