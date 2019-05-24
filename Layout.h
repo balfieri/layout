@@ -1049,8 +1049,11 @@ void Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_la
     }
 
     //-----------------------------------------------------
-    // Go through all source STRuctures.
-    // Copy any elements on desired source layers.
+    // Go through all source STRuctures, which can be nested.
+    // Give each destination structure a unique name:
+    // <struct_name>.<layout_id>.<dst_layer_first>.<dst_layer_last>.
+    //
+    // ELEMENTS:
     // Change element LAYER to dest LAYER.
     // If the same element is desired by multiple dest layers,
     // then we need to copy that element multiple times, but
@@ -1058,16 +1061,22 @@ void Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_la
     // instances will be translated by [x,y] for this call.  
     // Make a note of each source structure we copied and
     // the corresponding dest structure.
+    //
+    // REFS:
+    // Copy the {A,S}REF if the structure it references
+    // has had anything copied from it.
+    // Change the SNAME to the destination structure name
+    // that was already copied above.
     //-----------------------------------------------------
     std::map<uint, bool> str_was_copied;
     for( uint s = 0; s < src_layout->hdr->structure_cnt; s++ )
     {
         uint src_struct_i = src_layout->structures[s];
-        const Node * src_struct = &src_layout->nodes[src_struct_i];
+        const Node& src_struct = src_layout->nodes[src_struct_i];
         uint   dst_struct_i = uint(-1);
         Node * dst_struct = nullptr;
         uint   dst_elem_prev_i = uint(-1);
-        for( uint src_child_i = src_struct->u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
+        for( uint src_child_i = src_struct.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
         {
             const Node& src_elem = src_layout->nodes[src_child_i];
             if ( !src_layout->node_is_element( src_elem ) ) continue;
@@ -1091,16 +1100,6 @@ void Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_la
                 }
             }
         }
-    }
-
-    //-----------------------------------------------------
-    // Go through all {A,S}REFs in other.
-    // If its structure was copied, then we need to copy the REF
-    // translated further by [x,y] and have this refer to the corresponding
-    // dest structure.
-    //-----------------------------------------------------
-    for( uint32_t dl = dst_layer_first; dl <= dst_layer_last; dl++ )
-    {
     }
 }
 
