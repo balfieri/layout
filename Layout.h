@@ -332,8 +332,9 @@ public:
     real height( void ) const;
 
     // instancing
-    void inst_layout( const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last );
-    void inst_layout( const Layout * src_layout, real x, real y );
+    uint inst_layout( const Layout * src_layout, real x, real y );
+    uint inst_layout( const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last );
+    uint inst_layout_node( const Layout * src_layout, uint src_i, uint src_layer_num, uint dst_layer_num );
 
     // fill
     void fill_dielectrics( void );
@@ -1061,95 +1062,93 @@ inline Layout::real Layout::height( void ) const
     return 0;
 }
 
-void Layout::inst_layout( const Layout * src_layout, real x, real y )
+uint Layout::inst_layout( const Layout * src_layout, real x, real y )
 {
-    inst_layout( src_layout, x, y, 0, hdr->layer_cnt-1 );
+    return inst_layout( src_layout, x, y, 0, hdr->layer_cnt-1 );
 }
 
-void Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last )
+uint Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last )
 {
     //-----------------------------------------------------
-    // Go through all dest layers and note 
-    // all source layers that are desired.  
-    // Keep a list of all dest layers that desire each source layer.
+    // Make a new outer STRuct around all layer instances.
+    // Do the instancing separately for each dst_layer.
     //-----------------------------------------------------
-    std::vector<std::vector<uint>> desirees;
-    uint sz = 0;
+    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+    uint dst_struct_i = hdr->node_cnt++;
+    Node& dst_struct = nodes[dst_struct_i];
+    dst_struct.kind = NODE_KIND::BGNSTR;
+    dst_struct.u.child_first_i = uint(-1);
+    dst_struct.sibling_i = uint(-1);
+    uint dst_prev_i = uint(-1);
     for( uint i = dst_layer_first; i <= dst_layer_last; i++ )
     {
-        uint src_layer_i = layers[i].gdsii_num;
-        if ( sz <= src_layer_i ) desirees.resize( src_layer_i+1 );
-        desirees[src_layer_i].push_back( i );
+        //-----------------------------------------------------
+        // Recursively find and copy all STRuctures, but 
+        // only ones that have the desired src_layer_num.
+        //-----------------------------------------------------
+        uint src_layer_num = layers[i].gdsii_num;
+        uint dst_i = inst_layout_node( src_layout, src_layout->hdr->root_i, src_layer_num, i );
+        if ( dst_i == uint(-1) ) continue;
+
+        if ( dst_struct.u.child_first_i == uint(-1) ) {
+            dst_struct.u.child_first_i = dst_i;
+        } else {
+            nodes[dst_prev_i].sibling_i = dst_i;
+        }
+        dst_prev_i = dst_i;
     }
 
     //-----------------------------------------------------
-    // Go through all source outer STRuctures.
-    // Give each destination structure a unique name:
-    // <struct_name>.<layout_id>.<dst_layer_first>.<dst_layer_last>.
+    // Instance the new struct.
     //-----------------------------------------------------
-    std::map<uint64_t, bool> struct_was_copied;
-    // TODO: recurse through structures
-    for( uint s = 0; s < 5; s++ )
-    {
-        uint src_struct_i = s;
-        const Node& src_struct = src_layout->nodes[src_struct_i];
-        uint64_t src_struct_addr = reinterpret_cast<uint64_t>( &src_struct );
-        uint   dst_struct_i = uint(-1);
-        Node * dst_struct = nullptr;
-        uint   dst_elem_prev_i = uint(-1);
-        for( uint src_child_i = src_struct.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
-        {
-            const Node& src_node = src_layout->nodes[src_child_i];
+    return dst_struct_i;
+}
 
-            if ( src_layout->node_is_element( src_node ) ) {
-                //-----------------------------------------------------
-                // ELEMENT
-                //
-                // Change element LAYER to dest LAYER.
-                // If the same element is desired by multiple dest layers,
-                // then we need to copy that element multiple times, but
-                // we can keep these in the same STRucture because all
-                // instances will be translated by [x,y] for this call.  
-                //-----------------------------------------------------
-                uint src_elem_layer = src_layout->node_layer( src_node );
-                if ( src_elem_layer < desirees.size() && desirees[src_elem_layer].size() != 0 ) {
-                    if ( dst_struct == nullptr ) {
-                        // TODO: change STRNAME 
-                        dst_struct_i = node_copy( src_layout, src_struct_i, COPY_KIND::SCALAR_CHILDREN );    // don't copy children
-                        dst_struct   = &nodes[dst_struct_i];
-                        struct_was_copied[src_struct_addr] = true;
-                    }
-                    for( uint d = 0; d < desirees[src_elem_layer].size(); d++ )
-                    {
-                        uint dst_elem_layer = desirees[src_elem_layer][d];
-                        uint dst_child_i = node_copy( src_layout, src_child_i, COPY_KIND::DEEP, dst_elem_layer ); // copy children and replace LAYER 
-                        if ( dst_struct->u.child_first_i == uint(-1) ) {
-                            dst_struct->u.child_first_i = dst_child_i;
-                        } else {
-                            nodes[dst_elem_prev_i].sibling_i = dst_child_i;
-                        }
-                        dst_elem_prev_i = dst_child_i;
-                    }
-                }
-            } else if ( src_layout->node_is_ref( src_node ) ) {
-                //-----------------------------------------------------
-                // REF
-                //
-                // Copy the {A,S}REF if the structure it references
-                // has had anything copied from it.
-                // Change the SNAME to the destination structure name
-                // that was already copied above.
-                //-----------------------------------------------------
-                std::string src_sname = src_layout->node_name( src_node );
-                uint src_struct_i = uint(-1);  // TODO: need name to node_i function
-                const Node& src_struct = src_layout->nodes[src_struct_i];
-                uint64_t src_struct_addr = reinterpret_cast<uint64_t>( &src_struct );
-                if ( struct_was_copied.find( src_struct_addr ) != struct_was_copied.end() ) {
-                    // TODO: copy REF but change SNAME
-                }
+uint Layout::inst_layout_node( const Layout * src_layout, uint src_i, uint src_layer_num, uint dst_layer_num )
+{
+    //-----------------------------------------------------
+    // See if node should be copied.
+    //-----------------------------------------------------
+    bool do_copy = true;
+    const Node& src_node = src_layout->nodes[src_i];
+    if ( src_layout->node_is_element( src_node ) && src_layout->node_layer( src_node ) != src_layer_num ) {
+        do_copy = false;
+    }
+    if ( !do_copy ) return uint(-1);
+
+    //-----------------------------------------------------
+    // Copy this node and recurse.
+    //-----------------------------------------------------
+    uint dst_i = node_copy( src_layout, src_i, COPY_KIND::SCALAR_CHILDREN );    // don't copy children yet
+    Node& dst_node = nodes[dst_i];
+    if ( dst_node.kind == NODE_KIND::LAYER ) {
+        //-----------------------------------------------------
+        // Change LAYER from src_layer_num to dst_layer_num.
+        //-----------------------------------------------------
+        assert( dst_node.u.i == src_layer_num );
+        dst_node.u.i = dst_layer_num;
+    }
+
+    if ( src_layout->node_is_hier( src_node ) ) {
+        //-----------------------------------------------------
+        // Recursively copy children.
+        //-----------------------------------------------------
+        dst_node.u.child_first_i = uint(-1);
+        uint dst_prev_i = uint(-1);
+        for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
+        {
+            uint dst_child_i = inst_layout_node( src_layout, src_child_i, src_layer_num, dst_layer_num );
+            if ( dst_child_i == uint(-1) ) continue; // wasn't copied
+
+            if ( dst_node.u.child_first_i == uint(-1) ) {
+                dst_node.u.child_first_i = dst_child_i;
+            } else {
+                nodes[dst_prev_i].sibling_i = dst_child_i;
             }
+            dst_prev_i = dst_child_i;
         }
     }
+    return dst_i;
 }
 
 void Layout::fill_dielectrics( void )
