@@ -1346,9 +1346,10 @@ bool Layout::gdsii_read_record( uint& ni )
     rtn_assert( (nnn + 4) <= nnn_end, "unexpected end of gdsii file rec_cnt=" + std::to_string(gdsii_rec_cnt) );
     uint32_t       byte_cnt = ( nnn[0] << 8 ) | nnn[1];
     NODE_KIND      kind     = NODE_KIND( nnn[2] );
+    if ( (gdsii_rec_cnt % 1000000) == 0 ) std::cout << gdsii_rec_cnt << ": " << kind << "\n";
     GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
     rtn_assert( byte_cnt >= 4, std::to_string(gdsii_rec_cnt) + ": gdsii record byte_cnt must be at least 4, byte_cnt=" + std::to_string(byte_cnt) + " kind=" + str(kind) );
-    ldout << str(kind) << " " << str(datatype) << " byte_cnt=" << std::to_string(byte_cnt) << "\n";
+    ldout << hdr->node_cnt << ": " << str(kind) << " " << str(datatype) << " byte_cnt=" << std::to_string(byte_cnt) << "\n";
     byte_cnt -= 4;
     nnn += 4;
     rtn_assert( uint32_t(kind) < GDSII_KIND_CNT, std::to_string(gdsii_rec_cnt) + ": bad gdsii record kind " + std::to_string(uint32_t(kind)) );
