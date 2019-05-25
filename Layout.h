@@ -123,8 +123,6 @@ public:
         uint        material_cnt;           // in materials array
         uint        layer_cnt;              // in layers array
         uint        node_cnt;               // in nodes array  
-        uint        structure_cnt;          // in structures array
-        uint        instance_cnt;           // in instances array
         uint        root_i;                 // index of root node in nodes array
     };
 
@@ -327,8 +325,6 @@ public:
     Material *          materials;
     Layer *             layers;
     Node *              nodes;
-    uint *              structures;         // node indexes of structures
-    uint *              instances;          // node indexes of instances
 
     // current dimensions
     real width( void ) const;
@@ -643,8 +639,6 @@ void Layout::init( bool alloc_arrays )
         max->char_cnt = max->node_cnt * 128;
         max->material_cnt = 16;
         max->layer_cnt = 8;
-        max->structure_cnt = 64;
-        max->instance_cnt = 64;
 
         //------------------------------------------------------------
         // Allocate initial arrays
@@ -653,8 +647,6 @@ void Layout::init( bool alloc_arrays )
         materials  = aligned_alloc<Material>( max->material_cnt );
         layers     = aligned_alloc<Layer>( max->layer_cnt );
         nodes      = aligned_alloc<Node>( max->node_cnt );
-        structures = aligned_alloc<uint>( max->structure_cnt );
-        instances  = aligned_alloc<uint>( max->instance_cnt );
 
         materials_init();
     }
@@ -1091,14 +1083,15 @@ void Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_la
     }
 
     //-----------------------------------------------------
-    // Go through all source STRuctures, which can be nested.
+    // Go through all source outer STRuctures.
     // Give each destination structure a unique name:
     // <struct_name>.<layout_id>.<dst_layer_first>.<dst_layer_last>.
     //-----------------------------------------------------
     std::map<uint64_t, bool> struct_was_copied;
-    for( uint s = 0; s < src_layout->hdr->structure_cnt; s++ )
+    // TODO: recurse through structures
+    for( uint s = 0; s < 5; s++ )
     {
-        uint src_struct_i = src_layout->structures[s];
+        uint src_struct_i = s;
         const Node& src_struct = src_layout->nodes[src_struct_i];
         uint64_t src_struct_addr = reinterpret_cast<uint64_t>( &src_struct );
         uint   dst_struct_i = uint(-1);
@@ -1254,8 +1247,6 @@ bool Layout::layout_read( std::string layout_path )
     _uread( materials,   Material,    hdr->material_cnt );
     _uread( layers,      Layer,       hdr->layer_cnt );
     _uread( nodes,       Node,        hdr->node_cnt );
-    _uread( structures,  uint,        hdr->structure_cnt );
-    _uread( instances,   uint,        hdr->instance_cnt );
 
     is_good = true;
 
@@ -1298,8 +1289,6 @@ bool Layout::layout_write( std::string layout_path )
     _uwrite( materials,   hdr->material_cnt  * sizeof(materials[0]) );
     _uwrite( layers,      hdr->layer_cnt     * sizeof(layers[0]) );
     _uwrite( nodes,       hdr->node_cnt      * sizeof(nodes[0]) );
-    _uwrite( structures,  hdr->structure_cnt * sizeof(structures[0]) );
-    _uwrite( instances,   hdr->instance_cnt  * sizeof(instances[0]) );
 
     fsync( fd ); // flush
     close( fd );
@@ -1479,16 +1468,6 @@ bool Layout::gdsii_read_record( uint& ni )
     nnn += byte_cnt;
 
     if ( is_hier ) {
-        if ( kind == NODE_KIND::BGNSTR ) {
-            // record in structures[] array
-            perhaps_realloc( structures, hdr->structure_cnt, max->structure_cnt, 1 );
-            structures[hdr->structure_cnt++] = ni;
-        } else if ( kind == NODE_KIND::SREF || kind == NODE_KIND::AREF ) {
-            // record in instances[] array
-            perhaps_realloc( instances, hdr->instance_cnt, max->instance_cnt, 1 );
-            instances[hdr->instance_cnt++] = ni;
-        }
-
         // recurse for other children
         for( ;; ) 
         {
