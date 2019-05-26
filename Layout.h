@@ -395,7 +395,7 @@ private:
     bool gdsii_read( std::string file_path, bool count_only ); // .gds
     bool gdsii_read_record( uint& node_i, bool count_only );
     bool gdsii_write( std::string file );
-    void gdsii_write_record( uint node_i );
+    void gdsii_write_record( uint node_i, std::string indent_str="" );
     void gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATATYPE datatype );
     void gdsii_write_bytes( const uint8_t * bytes, uint byte_cnt );
     void gdsii_flush( void );
@@ -1535,6 +1535,7 @@ bool Layout::gdsii_write( std::string gdsii_path )
     gdsii_fd = open( gdsii_path.c_str(), O_CREAT|O_WRONLY|O_TRUNC|O_SYNC|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP );
     if ( gdsii_fd < 0 ) ldout << "open() for write error: " << strerror( errno ) << "\n";
 
+    ldout << "Writing " << gdsii_path << " root_i=" << hdr->root_i << "\n";
     if ( hdr->root_i != uint(-1) ) gdsii_write_record( hdr->root_i );
 
     gdsii_flush();
@@ -1548,15 +1549,16 @@ bool Layout::gdsii_write( std::string gdsii_path )
     return true;
 }
 
-void Layout::gdsii_write_record( uint ni )
+void Layout::gdsii_write_record( uint ni, std::string indent_str )
 {
     const Node& node = nodes[ni];
+    ldout << indent_str << "gdsii_write_record kind=" << str(node.kind) << "\n";
     if ( node_is_gdsii( node ) ) {
         uint8_t bytes[64*1024];
         uint    byte_cnt = 2;   // fill in byte_cnt later
 
         GDSII_DATATYPE datatype = kind_to_datatype( node.kind );
-        ldout << str(node.kind) << " " << str(datatype) << "\n";
+        ldout << indent_str << str(node.kind) << " " << str(datatype) << "\n";
         bytes[byte_cnt++] = int(node.kind);
         bytes[byte_cnt++] = int(datatype);
 
@@ -1571,7 +1573,7 @@ void Layout::gdsii_write_record( uint ni )
 
             case GDSII_DATATYPE::BITARRAY:
             {
-                ldout << "    " << node.u.u << "\n";
+                ldout << indent_str << "    " << node.u.u << "\n";
                 bytes[byte_cnt++] = node.u.u & 0xff;
                 bytes[byte_cnt++] = (node.u.u >> 8) & 0xff;
                 break;
@@ -1579,7 +1581,7 @@ void Layout::gdsii_write_record( uint ni )
 
             case GDSII_DATATYPE::STRING:
             {
-                ldout << "    " << std::string(&strings[node.u.s_i]) << "\n";
+                ldout << indent_str << "    " << std::string(&strings[node.u.s_i]) << "\n";
                 uint len = strlen( &strings[node.u.s_i] );
                 memcpy( &bytes[byte_cnt], &strings[node.u.s_i], len );
                 byte_cnt += len;
@@ -1620,7 +1622,7 @@ void Layout::gdsii_write_record( uint ni )
             if ( child_i == uint(-1) ) child_i = node.u.child_first_i;
             for( ; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
             {
-                gdsii_write_record( child_i );
+                gdsii_write_record( child_i, indent_str + "    " );
             }
 
             bytes[0] = 0;
@@ -1635,7 +1637,7 @@ void Layout::gdsii_write_record( uint ni )
         for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
         {
             assert( child_i != 0 );
-            gdsii_write_record( child_i );
+            gdsii_write_record( child_i, indent_str + "    " );
         }
 
     } else {
