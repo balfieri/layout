@@ -304,6 +304,7 @@ public:
         SCALAR_CHILDREN,                    // copy scalar children only (INT, REAL, etc.)
         DEEP,                               // copy all children and descendents
     };
+    uint        node_alloc( NODE_KIND kind );                   // allocate a node of the given kind
     uint        node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind, uint new_layer=uint(-1) );
 
     static GDSII_DATATYPE kind_to_datatype( NODE_KIND kind );
@@ -991,7 +992,7 @@ inline std::string Layout::node_name( const Node& node ) const
     return "";
 }
 
-uint Layout::node_layer( const Node& node ) const
+inline uint Layout::node_layer( const Node& node ) const
 {
     assert( node_is_element( node ) );
     for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
@@ -999,6 +1000,16 @@ uint Layout::node_layer( const Node& node ) const
         if ( nodes[child_i].kind == NODE_KIND::LAYER ) return nodes[child_i].u.i;
     }
     return uint(-1);
+}
+
+inline uint Layout::node_alloc( NODE_KIND kind )
+{
+    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+    uint ni = hdr->node_cnt++;
+    nodes[ni].kind = kind;
+    nodes[ni].sibling_i = uint(-1);
+    nodes[ni].u.child_first_i = uint(-1);
+    return ni;
 }
 
 inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind, uint new_layer )
