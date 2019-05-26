@@ -334,7 +334,7 @@ public:
     // instancing
     uint inst_layout( const Layout * src_layout, real x, real y );
     uint inst_layout( const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last );
-    uint inst_layout_node( const Layout * src_layout, uint src_i, uint src_layer_num, uint dst_layer_num );
+    uint inst_layout_node( const Layout * src_layout, uint src_i, uint src_layer_num, uint dst_layer_num, std::string indent_str="" );
 
     // fill
     void fill_dielectrics( void );
@@ -880,7 +880,7 @@ inline bool Layout::node_is_scalar( const Node& node ) const
     }
 }
 
-bool Layout::node_is_hier( const Node& node ) const
+inline bool Layout::node_is_hier( const Node& node ) const
 {
     switch( node.kind )
     {
@@ -900,7 +900,7 @@ bool Layout::node_is_hier( const Node& node ) const
     }
 }
 
-bool Layout::node_is_element( const Node& node ) const
+inline bool Layout::node_is_element( const Node& node ) const
 {
     switch( node.kind )
     {
@@ -1104,16 +1104,17 @@ uint Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_la
     return dst_struct_i;
 }
 
-uint Layout::inst_layout_node( const Layout * src_layout, uint src_i, uint src_layer_num, uint dst_layer_num )
+uint Layout::inst_layout_node( const Layout * src_layout, uint src_i, uint src_layer_num, uint dst_layer_num, std::string indent_str )
 {
     //-----------------------------------------------------
     // See if node should be copied.
     //-----------------------------------------------------
     bool do_copy = true;
     const Node& src_node = src_layout->nodes[src_i];
-    if ( src_layout->node_is_element( src_node ) && src_layout->node_layer( src_node ) != src_layer_num ) {
+    if ( !src_layout->node_is_ref( src_node ) && src_layout->node_is_element( src_node ) && src_layout->node_layer( src_node ) != src_layer_num ) {
         do_copy = false;
     }
+    ldout << indent_str << str(src_node.kind) << ": do_copy=" << do_copy << "\n";
     if ( !do_copy ) return uint(-1);
 
     //-----------------------------------------------------
@@ -1135,9 +1136,10 @@ uint Layout::inst_layout_node( const Layout * src_layout, uint src_i, uint src_l
         //-----------------------------------------------------
         dst_node.u.child_first_i = uint(-1);
         uint dst_prev_i = uint(-1);
+        indent_str += "    ";
         for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
         {
-            uint dst_child_i = inst_layout_node( src_layout, src_child_i, src_layer_num, dst_layer_num );
+            uint dst_child_i = inst_layout_node( src_layout, src_child_i, src_layer_num, dst_layer_num, indent_str );
             if ( dst_child_i == uint(-1) ) continue; // wasn't copied
 
             if ( dst_node.u.child_first_i == uint(-1) ) {
