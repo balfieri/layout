@@ -97,7 +97,7 @@ public:
     static std::string path_without_ext( std::string path, std::string * file_ext=nullptr );  // returns path without file extension part
 
     Layout( void );
-    Layout( std::string top_file );
+    Layout( std::string top_file, bool count_only=false );
     ~Layout(); 
 
     // type of output file depends on file extension:
@@ -391,8 +391,8 @@ private:
     bool layout_read( std::string file_path );          // .layout
     bool layout_write( std::string file_path );         
 
-    bool gdsii_read( std::string file_path );           // .gds
-    bool gdsii_read_record( uint& node_i );
+    bool gdsii_read( std::string file_path, bool count_only ); // .gds
+    bool gdsii_read_record( uint& node_i, bool count_only );
     bool gdsii_write( std::string file );
     void gdsii_write_record( uint node_i );
     void gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATATYPE datatype );
@@ -659,7 +659,7 @@ Layout::Layout( void )
     is_good = true;
 }
 
-Layout::Layout( std::string top_file ) 
+Layout::Layout( std::string top_file, bool count_only ) 
 {
     //------------------------------------------------------------
     // Read depends on file ext_name
@@ -679,7 +679,7 @@ Layout::Layout( std::string top_file )
         //------------------------------------------------------------
         init( true );
         if ( ext_name == std::string( ".gds" ) ) {
-            if ( !gdsii_read( top_file ) ) return;
+            if ( !gdsii_read( top_file, count_only ) ) return;
         } else if ( ext_name == std::string( ".aedt" ) ) {
             if ( !aedt_read( top_file ) ) return;
         } else {
@@ -1298,7 +1298,7 @@ bool Layout::layout_write( std::string layout_path )
     return true;
 }
 
-bool Layout::gdsii_read( std::string file )
+bool Layout::gdsii_read( std::string file, bool count_only )
 {
     //------------------------------------------------------------
     // Map in file
@@ -1310,37 +1310,46 @@ bool Layout::gdsii_read( std::string file )
     //------------------------------------------------------------
     // Create a file-level HIER node and read in all of them.
     //------------------------------------------------------------
-    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 2 );
-    hdr->node_cnt++;  // make sure index 0 is not used (for debug)
-    uint ni = hdr->node_cnt++;
-    nodes[ni].kind = NODE_KIND::HIER;
-    nodes[ni].u.child_first_i = uint(-1);
-    nodes[ni].sibling_i = uint(-1);
-    hdr->root_i = ni;
+    uint ni = uint(-1);
+    if ( !count_only ) {
+        perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 2 );
+        hdr->node_cnt++;  // make sure index 0 is not used (for debug)
+        ni = hdr->node_cnt++;
+        nodes[ni].kind = NODE_KIND::HIER;
+        nodes[ni].u.child_first_i = uint(-1);
+        nodes[ni].sibling_i = uint(-1);
+        hdr->root_i = ni;
+    }
     uint prev_i = uint(-1);
     gdsii_rec_cnt = 0;
     while( nnn < nnn_end )
     {
         uint child_i;
-        if ( !gdsii_read_record( child_i ) ) return false;
+        if ( !gdsii_read_record( child_i, count_only ) ) return false;
 
-        if ( prev_i == uint(-1) ) {
-            nodes[ni].u.child_first_i = child_i;
-        } else {
-            assert( child_i != 0 );
-            nodes[prev_i].sibling_i = child_i;
+        if ( !count_only ) {
+
+            if ( prev_i == uint(-1) ) {
+                nodes[ni].u.child_first_i = child_i;
+            } else {
+                assert( child_i != 0 );
+                nodes[prev_i].sibling_i = child_i;
+            }
+            prev_i = child_i;
         }
 
         if ( gdsii_last_kind == NODE_KIND::ENDLIB ) break;
+    }
 
-        prev_i = child_i;
+    if ( count_only ) {
+        std::cout << "gdsii_rec_cnt=" << gdsii_rec_cnt << "\n";
     }
     return true;
 }
 
 static inline bool is_gdsii_allowed_char( char c ) { return isprint( c ) && c != '"' && c != ','; }
 
-bool Layout::gdsii_read_record( uint& ni )
+bool Layout::gdsii_read_record( uint& ni, bool count_only )
 {
     //------------------------------------------------------------
     // Parse record header.
@@ -1348,7 +1357,7 @@ bool Layout::gdsii_read_record( uint& ni )
     rtn_assert( (nnn + 4) <= nnn_end, "unexpected end of gdsii file rec_cnt=" + std::to_string(gdsii_rec_cnt) );
     uint32_t       byte_cnt = ( nnn[0] << 8 ) | nnn[1];
     NODE_KIND      kind     = NODE_KIND( nnn[2] );
-    if ( (gdsii_rec_cnt % 1000000) == 0 ) std::cout << gdsii_rec_cnt << ": " << kind << "\n";
+    if ( false && (gdsii_rec_cnt % 1000000) == 0 ) std::cout << gdsii_rec_cnt << ": " << kind << "\n";
     GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
     rtn_assert( byte_cnt >= 4, std::to_string(gdsii_rec_cnt) + ": gdsii record byte_cnt must be at least 4, byte_cnt=" + std::to_string(byte_cnt) + " kind=" + str(kind) );
     ldout << hdr->node_cnt << ": " << str(kind) << " " << str(datatype) << " byte_cnt=" << std::to_string(byte_cnt) << "\n";
@@ -1363,10 +1372,14 @@ bool Layout::gdsii_read_record( uint& ni )
     //------------------------------------------------------------
     // Create a GDSII node.
     //------------------------------------------------------------
-    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-    ni = hdr->node_cnt++;
+    if ( !count_only ) {
+        perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+        ni = hdr->node_cnt++;
+        nodes[ni].sibling_i = uint(-1);
+    } else {
+        ni = 0;
+    }
     nodes[ni].kind = kind;
-    nodes[ni].sibling_i = uint(-1);
 
     //------------------------------------------------------------
     // Parse payload.
@@ -1385,7 +1398,7 @@ bool Layout::gdsii_read_record( uint& ni )
         {
             assert( !is_hier );
             rtn_assert( byte_cnt == 2, "BITARRAY gdsii datatype should have 2-byte payload" );
-            nodes[ni].u.u = (nnn[1] << 8) | nnn[0];
+            if ( !count_only ) nodes[ni].u.u = (nnn[1] << 8) | nnn[0];
             break;
         }
 
@@ -1403,7 +1416,7 @@ bool Layout::gdsii_read_record( uint& ni )
             }
             std::string s = std::string( c );
             ldout << "    " << s << "\n";
-            nodes[ni].u.s_i = str_get( s );
+            if ( !count_only ) nodes[ni].u.s_i = str_get( s );
             break;
         }
 
@@ -1419,14 +1432,17 @@ bool Layout::gdsii_read_record( uint& ni )
             uint8_t * uuu = nnn;
             for( uint i = 0; i < cnt; i++, uuu += datum_byte_cnt )
             {
-                perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-                uint child_i = hdr->node_cnt++;
-                assert( child_i != 0 );
-                nodes[child_i].sibling_i = uint(-1);
-                if ( i == 0 ) {
-                    nodes[ni].u.child_first_i = child_i;
-                } else {
-                    nodes[prev_i].sibling_i = child_i;
+                uint child_i = uint(-1);
+                if ( !count_only ) {
+                    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+                    child_i = hdr->node_cnt++;
+                    assert( child_i != 0 );
+                    nodes[child_i].sibling_i = uint(-1);
+                    if ( i == 0 ) {
+                        nodes[ni].u.child_first_i = child_i;
+                    } else {
+                        nodes[prev_i].sibling_i = child_i;
+                    }
                 }
                 if ( datatype == GDSII_DATATYPE::INTEGER_2 || datatype == GDSII_DATATYPE::INTEGER_4 ) {
                     int64_t vi = (uuu[0] << 8) | uuu[1];
@@ -1436,8 +1452,10 @@ bool Layout::gdsii_read_record( uint& ni )
                     if ( (vi & 0x80000000) != 0 ) {
                         vi = (datatype == GDSII_DATATYPE::INTEGER_2) ? -(0x10000 - vi) : -(0x100000000LL - vi);
                     }
-                    nodes[child_i].kind = NODE_KIND::INT;
-                    nodes[child_i].u.i = vi;
+                    if ( !count_only ) {
+                        nodes[child_i].kind = NODE_KIND::INT;
+                        nodes[child_i].u.i = vi;
+                    }
                     ldout << "    " << vi << "\n";
                 } else {
                     real sign = (uuu[0] & 0x80) ? -1.0 : 1.0;
@@ -1448,10 +1466,12 @@ bool Layout::gdsii_read_record( uint& ni )
                         ldout << "bytes[" << j << "]=" << int(uuu[j]) << "\n";
                         if ( j != 0 ) ifrac = (ifrac << 8) | uuu[j];
                     }
-                    nodes[child_i].kind = NODE_KIND::REAL;
-                    real rexp = 4.0*(exp-64) - 8*(datum_byte_cnt-1);
-                    nodes[child_i].u.r = sign * double(ifrac) * std::pow( 2.0, rexp );
-                    ldout << "sign=" << ((sign < 0.0) ? "1" : "0") << " exp=" << exp << " rexp=" << rexp << " ifrac=" << ifrac << " r=" << nodes[child_i].u.r << "\n";
+                    if ( !count_only ) {
+                        nodes[child_i].kind = NODE_KIND::REAL;
+                        real rexp = 4.0*(exp-64) - 8*(datum_byte_cnt-1);
+                        nodes[child_i].u.r = sign * double(ifrac) * std::pow( 2.0, rexp );
+                        ldout << "sign=" << ((sign < 0.0) ? "1" : "0") << " exp=" << exp << " rexp=" << rexp << " ifrac=" << ifrac << " r=" << nodes[child_i].u.r << "\n";
+                    }
                 }
                 prev_i = child_i;
             }
@@ -1474,19 +1494,22 @@ bool Layout::gdsii_read_record( uint& ni )
         for( ;; ) 
         {
             uint child_i;
-            if ( !gdsii_read_record( child_i ) ) return false;
+            if ( !gdsii_read_record( child_i, count_only ) ) return false;
             NODE_KIND kind = nodes[child_i].kind;
             if ( kind == NODE_KIND::ENDEL || kind == NODE_KIND::ENDSTR || kind == NODE_KIND::ENDLIB ) break;
-            if ( prev_i == uint(-1) ) {
-                nodes[ni].u.child_first_i = child_i;
-            } else {
-                assert( child_i != 0 );
-                nodes[prev_i].sibling_i = child_i;
+            if ( !count_only ) {
+                if ( prev_i == uint(-1) ) {
+                    nodes[ni].u.child_first_i = child_i;
+                } else {
+                    assert( child_i != 0 );
+                    nodes[prev_i].sibling_i = child_i;
+                }
+                prev_i = child_i;
             }
-            prev_i = child_i;
         }
     }
 
+    if ( count_only ) nodes[ni].kind = kind;
     return true;
 }
 
