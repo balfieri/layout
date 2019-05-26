@@ -17,7 +17,7 @@ Single Layout.h file provides:
 See instructions at the top of Layout.h for how to include the Layout class in your program.</p>
 
 <p>
-There are a couple example programs:
+There are a couple example programs in this directory:
 <ul>
 <li>count.cpp - parses a .gds file but doesn't store; prints out number of records found; runs fast on large .gds files; doit.count builds and runs it</li>
 <li>test.cpp - can read in a .gds, .aedt, or .layout file, then writes out .layout, .gds, and .aedt files; doit.test builds and runs it</li>
