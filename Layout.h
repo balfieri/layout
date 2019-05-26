@@ -396,7 +396,7 @@ private:
     bool gdsii_read_record( uint& node_i, bool count_only );
     bool gdsii_write( std::string file );
     void gdsii_write_record( uint node_i, std::string indent_str="" );
-    void gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATATYPE datatype );
+    void gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATATYPE datatype, std::string indent_str );
     void gdsii_write_bytes( const uint8_t * bytes, uint byte_cnt );
     void gdsii_flush( void );
     
@@ -1101,6 +1101,7 @@ uint Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_la
         uint dst_i = inst_layout_node( src_layout, src_layout->hdr->root_i, src_layer_num, i );
         if ( dst_i == uint(-1) ) continue;
 
+        dst_struct = nodes[dst_struct_i];  // could have changed!
         if ( dst_struct.u.child_first_i == uint(-1) ) {
             dst_struct.u.child_first_i = dst_i;
         } else {
@@ -1153,6 +1154,7 @@ uint Layout::inst_layout_node( const Layout * src_layout, uint src_i, uint src_l
             uint dst_child_i = inst_layout_node( src_layout, src_child_i, src_layer_num, dst_layer_num, indent_str );
             if ( dst_child_i == uint(-1) ) continue; // wasn't copied
 
+            dst_node = nodes[dst_i];    // could have changed!
             if ( dst_node.u.child_first_i == uint(-1) ) {
                 dst_node.u.child_first_i = dst_child_i;
             } else {
@@ -1552,13 +1554,12 @@ bool Layout::gdsii_write( std::string gdsii_path )
 void Layout::gdsii_write_record( uint ni, std::string indent_str )
 {
     const Node& node = nodes[ni];
-    ldout << indent_str << "gdsii_write_record kind=" << str(node.kind) << "\n";
+    ldout << indent_str << str(node.kind) << "\n";
     if ( node_is_gdsii( node ) ) {
         uint8_t bytes[64*1024];
         uint    byte_cnt = 2;   // fill in byte_cnt later
 
         GDSII_DATATYPE datatype = kind_to_datatype( node.kind );
-        ldout << indent_str << str(node.kind) << " " << str(datatype) << "\n";
         bytes[byte_cnt++] = int(node.kind);
         bytes[byte_cnt++] = int(datatype);
 
@@ -1598,7 +1599,7 @@ void Layout::gdsii_write_record( uint ni, std::string indent_str )
                 {
                     assert( child_i != 0 );
                     if ( nodes[child_i].kind != NODE_KIND::INT && nodes[child_i].kind != NODE_KIND::REAL ) break; // skip GDSII children
-                    gdsii_write_number( bytes, byte_cnt, child_i, datatype );
+                    gdsii_write_number( bytes, byte_cnt, child_i, datatype, indent_str + "    " );
                 }
                 break;
             }
@@ -1645,7 +1646,7 @@ void Layout::gdsii_write_record( uint ni, std::string indent_str )
     }
 }
 
-void Layout::gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATATYPE datatype )
+void Layout::gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATATYPE datatype, std::string indent_str )
 {
     switch( datatype )
     {
@@ -1653,7 +1654,7 @@ void Layout::gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII
         case GDSII_DATATYPE::INTEGER_4:
         {
             int32_t i = nodes[ni].u.i;
-            ldout << "    " << i << "\n";
+            ldout << indent_str << i << "\n";
             uint32_t vu = (i >= 0) ? i : ((datatype == GDSII_DATATYPE::INTEGER_2) ? (0x10000 + i) : (0x100000000LL + i));
             if ( datatype == GDSII_DATATYPE::INTEGER_4 ) {
                 bytes[byte_cnt++] = (vu >> 24) & 0xff;
@@ -1667,7 +1668,7 @@ void Layout::gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII
         case GDSII_DATATYPE::REAL_4:
         case GDSII_DATATYPE::REAL_8:
         {
-            ldout << "    " << nodes[ni].u.r << "\n";
+            ldout << indent_str << nodes[ni].u.r << "\n";
             const uint64_t du = *reinterpret_cast<uint64_t *>(&nodes[ni].u.r);
             uint64_t sign  = (du >> 63) & 1LL;
             int64_t  rexp  = (du >> 52) & 0x7ffLL;
@@ -1684,7 +1685,7 @@ void Layout::gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII
                 ifrac <<= (56-53);
                 rexp  -= 56-53;
             }
-            ldout << "mid: rexp " << rexp << " ifrac=" << ifrac << "\n";
+            //ldout << indent_str << "mid: rexp " << rexp << " ifrac=" << ifrac << "\n";
             while( (rexp & 0x3LL) != 0 )
             {
                 rexp++;
@@ -1698,9 +1699,9 @@ void Layout::gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII
             }
             for( int j = 0; j < datum_byte_cnt; j++ )
             {
-                ldout << "bytes[" << j << "]=" << int(bytes[byte_cnt-datum_byte_cnt+j]) << "\n";
+                //ldout << indent_str << "bytes[" << j << "]=" << int(bytes[byte_cnt-datum_byte_cnt+j]) << "\n";
             }
-            ldout << "sign=" << sign << " exp=" << int(exp) << " rexp=" << rexp << " ifrac=" << ifrac << " r=" << nodes[ni].u.r << "\n";
+            ldout << indent_str << "    sign=" << sign << " exp=" << int(exp) << " rexp=" << rexp << " ifrac=" << ifrac << " r=" << nodes[ni].u.r << "\n";
             break;
         }
 
