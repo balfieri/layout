@@ -1,0 +1,14 @@
+#!/usr/bin/perl
+#
+use strict;
+use warnings;
+sub cmd { my $c = shift; print "${c}\n"; system( $c ) == 0 or die "ERROR: command failed: $c\n"; }
+
+my $prog = "test";
+
+cmd( "rm -f ${prog}" );
+cmd( "g++ -o ./${prog} -std=c++17 -g -O3 -I. -lz ${prog}.cpp" );   # -O0 -DLAYOUT_DEBUG is useful when debugging - faster compile
+
+my $file = shift @ARGV || die "pass a .gds, .aedt, or .layout file as an argument to run the program\n";
+
+cmd( "./${prog} ${file}" );
