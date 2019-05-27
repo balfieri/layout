@@ -288,6 +288,7 @@ public:
 
     };
 
+    bool        node_is_header_footer( const Node& node ) const;// return true if node is a HEADER, BGNLIB, LIBNAME, UNITS, or ENDLIB
     bool        node_is_gdsii( const Node& node ) const;        // return true if node is a GDSII node
     bool        node_is_scalar( const Node& node ) const;       // return true if node is a scalar 
     bool        node_is_element( const Node& node ) const;      // return true if node is a GDSII element
@@ -858,6 +859,22 @@ uint Layout::layer_get( std::string name )
     return uint(-1);
 }
 
+inline bool Layout::node_is_header_footer( const Node& node ) const
+{
+    switch( node.kind ) 
+    {
+        case NODE_KIND::HEADER:
+        case NODE_KIND::BGNLIB: 
+        case NODE_KIND::LIBNAME: 
+        case NODE_KIND::UNITS:
+        case NODE_KIND::ENDLIB:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
 inline bool Layout::node_is_gdsii( const Node& node ) const
 {
     return int(node.kind) >= 0 && int(node.kind) < GDSII_KIND_CNT;
@@ -874,7 +891,6 @@ inline bool Layout::node_is_scalar( const Node& node ) const
         case NODE_KIND::REAL:
         case NODE_KIND::ID:
             return true;
-            break;
 
         default:
             return false;
@@ -1123,9 +1139,18 @@ uint Layout::inst_layout_node( const Layout * src_layout, uint src_i, uint src_l
     //-----------------------------------------------------
     bool do_copy = true;
     const Node& src_node = src_layout->nodes[src_i];
-    if ( !src_layout->node_is_ref( src_node ) && src_layout->node_is_element( src_node ) && src_layout->node_layer( src_node ) != src_layer_num ) {
+    if ( !src_layout->node_is_ref( src_node ) && 
+          src_layout->node_is_element( src_node ) && 
+          src_layout->node_layer( src_node ) != src_layer_num) {
+        do_copy = false;
+
+    } else if ( src_layout->node_is_header_footer( src_node ) && src_node.kind != NODE_KIND::BGNLIB ) {
+        //-----------------------------------------------------
+        // Blow this off.
+        //-----------------------------------------------------
         do_copy = false;
     }
+
     ldout << indent_str << str(src_node.kind) << ": do_copy=" << do_copy << "\n";
     if ( !do_copy ) return uint(-1);
 
@@ -1140,6 +1165,13 @@ uint Layout::inst_layout_node( const Layout * src_layout, uint src_i, uint src_l
         //-----------------------------------------------------
         assert( dst_node.u.i == src_layer_num );
         dst_node.u.i = dst_layer_num;
+    }
+    if ( dst_node.kind == NODE_KIND::BGNLIB ) {
+        //-----------------------------------------------------
+        // Change BGNLIB to BGNSTR.
+        // Scalars are the same, so copy those.
+        //-----------------------------------------------------
+        dst_node.kind = NODE_KIND::BGNSTR;
     }
 
     if ( src_layout->node_is_hier( src_node ) ) {
