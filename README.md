@@ -3,7 +3,7 @@ Single Layout.h file provides:
 <ul>
 <li>reading and writing .gds files (GDSII industry standard layout format)</li>
 <li>reading and writing .aedt files for Ansys HFSS 3D field solver</li> 
-<li>reading and writing .layout files (our Layout.h binary representation)</li>
+<li>reading and writing .layout files (our Layout.h binary representation which will soon be more compressed than .gds)</li>
 <li>writing fastcap2/fastercap/fftcap input files for capacitance 3D field solver</li>
 <li>writing fasthenry2 input files for resistance+inductance 3D field solver</li>
 <li>instancing structures or instances from one or more source files</li>
