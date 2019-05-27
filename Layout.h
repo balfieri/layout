@@ -845,6 +845,7 @@ void Layout::layer_set( uint layer_i, const Layer& layer )
         hdr->layer_cnt++;
     }
     layers[layer_i] = layer;
+    ldout << "Setting layer_i=" << layer_i << " gdsii_layer=" << layer.gdsii_num << "\n";
 }
 
 uint Layout::layer_get( std::string name )
@@ -1114,6 +1115,7 @@ uint Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_la
         // only ones that have the desired src_layer_num.
         //-----------------------------------------------------
         uint src_layer_num = layers[i].gdsii_num;
+        ldout << "inst_layout: dst_layer=" << i << " src_layer=" << layers[i].gdsii_num << "\n";
         uint dst_i = inst_layout_node( src_layout, src_layout->hdr->root_i, src_layer_num, i );
         if ( dst_i == uint(-1) ) continue;
 
@@ -1143,6 +1145,7 @@ uint Layout::inst_layout_node( const Layout * src_layout, uint src_i, uint src_l
           src_layout->node_is_element( src_node ) && 
           src_layout->node_layer( src_node ) != src_layer_num) {
         do_copy = false;
+        ldout << indent_str << "    src_layer=" << src_layout->node_layer( src_node ) << " desired_src_layer=" << src_layer_num << "\n";
 
     } else if ( src_layout->node_is_header_footer( src_node ) && src_node.kind != NODE_KIND::BGNLIB ) {
         //-----------------------------------------------------
