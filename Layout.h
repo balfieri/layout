@@ -1702,9 +1702,11 @@ void Layout::gdsii_write_record( uint ni, std::string indent_str )
                 gdsii_write_record( child_i, indent_str + "    " );
             }
 
+            NODE_KIND end_kind = hier_end_kind( node.kind );
+            ldout << indent_str << str(end_kind) << "\n";
             bytes[0] = 0;
             bytes[1] = 4;
-            bytes[2] = uint8_t(hier_end_kind(node.kind));
+            bytes[2] = uint8_t(end_kind);
             bytes[3] = uint8_t(GDSII_DATATYPE::NO_DATA);
             gdsii_write_bytes( bytes, 4 );
         }
