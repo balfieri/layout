@@ -336,8 +336,8 @@ public:
     real height( void ) const;
 
     // instancing
-    uint inst_layout( const Layout * src_layout, real x, real y );
-    uint inst_layout( const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last );
+    uint inst_layout( const Layout * src_layout, real x, real y, std::string name );
+    uint inst_layout( const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name );
     uint inst_layout_node( const Layout * src_layout, uint src_i, uint src_layer_num, uint dst_layer_num, std::string indent_str="" );
 
     // fill
@@ -1112,24 +1112,23 @@ inline Layout::real Layout::height( void ) const
     return 0;
 }
 
-uint Layout::inst_layout( const Layout * src_layout, real x, real y )
+uint Layout::inst_layout( const Layout * src_layout, real x, real y, std::string name )
 {
-    return inst_layout( src_layout, x, y, 0, hdr->layer_cnt-1 );
+    return inst_layout( src_layout, x, y, 0, hdr->layer_cnt-1, name );
 }
 
-uint Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last )
+uint Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name )
 {
     //-----------------------------------------------------
     // Make a new outer STRuct around all layer instances.
     // Do the instancing separately for each dst_layer.
     //-----------------------------------------------------
-    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-    uint dst_struct_i = hdr->node_cnt++;
-    Node& dst_struct = nodes[dst_struct_i];
-    dst_struct.kind = NODE_KIND::BGNSTR;
-    dst_struct.u.child_first_i = uint(-1);
-    dst_struct.sibling_i = uint(-1);
-    uint dst_prev_i = uint(-1);
+    uint dst_struct_i = node_alloc( NODE_KIND::BGNSTR );
+    uint dst_strname_i = node_alloc( NODE_KIND::STRNAME );
+    nodes[dst_strname_i].u.s_i = str_get( name );
+    nodes[dst_struct_i].u.child_first_i = dst_strname_i;
+    uint dst_prev_i = dst_strname_i;
+
     for( uint i = dst_layer_first; i <= dst_layer_last; i++ )
     {
         //-----------------------------------------------------
@@ -1141,9 +1140,8 @@ uint Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_la
         uint dst_i = inst_layout_node( src_layout, src_layout->hdr->root_i, src_layer_num, i );
         if ( dst_i == uint(-1) ) continue;
 
-        dst_struct = nodes[dst_struct_i];  // could have changed!
-        if ( dst_struct.u.child_first_i == uint(-1) ) {
-            dst_struct.u.child_first_i = dst_i;
+        if ( nodes[dst_struct_i].u.child_first_i == uint(-1) ) {
+            nodes[dst_struct_i].u.child_first_i = dst_i;
         } else {
             nodes[dst_prev_i].sibling_i = dst_i;
         }
@@ -1385,12 +1383,7 @@ bool Layout::gdsii_read( std::string file, bool count_only )
     //------------------------------------------------------------
     uint ni = uint(-1);
     if ( !count_only ) {
-        perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 2 );
-        hdr->node_cnt++;  // make sure index 0 is not used (for debug)
-        ni = hdr->node_cnt++;
-        nodes[ni].kind = NODE_KIND::HIER;
-        nodes[ni].u.child_first_i = uint(-1);
-        nodes[ni].sibling_i = uint(-1);
+        ni = node_alloc( NODE_KIND::HIER );
         hdr->root_i = ni;
     }
     uint prev_i = uint(-1);
@@ -1445,10 +1438,7 @@ bool Layout::gdsii_read_record( uint& ni, bool count_only )
     // Create a GDSII node.
     //------------------------------------------------------------
     if ( !count_only ) {
-        perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-        ni = hdr->node_cnt++;
-        nodes[ni].u.child_first_i = uint(-1);  // could change
-        nodes[ni].sibling_i = uint(-1);
+        ni = node_alloc( kind );
     } else {
         ni = 0;
     }
@@ -1507,10 +1497,7 @@ bool Layout::gdsii_read_record( uint& ni, bool count_only )
             {
                 uint child_i = uint(-1);
                 if ( !count_only ) {
-                    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-                    child_i = hdr->node_cnt++;
-                    assert( child_i != 0 );
-                    nodes[child_i].sibling_i = uint(-1);
+                    child_i = node_alloc( NODE_KIND::INT );
                     if ( i == 0 ) {
                         nodes[ni].u.child_first_i = child_i;
                     } else {
@@ -1826,9 +1813,7 @@ bool Layout::aedt_read( std::string file )
 
 bool Layout::aedt_read_expr( uint& ni )
 {
-    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-    ni = hdr->node_cnt++;
-    nodes[ni].sibling_i = uint(-1);
+    ni = node_alloc( NODE_KIND::HIER ); // will change
 
     skip_whitespace( nnn, nnn_end );
     char ch = *nnn;
@@ -1896,22 +1881,16 @@ bool Layout::aedt_read_expr( uint& ni )
         uint rhs_i;
         if ( !aedt_read_expr( rhs_i ) ) return false;
 
-        perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-        uint ai = hdr->node_cnt++;
-        nodes[ai].kind = NODE_KIND::ASSIGN;
+        uint ai = node_alloc( NODE_KIND::ASSIGN );
         nodes[ai].u.child_first_i = ni;
-        nodes[ai].sibling_i = uint(-1);
         nodes[ni].sibling_i = rhs_i;
         ni = ai;
 
     } else if ( ch == '(' || ch == '[' ) {
         ldout << std::string( (ch == '(') ? "CALL\n" : "SLICE\n" );
         uint id_i = ni;
-        perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-        ni = hdr->node_cnt++;
-        nodes[ni].kind = (ch == '(') ? NODE_KIND::CALL : NODE_KIND::SLICE;
+        ni = node_alloc( (ch == '(') ? NODE_KIND::CALL : NODE_KIND::SLICE );
         nodes[ni].u.child_first_i = id_i;
-        nodes[ni].sibling_i = uint(-1);
         uint prev_i = id_i;
         expect_char( ch, nnn, nnn_end );
         for( bool have_one=false; ; have_one=true )
