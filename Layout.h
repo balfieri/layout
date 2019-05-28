@@ -1047,35 +1047,34 @@ inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND 
     //-----------------------------------------------------
     // Copy the main node.
     //-----------------------------------------------------
-    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-    uint dst_i = hdr->node_cnt++;
     const Node& src_node = src_layout->nodes[src_i];
-    Node& dst_node = nodes[dst_i];
-    dst_node = src_node;
+    uint dst_i = node_alloc( src_node.kind );
     bool src_is_parent = src_layout->node_is_parent( src_node );
-    if ( src_is_parent ) dst_node.u.child_first_i = uint(-1);
-    dst_node.sibling_i = uint(-1);
-
-    if ( src_is_parent && kind != COPY_KIND::ONE ) {
-        //-----------------------------------------------------
-        // Copy children.
-        //-----------------------------------------------------
-        uint dst_prev_i = uint(-1);
-        for( src_i = src_node.u.child_first_i; src_i != uint(-1); src_i = src_layout->nodes[src_i].sibling_i )
-        {
-            if ( kind != COPY_KIND::DEEP && !node_is_scalar( src_layout->nodes[src_i] ) ) break;
-
+    if ( src_is_parent ) {
+        nodes[dst_i].u.child_first_i = uint(-1);
+        if ( kind != COPY_KIND::ONE ) {
             //-----------------------------------------------------
-            // Scalars can't have hier, so ok to pass kind down.
+            // Copy children.
             //-----------------------------------------------------
-            uint dst_child_i = node_copy( src_layout, src_i, kind );
-            if ( dst_node.u.child_first_i == uint(-1) ) {
-                dst_node.u.child_first_i = dst_child_i;
-            } else {
-                nodes[dst_prev_i].sibling_i = dst_child_i;
+            uint dst_prev_i = uint(-1);
+            for( src_i = src_node.u.child_first_i; src_i != uint(-1); src_i = src_layout->nodes[src_i].sibling_i )
+            {
+                if ( kind != COPY_KIND::DEEP && !node_is_scalar( src_layout->nodes[src_i] ) ) break;
+
+                //-----------------------------------------------------
+                // Scalars can't have hier, so ok to pass kind down.
+                //-----------------------------------------------------
+                uint dst_child_i = node_copy( src_layout, src_i, kind );
+                if ( nodes[dst_i].u.child_first_i == uint(-1) ) {
+                    nodes[dst_i].u.child_first_i = dst_child_i;
+                } else {
+                    nodes[dst_prev_i].sibling_i = dst_child_i;
+                }
+                dst_prev_i = dst_child_i;
             }
-            dst_prev_i = dst_child_i;
         }
+    } else {
+        nodes[dst_i].u = src_node.u;
     }
     return dst_i;
 }
