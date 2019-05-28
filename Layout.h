@@ -291,6 +291,7 @@ public:
     bool        node_is_header_footer( const Node& node ) const;// return true if node is a HEADER, BGNLIB, LIBNAME, UNITS, or ENDLIB
     bool        node_is_gdsii( const Node& node ) const;        // return true if node is a GDSII node
     bool        node_is_scalar( const Node& node ) const;       // return true if node is a scalar 
+    bool        node_is_string( const Node& node ) const;       // return true if node is a (scalar) string
     bool        node_is_parent( const Node& node ) const;       // return true if node is not a scalar (i.e., could have children)
     bool        node_is_element( const Node& node ) const;      // return true if node is a GDSII element
     bool        node_is_name( const Node& node ) const;         // return true if node is a name node
@@ -899,6 +900,19 @@ inline bool Layout::node_is_scalar( const Node& node ) const
     }
 }
 
+inline bool Layout::node_is_string( const Node& node ) const
+{
+    switch( node.kind ) 
+    {
+        case NODE_KIND::STR:
+        case NODE_KIND::ID:
+            return true;
+
+        default:
+            return kind_to_datatype( node.kind ) == GDSII_DATATYPE::STRING;
+    }
+}
+
 inline bool Layout::node_is_parent( const Node& node ) const
 {
     if ( node_is_scalar( node ) ) return false;
@@ -1074,7 +1088,11 @@ inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND 
             }
         }
     } else {
-        nodes[dst_i].u = src_node.u;
+        if ( node_is_string( src_node ) ) {
+            nodes[dst_i].u.s_i = str_get( &src_layout->strings[src_node.u.s_i] );
+        } else {
+            nodes[dst_i].u = src_node.u;
+        }
     }
     return dst_i;
 }
