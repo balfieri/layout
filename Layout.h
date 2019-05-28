@@ -335,6 +335,9 @@ public:
     real length( void ) const;
     real height( void ) const;
 
+    // start of a new layout
+    uint start_layout( std::string libname );
+
     // instancing
     uint inst_layout( const Layout * src_layout, real x, real y, std::string name );
     uint inst_layout( const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name );
@@ -1110,6 +1113,32 @@ inline Layout::real Layout::length( void ) const
 inline Layout::real Layout::height( void ) const
 {
     return 0;
+}
+
+uint Layout::start_layout( std::string libname )
+{
+    assert( hdr->root_i == uint(-1) );
+    
+    uint ni = node_alloc( Layout::NODE_KIND::HIER );
+    hdr->root_i = ni;
+    uint prev_i = ni;
+
+    ni = node_alloc( Layout::NODE_KIND::HEADER );
+    nodes[prev_i].u.child_first_i = ni;
+    uint ni2 = node_alloc( Layout::NODE_KIND::INT );
+    nodes[ni].u.child_first_i = ni2;
+    nodes[ni2].u.i = 5;
+    prev_i = ni;
+
+    ni = node_alloc( Layout::NODE_KIND::BGNLIB );
+    nodes[prev_i].sibling_i = ni;
+    
+    ni2 = node_alloc( Layout::NODE_KIND::LIBNAME );
+    nodes[ni].u.child_first_i = ni2;
+    nodes[ni2].u.s_i = str_get( libname );
+    prev_i = ni2;
+
+    return prev_i;
 }
 
 uint Layout::inst_layout( const Layout * src_layout, real x, real y, std::string name )
