@@ -291,6 +291,7 @@ public:
     bool        node_is_header_footer( const Node& node ) const;// return true if node is a HEADER, BGNLIB, LIBNAME, UNITS, or ENDLIB
     bool        node_is_gdsii( const Node& node ) const;        // return true if node is a GDSII node
     bool        node_is_scalar( const Node& node ) const;       // return true if node is a scalar 
+    bool        node_is_parent( const Node& node ) const;       // return true if node is not a scalar (i.e., could have children)
     bool        node_is_element( const Node& node ) const;      // return true if node is a GDSII element
     bool        node_is_name( const Node& node ) const;         // return true if node is a name node
     bool        node_is_hier( const Node& node ) const;         // return true if node is a hierarchy
@@ -306,7 +307,7 @@ public:
         DEEP,                               // copy all children and descendents
     };
     uint        node_alloc( NODE_KIND kind );                   // allocate a node of the given kind
-    uint        node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind, uint new_layer=uint(-1) );
+    uint        node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind );
 
     static GDSII_DATATYPE kind_to_datatype( NODE_KIND kind );
     static std::string    str( GDSII_DATATYPE datatype );
@@ -898,6 +899,14 @@ inline bool Layout::node_is_scalar( const Node& node ) const
     }
 }
 
+inline bool Layout::node_is_parent( const Node& node ) const
+{
+    if ( node_is_scalar( node ) ) return false;
+
+    GDSII_DATATYPE datatype = kind_to_datatype( node.kind );
+    return datatype != GDSII_DATATYPE::STRING && datatype != GDSII_DATATYPE::BITARRAY;
+}
+
 inline bool Layout::node_is_hier( const Node& node ) const
 {
     switch( node.kind )
@@ -1014,7 +1023,11 @@ inline uint Layout::node_layer( const Node& node ) const
     assert( node_is_element( node ) );
     for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
     {
-        if ( nodes[child_i].kind == NODE_KIND::LAYER ) return nodes[child_i].u.i;
+        if ( nodes[child_i].kind == NODE_KIND::LAYER ) {
+            uint int_node_i = nodes[child_i].u.child_first_i;
+            assert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT );
+            return nodes[int_node_i].u.i;
+        }
     }
     return uint(-1);
 }
@@ -1029,7 +1042,7 @@ inline uint Layout::node_alloc( NODE_KIND kind )
     return ni;
 }
 
-inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind, uint new_layer )
+inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind )
 {
     //-----------------------------------------------------
     // Copy the main node.
@@ -1039,37 +1052,29 @@ inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND 
     const Node& src_node = src_layout->nodes[src_i];
     Node& dst_node = nodes[dst_i];
     dst_node = src_node;
-    bool src_is_hier = src_layout->node_is_hier( src_node );
-    if ( src_is_hier ) dst_node.u.child_first_i = uint(-1);
+    bool src_is_parent = src_layout->node_is_parent( src_node );
+    if ( src_is_parent ) dst_node.u.child_first_i = uint(-1);
     dst_node.sibling_i = uint(-1);
 
-    //-----------------------------------------------------
-    // Optionally change LAYER.
-    //-----------------------------------------------------
-    if ( new_layer != uint(-1) && src_node.kind == NODE_KIND::LAYER ) {
-        dst_node.u.i = new_layer;
-    }
-
-    if ( src_is_hier && kind != COPY_KIND::ONE ) {
+    if ( src_is_parent && kind != COPY_KIND::ONE ) {
         //-----------------------------------------------------
         // Copy children.
         //-----------------------------------------------------
         uint dst_prev_i = uint(-1);
         for( src_i = src_node.u.child_first_i; src_i != uint(-1); src_i = src_layout->nodes[src_i].sibling_i )
         {
-            if ( kind == COPY_KIND::DEEP || node_is_scalar( src_layout->nodes[src_i] ) ) {
-                //-----------------------------------------------------
-                // Copy child recursively, but might stop there.
-                // Scalars can't have hier, so ok to pass kind down.
-                //-----------------------------------------------------
-                uint dst_child_i = node_copy( src_layout, src_i, kind, new_layer );
-                if ( dst_node.u.child_first_i == uint(-1) ) {
-                    dst_node.u.child_first_i = dst_child_i;
-                } else {
-                    nodes[dst_prev_i].sibling_i = dst_child_i;
-                }
-                dst_prev_i = dst_child_i;
-            }    
+            if ( kind != COPY_KIND::DEEP && !node_is_scalar( src_layout->nodes[src_i] ) ) break;
+
+            //-----------------------------------------------------
+            // Scalars can't have hier, so ok to pass kind down.
+            //-----------------------------------------------------
+            uint dst_child_i = node_copy( src_layout, src_i, kind );
+            if ( dst_node.u.child_first_i == uint(-1) ) {
+                dst_node.u.child_first_i = dst_child_i;
+            } else {
+                nodes[dst_prev_i].sibling_i = dst_child_i;
+            }
+            dst_prev_i = dst_child_i;
         }
     }
     return dst_i;
@@ -1166,8 +1171,12 @@ uint Layout::inst_layout_node( const Layout * src_layout, uint src_i, uint src_l
         //-----------------------------------------------------
         // Change LAYER from src_layer_num to dst_layer_num.
         //-----------------------------------------------------
-        assert( dst_node.u.i == src_layer_num );
-        dst_node.u.i = dst_layer_num;
+        uint dst_int_node_i = dst_node.u.child_first_i;
+        assert( dst_int_node_i != uint(-1) ); 
+        Node& dst_int_node = nodes[dst_int_node_i];
+        assert( dst_int_node.kind == NODE_KIND::INT && dst_int_node.u.i == src_layer_num );
+        dst_int_node.u.i = dst_layer_num;
+        ldout << indent_str << "    layer change: " << src_layer_num << " => " << dst_layer_num << "\n";
     }
     if ( dst_node.kind == NODE_KIND::BGNLIB ) {
         //-----------------------------------------------------
@@ -1177,16 +1186,15 @@ uint Layout::inst_layout_node( const Layout * src_layout, uint src_i, uint src_l
         dst_node.kind = NODE_KIND::BGNSTR;
     }
 
-    if ( src_layout->node_is_hier( src_node ) ) {
+    if ( src_layout->node_is_parent( src_node ) ) {
         //-----------------------------------------------------
         // Recursively copy children.
         //-----------------------------------------------------
         dst_node.u.child_first_i = uint(-1);
         uint dst_prev_i = uint(-1);
-        indent_str += "    ";
         for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
         {
-            uint dst_child_i = inst_layout_node( src_layout, src_child_i, src_layer_num, dst_layer_num, indent_str );
+            uint dst_child_i = inst_layout_node( src_layout, src_child_i, src_layer_num, dst_layer_num, indent_str + "    " );
             if ( dst_child_i == uint(-1) ) continue; // wasn't copied
 
             dst_node = nodes[dst_i];    // could have changed!
@@ -1376,7 +1384,6 @@ bool Layout::gdsii_read( std::string file, bool count_only )
         if ( !gdsii_read_record( child_i, count_only ) ) return false;
 
         if ( !count_only ) {
-
             if ( prev_i == uint(-1) ) {
                 nodes[ni].u.child_first_i = child_i;
             } else {
@@ -1423,6 +1430,7 @@ bool Layout::gdsii_read_record( uint& ni, bool count_only )
     if ( !count_only ) {
         perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
         ni = hdr->node_cnt++;
+        nodes[ni].u.child_first_i = uint(-1);  // could change
         nodes[ni].sibling_i = uint(-1);
     } else {
         ni = 0;
