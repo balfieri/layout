@@ -1,4 +1,5 @@
-gen
+test
+count
 *crg*
 *.dSYM*
 *.DS_Store

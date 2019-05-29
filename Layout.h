@@ -1257,6 +1257,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, uint src_
                 uint dst_child_i = inst_layout_node( dst_prev_i, src_layout, src_child_i, src_layer_num, dst_layer_num, name, indent_str + "    " );
                 if ( dst_child_i != uint(-1) ) {
                     if ( dst_prev_i == uint(-1) ) {
+                        assert( nodes[dst_i].kind != NODE_KIND::BGNSTR || nodes[dst_child_i].kind != NODE_KIND::BGNSTR );
                         nodes[dst_i].u.child_first_i = dst_child_i; 
                     }
                     dst_prev_i = dst_child_i;
@@ -1272,7 +1273,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, uint src_
             if ( !node_is_scalar( src_layout->nodes[src_child_i] ) ) {
                 uint dst_child_i = inst_layout_node( last_i, src_layout, src_child_i, src_layer_num, dst_layer_num, name, indent_str + "    " );
                 if ( dst_child_i != uint(-1) ) {
-                    nodes[last_i].u.child_first_i = dst_child_i; 
+                    nodes[last_i].sibling_i = dst_child_i; 
                     last_i = dst_child_i;
                 }
             }
@@ -1660,7 +1661,7 @@ bool Layout::gdsii_write( std::string gdsii_path )
 void Layout::gdsii_write_record( uint ni, std::string indent_str )
 {
     const Node& node = nodes[ni];
-    ldout << indent_str << str(node.kind) << "\n";
+    ldout << indent_str << str(node.kind) << " ni=" << ni << "\n";
     if ( node_is_gdsii( node ) ) {
         uint8_t bytes[64*1024];
         uint    byte_cnt = 2;   // fill in byte_cnt later
