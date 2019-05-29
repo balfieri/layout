@@ -1184,7 +1184,7 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, real x, real y
         // Recursively find and copy all STRuctures, but 
         // only ones that have the desired src_layer_num.
         //-----------------------------------------------------
-        std::string inst_name = name + "_layer" + std::to_string( i );
+        std::string inst_name = std::to_string( i ) + "_" + name;
         uint src_layer_num = layers[i].gdsii_num;
         ldout << "inst_layout: dst_layer=" << i << " src_layer=" << layers[i].gdsii_num << " inst_name=" << inst_name << "\n";
         uint inst_last_i = inst_layout_node( last_i, src_layout, src_layout->hdr->root_i, src_layer_num, i, inst_name );
@@ -1276,6 +1276,8 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, uint src_
                     nodes[last_i].sibling_i = dst_child_i; 
                     last_i = dst_child_i;
                 }
+            } else {
+                ldout << indent_str << "    " << "skipping " << str(src_layout->nodes[src_child_i].kind) << "\n";
             }
         }
     }
