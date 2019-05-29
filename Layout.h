@@ -1133,15 +1133,20 @@ uint Layout::start_library( std::string libname, real units_user, real units_met
 {
     assert( hdr->root_i == uint(-1) );
     
-    uint ni = node_alloc( Layout::NODE_KIND::HEADER );
+    uint ni = node_alloc( Layout::NODE_KIND::HIER );   // for file level (one node)
     hdr->root_i = ni;
+    uint prev_i = ni;
+
+    ni = node_alloc( Layout::NODE_KIND::HEADER );
+    nodes[prev_i].u.child_first_i = ni;
     uint ni2 = node_alloc( Layout::NODE_KIND::INT );
     nodes[ni].u.child_first_i = ni2;
     nodes[ni2].u.i = 5;
-    uint prev_i = ni;
+    prev_i = ni;
 
     ni = node_alloc( Layout::NODE_KIND::BGNLIB );
     nodes[prev_i].sibling_i = ni;
+    prev_i = ni;
     
     ni2 = node_alloc( Layout::NODE_KIND::LIBNAME );
     nodes[ni].u.child_first_i = ni2;
@@ -1179,7 +1184,7 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, real x, real y
         // Recursively find and copy all STRuctures, but 
         // only ones that have the desired src_layer_num.
         //-----------------------------------------------------
-        std::string inst_name = name + "_" + std::to_string( i );
+        std::string inst_name = name + "_layer" + std::to_string( i );
         uint src_layer_num = layers[i].gdsii_num;
         ldout << "inst_layout: dst_layer=" << i << " src_layer=" << layers[i].gdsii_num << " inst_name=" << inst_name << "\n";
         uint inst_last_i = inst_layout_node( last_i, src_layout, src_layout->hdr->root_i, src_layer_num, i, inst_name );
@@ -1220,6 +1225,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, uint src_
         // Copy this node and recurse.
         //-----------------------------------------------------
         uint dst_i = node_copy( src_layout, src_i, COPY_KIND::SCALAR_CHILDREN );    // don't copy children yet
+        ldout << indent_str << "    dst_i=" << dst_i << " last_i=" << last_i << "\n";
         if ( last_i != uint(-1) ) nodes[last_i].sibling_i = dst_i;
         last_i = dst_i;
         if ( src_kind == NODE_KIND::LAYER ) {
@@ -1259,18 +1265,21 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, uint src_
         }
     } else {
         //-----------------------------------------------------
-        // Skip BGNLIB/HIER and process children.
+        // Skip BGNLIB/HIER and process non-scalar children.
         //-----------------------------------------------------
         for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
         {
-            uint dst_child_i = inst_layout_node( last_i, src_layout, src_child_i, src_layer_num, dst_layer_num, name, indent_str + "    " );
-            if ( dst_child_i != uint(-1) ) {
-                nodes[last_i].u.child_first_i = dst_child_i; 
-                last_i = dst_child_i;
+            if ( !node_is_scalar( src_layout->nodes[src_child_i] ) ) {
+                uint dst_child_i = inst_layout_node( last_i, src_layout, src_child_i, src_layer_num, dst_layer_num, name, indent_str + "    " );
+                if ( dst_child_i != uint(-1) ) {
+                    nodes[last_i].u.child_first_i = dst_child_i; 
+                    last_i = dst_child_i;
+                }
             }
         }
     }
 
+    ldout << indent_str << "    returning last_i=" << last_i << "\n";
     return last_i;
 }
 
