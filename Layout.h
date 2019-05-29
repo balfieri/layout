@@ -297,6 +297,7 @@ public:
     bool        node_is_name( const Node& node ) const;         // return true if node is a name node
     bool        node_is_hier( const Node& node ) const;         // return true if node is a hierarchy
     bool        node_is_ref( const Node& node ) const;          // return true if node is an AREF or SREF
+    uint        node_last_scalar_i( const Node& node ) const;   // find node index of last scalar child, else uint(-1) if none
     uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
     std::string node_name( const Node& node ) const;            // find name for node
     uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
@@ -1013,6 +1014,19 @@ inline bool Layout::node_is_ref( const Node& node ) const
     }
 }
 
+inline uint Layout::node_last_scalar_i( const Node& node ) const
+{
+    assert( node_is_parent( node ) );    
+    uint last_i = uint(-1);
+    for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+    {
+        if ( !node_is_scalar( nodes[child_i] ) ) break;
+
+        last_i = child_i;
+    }
+    return last_i;
+}
+
 inline uint Layout::node_name_i( const Node& node ) const
 {
     if ( node_is_name( node ) ) {
@@ -1201,7 +1215,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, uint src_
     ldout << indent_str << str(src_kind) << ": do_copy=" << do_copy << "\n";
     if ( !do_copy ) return uint(-1);
 
-    if ( src_kind != NODE_KIND::BGNLIB ) {
+    if ( src_kind != NODE_KIND::BGNLIB && src_kind != NODE_KIND::HIER ) {
         //-----------------------------------------------------
         // Copy this node and recurse.
         //-----------------------------------------------------
@@ -1231,8 +1245,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, uint src_
             //-----------------------------------------------------
             // Recursively copy children.
             //-----------------------------------------------------
-            assert( nodes[dst_i].u.child_first_i == uint(-1) );
-            uint dst_prev_i = uint(-1);
+            uint dst_prev_i = node_last_scalar_i( nodes[dst_i] );
             for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
             {
                 uint dst_child_i = inst_layout_node( dst_prev_i, src_layout, src_child_i, src_layer_num, dst_layer_num, name, indent_str + "    " );
@@ -1246,7 +1259,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, uint src_
         }
     } else {
         //-----------------------------------------------------
-        // Skip BGNLIB and process children.
+        // Skip BGNLIB/HIER and process children.
         //-----------------------------------------------------
         for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
         {
