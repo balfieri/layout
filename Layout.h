@@ -301,6 +301,7 @@ public:
     uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
     std::string node_name( const Node& node ) const;            // find name for node
     uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
+    uint        node_xy_i( const Node& node ) const;            // find index of XY node within node
 
     enum class COPY_KIND
     {
@@ -342,7 +343,8 @@ public:
     // instancing
     uint inst_layout( uint last_i, const Layout * src_layout, real x, real y, std::string name );
     uint inst_layout( uint last_i, const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name );
-    uint inst_layout_node( uint last_i, const Layout * src_layout, uint src_i, uint src_layer_num, uint dst_layer_num, std::string name, std::string indent_str="" );
+    uint inst_layout_node( uint last_i, const Layout * src_layout, real x, real y, uint src_i, uint src_layer_num, 
+                           uint dst_layer_num, std::string name, std::string indent_str="" );
 
     // fill
     void fill_dielectrics( void );
@@ -1063,6 +1065,15 @@ inline uint Layout::node_layer( const Node& node ) const
     return uint(-1);
 }
 
+inline uint Layout::node_xy_i( const Node& node ) const
+{
+    for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
+    {
+        if ( nodes[child_i].kind == NODE_KIND::XY ) return child_i;
+    }
+    return uint(-1);
+}
+
 inline uint Layout::node_alloc( NODE_KIND kind )
 {
     perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
@@ -1187,7 +1198,7 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, real x, real y
         std::string inst_name = std::to_string( i ) + "_" + name;
         uint src_layer_num = layers[i].gdsii_num;
         ldout << "inst_layout: dst_layer=" << i << " src_layer=" << layers[i].gdsii_num << " inst_name=" << inst_name << "\n";
-        uint inst_last_i = inst_layout_node( last_i, src_layout, src_layout->hdr->root_i, src_layer_num, i, inst_name );
+        uint inst_last_i = inst_layout_node( last_i, src_layout, x, y, src_layout->hdr->root_i, src_layer_num, i, inst_name );
         if ( inst_last_i != uint(-1) ) {
             last_i = inst_last_i;
         }
@@ -1195,7 +1206,7 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, real x, real y
     return last_i;
 }
 
-uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, uint src_i, uint src_layer_num, uint dst_layer_num, 
+uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, real y, uint src_i, uint src_layer_num, uint dst_layer_num, 
                                std::string name, std::string indent_str )
 {
     //-----------------------------------------------------
@@ -1254,10 +1265,21 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, uint src_
             uint dst_prev_i = node_last_scalar_i( nodes[dst_i] );
             for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
             {
-                uint dst_child_i = inst_layout_node( dst_prev_i, src_layout, src_child_i, src_layer_num, dst_layer_num, name, indent_str + "    " );
+                uint dst_child_i = inst_layout_node( dst_prev_i, src_layout, x, y, src_child_i, src_layer_num, dst_layer_num, name, indent_str + "    " );
                 if ( dst_child_i != uint(-1) ) {
                     if ( dst_prev_i == uint(-1) ) {
                         assert( nodes[dst_i].kind != NODE_KIND::BGNSTR || nodes[dst_child_i].kind != NODE_KIND::BGNSTR );
+                        if ( (src_kind == NODE_KIND::SREF || src_kind == NODE_KIND::AREF) && nodes[dst_child_i].kind == NODE_KIND::XY ) {
+                            //-----------------------------------------------------
+                            // Must offset all SREF/AREF XY coordinates by [x,y].
+                            //-----------------------------------------------------
+                            bool for_x = true;
+                            for( uint dst_gchild_i = nodes[dst_child_i].u.child_first_i; dst_gchild_i != uint(-1); dst_gchild_i = nodes[dst_gchild_i].sibling_i )
+                            {
+                                assert( nodes[dst_gchild_i].kind == NODE_KIND::INT );
+                                nodes[dst_gchild_i].u.i += int( ((for_x) ? x : y) / 0.001 );  // hardcode constant for now
+                            }
+                        }
                         nodes[dst_i].u.child_first_i = dst_child_i; 
                     }
                     dst_prev_i = dst_child_i;
@@ -1271,7 +1293,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, uint src_
         for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
         {
             if ( !node_is_scalar( src_layout->nodes[src_child_i] ) ) {
-                uint dst_child_i = inst_layout_node( last_i, src_layout, src_child_i, src_layer_num, dst_layer_num, name, indent_str + "    " );
+                uint dst_child_i = inst_layout_node( last_i, src_layout, x, y, src_child_i, src_layer_num, dst_layer_num, name, indent_str + "    " );
                 if ( dst_child_i != uint(-1) ) {
                     nodes[last_i].sibling_i = dst_child_i; 
                     last_i = dst_child_i;
