@@ -301,6 +301,7 @@ public:
     uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
     std::string node_name( const Node& node ) const;            // find name for node
     uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
+    bool        node_has_layer( const Node& node, uint layer ) const; // return true node or any descendent uses the given layer 
     uint        node_xy_i( const Node& node ) const;            // find index of XY node within node
 
     enum class COPY_KIND
@@ -343,8 +344,6 @@ public:
     // instancing
     uint inst_layout( uint last_i, const Layout * src_layout, real x, real y, std::string name );
     uint inst_layout( uint last_i, const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name );
-    uint inst_layout_node( uint last_i, const Layout * src_layout, real x, real y, uint src_i, uint src_layer_num, 
-                           uint dst_layer_num, std::string name, std::string indent_str="" );
 
     // fill
     void fill_dielectrics( void );
@@ -384,11 +383,13 @@ private:
     uint      line_num;
 
     // state used during reading and and writing of GDSII files
-    uint       gdsii_rec_cnt;
-    NODE_KIND  gdsii_last_kind;
-    int        gdsii_fd;
-    uint8_t *  gdsii_buff;
-    uint       gdsii_buff_byte_cnt;
+    uint        gdsii_rec_cnt;
+    NODE_KIND   gdsii_last_kind;
+    int         gdsii_fd;
+    uint8_t *   gdsii_buff;
+    uint        gdsii_buff_byte_cnt;
+    real        gdsii_units_user;
+    real        gdsii_units_meters;
 
     // state used during reading and and writing of AEDT files
     uint aedt_begin_str_i;              // these are to make it easier to compare
@@ -400,6 +401,9 @@ private:
 
     bool layout_read( std::string file_path );          // .layout
     bool layout_write( std::string file_path );         
+
+    uint inst_layout_node( uint last_i, const Layout * src_layout, real x, real y, uint src_i, uint src_layer_num, 
+                           uint dst_layer_num, std::string name, std::string indent_str="" );
 
     bool gdsii_read( std::string file_path, bool count_only ); // .gds
     bool gdsii_read_record( uint& node_i, bool count_only );
@@ -1165,6 +1169,8 @@ uint Layout::start_library( std::string libname, real units_user, real units_met
     prev_i = ni2;
 
     ni = node_alloc( Layout::NODE_KIND::UNITS );
+    gdsii_units_user = units_user;
+    gdsii_units_meters = units_meters;
     nodes[prev_i].sibling_i = ni;
     ni2 = node_alloc( NODE_KIND::REAL );
     nodes[ni].u.child_first_i = ni2;
@@ -1277,7 +1283,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
                             for( uint dst_gchild_i = nodes[dst_child_i].u.child_first_i; dst_gchild_i != uint(-1); dst_gchild_i = nodes[dst_gchild_i].sibling_i )
                             {
                                 assert( nodes[dst_gchild_i].kind == NODE_KIND::INT );
-                                nodes[dst_gchild_i].u.i += int( ((for_x) ? x : y) / 0.001 );  // hardcode constant for now
+                                nodes[dst_gchild_i].u.i += int( ((for_x) ? x : y) / gdsii_units_user );  
                             }
                         }
                         nodes[dst_i].u.child_first_i = dst_child_i; 
@@ -1615,6 +1621,10 @@ bool Layout::gdsii_read_record( uint& ni, bool count_only )
                         real rexp = 4.0*(exp-64) - 8*(datum_byte_cnt-1);
                         nodes[child_i].u.r = sign * double(ifrac) * std::pow( 2.0, rexp );
                         ldout << "sign=" << ((sign < 0.0) ? "1" : "0") << " exp=" << exp << " rexp=" << rexp << " ifrac=" << ifrac << " r=" << nodes[child_i].u.r << "\n";
+                        if ( kind == NODE_KIND::UNITS ) {
+                            if ( i == 0 ) gdsii_units_user   = nodes[child_i].u.r;
+                            if ( i == 1 ) gdsii_units_meters = nodes[child_i].u.r;
+                        }
                     }
                 }
                 prev_i = child_i;
