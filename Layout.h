@@ -335,13 +335,13 @@ public:
     real length( void ) const;
     real height( void ) const;
 
-    // start of a new library
+    // start of a new library; returns last_i of last node
     uint start_library( std::string libname, real units_user=0.001, real units_meters=1e-9 );
 
     // instancing
-    uint inst_layout( const Layout * src_layout, real x, real y, std::string name );
-    uint inst_layout( const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name );
-    uint inst_layout_node( const Layout * src_layout, uint src_i, uint src_layer_num, uint dst_layer_num, std::string indent_str="" );
+    uint inst_layout( uint last_i, const Layout * src_layout, real x, real y, std::string name );
+    uint inst_layout( uint last_i, const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name );
+    uint inst_layout_node( uint last_i, const Layout * src_layout, uint src_i, uint src_layer_num, uint dst_layer_num, std::string name, std::string indent_str="" );
 
     // fill
     void fill_dielectrics( void );
@@ -1119,16 +1119,12 @@ uint Layout::start_library( std::string libname, real units_user, real units_met
 {
     assert( hdr->root_i == uint(-1) );
     
-    uint ni = node_alloc( Layout::NODE_KIND::HIER );
+    uint ni = node_alloc( Layout::NODE_KIND::HEADER );
     hdr->root_i = ni;
-    uint prev_i = ni;
-
-    ni = node_alloc( Layout::NODE_KIND::HEADER );
-    nodes[prev_i].u.child_first_i = ni;
     uint ni2 = node_alloc( Layout::NODE_KIND::INT );
     nodes[ni].u.child_first_i = ni2;
     nodes[ni2].u.i = 5;
-    prev_i = ni;
+    uint prev_i = ni;
 
     ni = node_alloc( Layout::NODE_KIND::BGNLIB );
     nodes[prev_i].sibling_i = ni;
@@ -1152,116 +1148,117 @@ uint Layout::start_library( std::string libname, real units_user, real units_met
     return prev_i;
 }
 
-uint Layout::inst_layout( const Layout * src_layout, real x, real y, std::string name )
+uint Layout::inst_layout( uint last_i, const Layout * src_layout, real x, real y, std::string name )
 {
-    return inst_layout( src_layout, x, y, 0, hdr->layer_cnt-1, name );
+    return inst_layout( last_i, src_layout, x, y, 0, hdr->layer_cnt-1, name );
 }
 
-uint Layout::inst_layout( const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name )
+uint Layout::inst_layout( uint last_i, const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name )
 {
     //-----------------------------------------------------
-    // Make a new outer STRuct around all layer instances.
     // Do the instancing separately for each dst_layer.
+    // Use a unique name for each.
     //-----------------------------------------------------
-    uint dst_struct_i = node_alloc( NODE_KIND::BGNSTR );
-    uint dst_strname_i = node_alloc( NODE_KIND::STRNAME );
-    nodes[dst_strname_i].u.s_i = str_get( name );
-    nodes[dst_struct_i].u.child_first_i = dst_strname_i;
-    uint dst_prev_i = dst_strname_i;
-
     for( uint i = dst_layer_first; i <= dst_layer_last; i++ )
     {
         //-----------------------------------------------------
         // Recursively find and copy all STRuctures, but 
         // only ones that have the desired src_layer_num.
         //-----------------------------------------------------
+        std::string inst_name = name + "_" + std::to_string( i );
         uint src_layer_num = layers[i].gdsii_num;
-        ldout << "inst_layout: dst_layer=" << i << " src_layer=" << layers[i].gdsii_num << "\n";
-        uint dst_i = inst_layout_node( src_layout, src_layout->hdr->root_i, src_layer_num, i );
-        if ( dst_i == uint(-1) ) continue;
-
-        if ( nodes[dst_struct_i].u.child_first_i == uint(-1) ) {
-            nodes[dst_struct_i].u.child_first_i = dst_i;
-        } else {
-            nodes[dst_prev_i].sibling_i = dst_i;
+        ldout << "inst_layout: dst_layer=" << i << " src_layer=" << layers[i].gdsii_num << " inst_name=" << inst_name << "\n";
+        uint inst_last_i = inst_layout_node( last_i, src_layout, src_layout->hdr->root_i, src_layer_num, i, inst_name );
+        if ( inst_last_i != uint(-1) ) {
+            last_i = inst_last_i;
         }
-        dst_prev_i = dst_i;
     }
-
-    //-----------------------------------------------------
-    // Instance the new struct.
-    //-----------------------------------------------------
-    return dst_struct_i;
+    return last_i;
 }
 
-uint Layout::inst_layout_node( const Layout * src_layout, uint src_i, uint src_layer_num, uint dst_layer_num, std::string indent_str )
+uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, uint src_i, uint src_layer_num, uint dst_layer_num, 
+                               std::string name, std::string indent_str )
 {
     //-----------------------------------------------------
     // See if node should be copied.
     //-----------------------------------------------------
     bool do_copy = true;
     const Node& src_node = src_layout->nodes[src_i];
+    NODE_KIND src_kind = src_node.kind;
     if ( !src_layout->node_is_ref( src_node ) && 
           src_layout->node_is_element( src_node ) && 
           src_layout->node_layer( src_node ) != src_layer_num) {
         do_copy = false;
         ldout << indent_str << "    src_layer=" << src_layout->node_layer( src_node ) << " desired_src_layer=" << src_layer_num << "\n";
 
-    } else if ( src_layout->node_is_header_footer( src_node ) && src_node.kind != NODE_KIND::BGNLIB ) {
+    } else if ( src_layout->node_is_header_footer( src_node ) && src_kind != NODE_KIND::BGNLIB ) {
         //-----------------------------------------------------
         // Blow this off.
         //-----------------------------------------------------
         do_copy = false;
     }
 
-    ldout << indent_str << str(src_node.kind) << ": do_copy=" << do_copy << "\n";
+    ldout << indent_str << str(src_kind) << ": do_copy=" << do_copy << "\n";
     if ( !do_copy ) return uint(-1);
 
-    //-----------------------------------------------------
-    // Copy this node and recurse.
-    //-----------------------------------------------------
-    uint dst_i = node_copy( src_layout, src_i, COPY_KIND::SCALAR_CHILDREN );    // don't copy children yet
-    Node& dst_node = nodes[dst_i];
-    if ( dst_node.kind == NODE_KIND::LAYER ) {
+    if ( src_kind != NODE_KIND::BGNLIB ) {
         //-----------------------------------------------------
-        // Change LAYER from src_layer_num to dst_layer_num.
+        // Copy this node and recurse.
         //-----------------------------------------------------
-        uint dst_int_node_i = dst_node.u.child_first_i;
-        assert( dst_int_node_i != uint(-1) ); 
-        Node& dst_int_node = nodes[dst_int_node_i];
-        assert( dst_int_node.kind == NODE_KIND::INT && dst_int_node.u.i == src_layer_num );
-        dst_int_node.u.i = dst_layer_num;
-        ldout << indent_str << "    layer change: " << src_layer_num << " => " << dst_layer_num << "\n";
-    }
-    if ( dst_node.kind == NODE_KIND::BGNLIB ) {
-        //-----------------------------------------------------
-        // Change BGNLIB to BGNSTR.
-        // Scalars are the same, so copy those.
-        //-----------------------------------------------------
-        dst_node.kind = NODE_KIND::BGNSTR;
-    }
+        uint dst_i = node_copy( src_layout, src_i, COPY_KIND::SCALAR_CHILDREN );    // don't copy children yet
+        if ( last_i != uint(-1) ) nodes[last_i].sibling_i = dst_i;
+        last_i = dst_i;
+        if ( src_kind == NODE_KIND::LAYER ) {
+            //-----------------------------------------------------
+            // Change LAYER from src_layer_num to dst_layer_num.
+            //-----------------------------------------------------
+            uint dst_int_node_i = nodes[dst_i].u.child_first_i;
+            assert( dst_int_node_i != uint(-1) ); 
+            Node& dst_int_node = nodes[dst_int_node_i];
+            assert( dst_int_node.kind == NODE_KIND::INT && dst_int_node.u.i == src_layer_num );
+            dst_int_node.u.i = dst_layer_num;
+            ldout << indent_str << "    layer change: " << src_layer_num << " => " << dst_layer_num << "\n";
 
-    if ( src_layout->node_is_parent( src_node ) ) {
+        } else if ( src_kind == NODE_KIND::STRNAME || src_kind == NODE_KIND::SNAME ) {
+            //-----------------------------------------------------
+            // Prepend "name" to struct name to uniquify.
+            //-----------------------------------------------------
+            std::string str_name = name + std::string("_") + &strings[nodes[dst_i].u.s_i];
+            nodes[dst_i].u.s_i = str_get( str_name );
+        }
+
+        if ( src_layout->node_is_parent( src_node ) ) {
+            //-----------------------------------------------------
+            // Recursively copy children.
+            //-----------------------------------------------------
+            assert( nodes[dst_i].u.child_first_i == uint(-1) );
+            uint dst_prev_i = uint(-1);
+            for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
+            {
+                uint dst_child_i = inst_layout_node( dst_prev_i, src_layout, src_child_i, src_layer_num, dst_layer_num, name, indent_str + "    " );
+                if ( dst_child_i != uint(-1) ) {
+                    if ( dst_prev_i == uint(-1) ) {
+                        nodes[dst_i].u.child_first_i = dst_child_i; 
+                    }
+                    dst_prev_i = dst_child_i;
+                }
+            }
+        }
+    } else {
         //-----------------------------------------------------
-        // Recursively copy children.
+        // Skip BGNLIB and process children.
         //-----------------------------------------------------
-        dst_node.u.child_first_i = uint(-1);
-        uint dst_prev_i = uint(-1);
         for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
         {
-            uint dst_child_i = inst_layout_node( src_layout, src_child_i, src_layer_num, dst_layer_num, indent_str + "    " );
-            if ( dst_child_i == uint(-1) ) continue; // wasn't copied
-
-            dst_node = nodes[dst_i];    // could have changed!
-            if ( dst_node.u.child_first_i == uint(-1) ) {
-                dst_node.u.child_first_i = dst_child_i;
-            } else {
-                nodes[dst_prev_i].sibling_i = dst_child_i;
+            uint dst_child_i = inst_layout_node( last_i, src_layout, src_child_i, src_layer_num, dst_layer_num, name, indent_str + "    " );
+            if ( dst_child_i != uint(-1) ) {
+                nodes[last_i].u.child_first_i = dst_child_i; 
+                last_i = dst_child_i;
             }
-            dst_prev_i = dst_child_i;
         }
     }
-    return dst_i;
+
+    return last_i;
 }
 
 void Layout::fill_dielectrics( void )
