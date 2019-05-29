@@ -335,8 +335,8 @@ public:
     real length( void ) const;
     real height( void ) const;
 
-    // start of a new layout
-    uint start_layout( std::string libname );
+    // start of a new library
+    uint start_library( std::string libname, real units_user=0.001, real units_meters=1e-9 );
 
     // instancing
     uint inst_layout( const Layout * src_layout, real x, real y, std::string name );
@@ -1115,7 +1115,7 @@ inline Layout::real Layout::height( void ) const
     return 0;
 }
 
-uint Layout::start_layout( std::string libname )
+uint Layout::start_library( std::string libname, real units_user, real units_meters )
 {
     assert( hdr->root_i == uint(-1) );
     
@@ -1137,6 +1137,17 @@ uint Layout::start_layout( std::string libname )
     nodes[ni].u.child_first_i = ni2;
     nodes[ni2].u.s_i = str_get( libname );
     prev_i = ni2;
+
+    ni = node_alloc( Layout::NODE_KIND::UNITS );
+    nodes[prev_i].sibling_i = ni;
+    ni2 = node_alloc( NODE_KIND::REAL );
+    nodes[ni].u.child_first_i = ni2;
+    nodes[ni2].u.r = units_user;
+    prev_i = ni2;
+    ni2 = node_alloc( NODE_KIND::REAL );
+    nodes[prev_i].sibling_i = ni2;
+    nodes[ni2].u.r = units_meters;
+    prev_i = ni;
 
     return prev_i;
 }
