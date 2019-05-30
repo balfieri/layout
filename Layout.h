@@ -1090,7 +1090,7 @@ bool Layout::node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache,
         // Finally hit a LAYER.
         //------------------------------------------------------------
         uint li = node_layer( node );
-        ldout << indent_str << "node_has_layer: LAYER=" << li << " and want layer_num=" << layer_num << "\n";
+        //ldout << indent_str << "node_has_layer: LAYER=" << li << " and want layer_num=" << layer_num << "\n";
         return li == layer_num;
 
     } else if ( node.kind == NODE_KIND::SREF || node.kind == NODE_KIND::AREF ) {
@@ -1135,7 +1135,7 @@ bool Layout::node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache,
             //------------------------------------------------------------
             std::map<uint, bool>& layer_exists = *(*cache)[ni];
             layer_exists[layer_num] = has_layer;
-            ldout << indent_str << "node_has_layer: struct " << node_name( nodes[ni] ) << " layer_exists[" << layer_num << "]=" << has_layer << "\n";
+            //ldout << indent_str << "node_has_layer: struct " << node_name( nodes[ni] ) << " layer_exists[" << layer_num << "]=" << has_layer << "\n";
         }
 
         return has_layer;
@@ -1282,7 +1282,7 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, real x, real y
         //-----------------------------------------------------
         std::string inst_name = std::to_string( i ) + "_" + name;
         uint src_layer_num = layers[i].gdsii_num;
-        ldout << "inst_layout: dst_layer=" << i << " src_layer=" << layers[i].gdsii_num << " inst_name=" << inst_name << "\n";
+        ldout << "inst_layout: dst_layer=" << i << " src_layer=" << layers[i].gdsii_num << " x_off=" << x << " y_off=" << y << " inst_name=" << inst_name << "\n";
         uint inst_last_i = inst_layout_node( last_i, src_layout, x, y, src_layout->hdr->root_i, src_layer_num, i, cache, inst_name );
         if ( inst_last_i != uint(-1) ) {
             last_i = inst_last_i;
@@ -1306,10 +1306,10 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
         // If struct or ref does not have desired layer, then bail.
         //-----------------------------------------------------
         if ( !src_layout->node_has_layer( src_i, src_layer_num, cache, indent_str ) ) {
-            ldout << indent_str << str(src_node.kind) << " does NOT use src_layer=" << std::to_string(src_layer_num) << "\n";
+            //ldout << indent_str << str(src_node.kind) << " does NOT use src_layer=" << std::to_string(src_layer_num) << "\n";
             return uint(-1);
         }
-        ldout << indent_str << str(src_node.kind) << " uses src_layer=" << std::to_string(src_layer_num) << "\n";
+        //ldout << indent_str << str(src_node.kind) << " uses src_layer=" << std::to_string(src_layer_num) << "\n";
     }
 
     if ( !src_layout->node_is_ref( src_node ) && 
@@ -1376,7 +1376,9 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
                         for( uint dst_gchild_i = nodes[dst_child_i].u.child_first_i; dst_gchild_i != uint(-1); dst_gchild_i = nodes[dst_gchild_i].sibling_i )
                         {
                             assert( nodes[dst_gchild_i].kind == NODE_KIND::INT );
+                            //std::cout << indent_str << "        translating " << (for_x ? "x=" : "y=") << nodes[dst_gchild_i].u.i << " -> ";
                             nodes[dst_gchild_i].u.i += int( ((for_x) ? x : y) / gdsii_units_user );  
+                            //std::cout << nodes[dst_gchild_i].u.i << "\n";
                             for_x = !for_x;
                         }
                     }
@@ -1398,7 +1400,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
         }
     }
 
-    ldout << indent_str << "    " << str(src_kind) << " returning last_i=" << last_i << "\n";
+    //ldout << indent_str << "    " << str(src_kind) << " returning last_i=" << last_i << "\n";
     return last_i;
 }
 
