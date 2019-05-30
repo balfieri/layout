@@ -4,3 +4,4 @@ count
 *.dSYM*
 *.DS_Store
 *.out
+.*.icloud
