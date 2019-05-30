@@ -301,7 +301,7 @@ public:
     uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
     std::string node_name( const Node& node ) const;            // find name for node
     uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
-    bool        node_has_layer( const Node& node, uint layer ) const; // return true node or any descendent uses the given layer 
+    bool        node_has_layer( const Node& node, uint layer ); // return true node or any descendent uses the given layer 
     uint        node_xy_i( const Node& node ) const;            // find index of XY node within node
 
     enum class COPY_KIND
@@ -391,6 +391,10 @@ private:
     real        gdsii_units_user;
     real        gdsii_units_meters;
 
+    // struct info
+    std::map< uint, uint >                      name_i_to_struct_i;
+    std::map< uint, std::map<uint, bool> * >    struct_i_to_has_layer;
+
     // state used during reading and and writing of AEDT files
     uint aedt_begin_str_i;              // these are to make it easier to compare
     uint aedt_end_str_i;
@@ -406,7 +410,7 @@ private:
                            uint dst_layer_num, std::string name, std::string indent_str="" );
 
     bool gdsii_read( std::string file_path, bool count_only ); // .gds
-    bool gdsii_read_record( uint& node_i, bool count_only );
+    bool gdsii_read_record( uint& node_i, uint curr_struct_i, bool count_only );
     bool gdsii_write( std::string file );
     void gdsii_write_record( uint node_i, std::string indent_str="" );
     void gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATATYPE datatype, std::string indent_str );
@@ -1069,6 +1073,69 @@ inline uint Layout::node_layer( const Node& node ) const
     return uint(-1);
 }
 
+bool Layout::node_has_layer( const Node& node, uint layer_num ) 
+{
+    if ( node.kind == NODE_KIND::LAYER ) {
+        //------------------------------------------------------------
+        // Finally hit a LAYER.
+        //------------------------------------------------------------
+        return node_layer( node ) == layer_num;
+
+    } else if ( node.kind == NODE_KIND::SREF || node.kind == NODE_KIND::AREF ) {
+        //------------------------------------------------------------
+        // Get the SNAME and see if that struct has the layer.
+        // We may have already computed this.
+        //------------------------------------------------------------
+        uint name_i = node_name_i( node );
+        if ( name_i == uint(-1) ) return false;
+        auto sit = name_i_to_struct_i.find( name_i );
+        rtn_assert( sit != name_i_to_struct_i.end(), "could not find struct_i for name=" + std::string(&strings[name_i]) );
+        uint struct_i = sit->second;
+        return node_has_layer( nodes[struct_i], layer_num );
+
+    } else if ( node_is_hier( node ) ) {
+        //------------------------------------------------------------
+        // If this is a struct, then we may have already computed the answer.
+        //------------------------------------------------------------
+        uint ni = &node - nodes;
+        if ( node.kind == NODE_KIND::BGNSTR ) {
+            auto it = struct_i_to_has_layer.find( ni );
+            if ( it == struct_i_to_has_layer.end() ) {
+                struct_i_to_has_layer[ni] = new std::map<uint, bool>;
+                it = struct_i_to_has_layer.find( ni );
+            }
+            std::map<uint, bool>& layer_exists = *it->second;
+            auto eit = layer_exists.find( layer_num );
+            if ( eit != layer_exists.end() ) return eit->second;
+        }
+
+        //------------------------------------------------------------
+        // Check children.
+        //------------------------------------------------------------
+        bool has_layer = false;
+        for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
+        {
+            if ( nodes[child_i].kind == NODE_KIND::LAYER ) {
+                uint int_node_i = nodes[child_i].u.child_first_i;
+                assert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT );
+                if ( nodes[int_node_i].u.i == layer_num ) {
+                    has_layer = true;
+                    break;
+                }
+            }
+        }
+
+        if ( node.kind == NODE_KIND::BGNSTR ) {
+            //------------------------------------------------------------
+            // Save the answer for this struct.
+            //------------------------------------------------------------
+            std::map<uint, bool>& layer_exists = *struct_i_to_has_layer[ni];
+            layer_exists[layer_num] = has_layer;
+        }
+    }
+    return false;
+}
+
 inline uint Layout::node_xy_i( const Node& node ) const
 {
     for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
@@ -1478,10 +1545,11 @@ bool Layout::gdsii_read( std::string file, bool count_only )
     }
     uint prev_i = uint(-1);
     gdsii_rec_cnt = 0;
+    uint struct_i = uint(-1);
     while( nnn < nnn_end )
     {
         uint child_i;
-        if ( !gdsii_read_record( child_i, count_only ) ) return false;
+        if ( !gdsii_read_record( child_i, struct_i, count_only ) ) return false;
 
         if ( !count_only ) {
             if ( prev_i == uint(-1) ) {
@@ -1504,7 +1572,7 @@ bool Layout::gdsii_read( std::string file, bool count_only )
 
 static inline bool is_gdsii_allowed_char( char c ) { return isprint( c ) && c != '"' && c != ','; }
 
-bool Layout::gdsii_read_record( uint& ni, bool count_only )
+bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
 {
     //------------------------------------------------------------
     // Parse record header.
@@ -1643,12 +1711,26 @@ bool Layout::gdsii_read_record( uint& ni, bool count_only )
     gdsii_last_kind = kind;
     nnn += byte_cnt;
 
+    if ( !count_only && kind == NODE_KIND::STRNAME ) {
+        // record name -> struct mapping
+        uint name_i = node_name_i( nodes[ni] );
+        rtn_assert( name_i != uint(-1), "STRNAME should have had a string" );
+        rtn_assert( struct_i != uint(-1), "STRNAME found outside a structure" );
+        name_i_to_struct_i[name_i] = struct_i;
+    }
+
     if ( is_hier ) {
+        if ( !count_only && kind == NODE_KIND::BGNSTR ) {
+            // now inside a structure
+            rtn_assert( struct_i == uint(-1), "nested BGNSTR is not allowed" );
+            struct_i = ni;
+        }
+
         // recurse for other children
         for( ;; ) 
         {
             uint child_i;
-            if ( !gdsii_read_record( child_i, count_only ) ) return false;
+            if ( !gdsii_read_record( child_i, struct_i, count_only ) ) return false;
             NODE_KIND kind = nodes[child_i].kind;
             if ( kind == NODE_KIND::ENDEL || kind == NODE_KIND::ENDSTR || kind == NODE_KIND::ENDLIB ) break;
             if ( !count_only ) {

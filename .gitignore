@@ -3,3 +3,4 @@ count
 *crg*
 *.dSYM*
 *.DS_Store
+*.out
