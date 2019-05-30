@@ -1391,10 +1391,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
         {
             if ( !node_is_scalar( src_layout->nodes[src_child_i] ) ) {
                 uint dst_child_i = inst_layout_node( last_i, src_layout, x, y, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
-                if ( dst_child_i != uint(-1) ) {
-                    if ( last_i != uint(-1) ) nodes[last_i].sibling_i = dst_child_i; 
-                    last_i = dst_child_i;
-                }
+                if ( dst_child_i != uint(-1) ) last_i = dst_child_i;
             } else {
                 ldout << indent_str << "    " << "skipping " << str(src_layout->nodes[src_child_i].kind) << "\n";
             }
