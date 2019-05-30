@@ -1064,7 +1064,7 @@ inline uint Layout::node_layer( const Node& node ) const
 {
     if ( node.kind == NODE_KIND::LAYER ) {
         uint int_node_i = node.u.child_first_i;
-        assert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT );
+        assert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT && nodes[int_node_i].sibling_i == uint(-1) );
         return nodes[int_node_i].u.i;
     } else {
         assert( node_is_element( node ) );
@@ -1072,7 +1072,7 @@ inline uint Layout::node_layer( const Node& node ) const
         {
             if ( nodes[child_i].kind == NODE_KIND::LAYER ) {
                 uint int_node_i = nodes[child_i].u.child_first_i;
-                assert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT );
+                assert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT && nodes[int_node_i].sibling_i == uint(-1) );
                 return nodes[int_node_i].u.i;
             }
         }
@@ -1314,7 +1314,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
 
     if ( !src_layout->node_is_ref( src_node ) && 
           src_layout->node_is_element( src_node ) && 
-          src_layout->node_layer( src_node ) != src_layer_num) {
+          src_layout->node_layer( src_node ) != src_layer_num ) {
         do_copy = false;
         ldout << indent_str << "    src_layer=" << src_layout->node_layer( src_node ) << " desired_src_layer=" << src_layer_num << "\n";
 
@@ -1343,7 +1343,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
             uint dst_int_node_i = nodes[dst_i].u.child_first_i;
             assert( dst_int_node_i != uint(-1) ); 
             Node& dst_int_node = nodes[dst_int_node_i];
-            assert( dst_int_node.kind == NODE_KIND::INT && dst_int_node.u.i == src_layer_num );
+            assert( dst_int_node.kind == NODE_KIND::INT && dst_int_node.u.i == src_layer_num && dst_int_node.sibling_i == uint(-1) );
             dst_int_node.u.i = dst_layer_num;
             ldout << indent_str << "    layer change: " << src_layer_num << " => " << dst_layer_num << "\n";
 
@@ -1364,22 +1364,20 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
             {
                 uint dst_child_i = inst_layout_node( dst_prev_i, src_layout, x, y, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
                 if ( dst_child_i != uint(-1) ) {
-                    if ( dst_prev_i == uint(-1) ) {
-                        assert( nodes[dst_i].kind != NODE_KIND::BGNSTR || nodes[dst_child_i].kind != NODE_KIND::BGNSTR );
-                        if ( (src_kind == NODE_KIND::SREF || src_kind == NODE_KIND::AREF) && nodes[dst_child_i].kind == NODE_KIND::XY ) {
-                            //-----------------------------------------------------
-                            // Must offset all SREF/AREF XY coordinates by [x,y].
-                            //-----------------------------------------------------
-                            bool for_x = true;
-                            for( uint dst_gchild_i = nodes[dst_child_i].u.child_first_i; dst_gchild_i != uint(-1); dst_gchild_i = nodes[dst_gchild_i].sibling_i )
-                            {
-                                assert( nodes[dst_gchild_i].kind == NODE_KIND::INT );
-                                nodes[dst_gchild_i].u.i += int( ((for_x) ? x : y) / gdsii_units_user );  
-                            }
-                        }
-                        nodes[dst_i].u.child_first_i = dst_child_i; 
-                    }
+                    if ( dst_prev_i == uint(-1) ) nodes[dst_i].u.child_first_i = dst_child_i;
                     dst_prev_i = dst_child_i;
+                    if ( (src_kind == NODE_KIND::SREF || src_kind == NODE_KIND::AREF) && nodes[dst_child_i].kind == NODE_KIND::XY ) {
+                        //-----------------------------------------------------
+                        // Must offset all SREF/AREF XY coordinates by [x,y].
+                        //-----------------------------------------------------
+                        bool for_x = true;
+                        for( uint dst_gchild_i = nodes[dst_child_i].u.child_first_i; dst_gchild_i != uint(-1); dst_gchild_i = nodes[dst_gchild_i].sibling_i )
+                        {
+                            assert( nodes[dst_gchild_i].kind == NODE_KIND::INT );
+                            nodes[dst_gchild_i].u.i += int( ((for_x) ? x : y) / gdsii_units_user );  
+                            for_x = !for_x;
+                        }
+                    }
                 }
             }
         }
