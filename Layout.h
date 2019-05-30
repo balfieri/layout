@@ -1387,7 +1387,6 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
         //-----------------------------------------------------
         // Skip BGNLIB/HIER and process non-scalar children.
         //-----------------------------------------------------
-        last_i = uint(-1);
         for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
         {
             if ( !node_is_scalar( src_layout->nodes[src_child_i] ) ) {
