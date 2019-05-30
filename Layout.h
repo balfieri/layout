@@ -429,6 +429,8 @@ private:
     uint inst_layout_node( uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, 
                            uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
 
+    void node_timestamp( Node& node );                  // adds timestamp fields
+
     bool gdsii_read( std::string file_path, bool count_only ); // .gds
     bool gdsii_read_record( uint& node_i, uint curr_struct_i, bool count_only );
     bool gdsii_write( std::string file );
@@ -1435,6 +1437,53 @@ inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND 
     return dst_i;
 }
 
+void Layout::node_timestamp( Node& node )
+{
+    assert( node.kind == NODE_KIND::BGNLIB || node.kind == NODE_KIND::BGNSTR );
+    assert( node.u.child_first_i == uint(-1) );
+
+    time_t t;
+    time( &t );
+    struct tm * tm = gmtime( &t );
+
+    uint prev_i = uint(-1);
+    for( uint i = 0; i < 2; i++ ) 
+    {
+        uint ni = node_alloc( NODE_KIND::INT );
+        nodes[ni].u.i = tm->tm_year;
+        if ( i == 0 ) {
+            node.u.child_first_i = ni;
+        } else {
+            nodes[prev_i].sibling_i = ni;
+        }
+        prev_i = ni;
+
+        ni = node_alloc( NODE_KIND::INT );
+        nodes[ni].u.i = tm->tm_mon;
+        nodes[prev_i].sibling_i = ni;
+        prev_i = ni;
+
+        ni = node_alloc( NODE_KIND::INT );
+        nodes[ni].u.i = tm->tm_mday;
+        nodes[prev_i].sibling_i = ni;
+        prev_i = ni;
+
+        ni = node_alloc( NODE_KIND::INT );
+        nodes[ni].u.i = tm->tm_hour;
+        nodes[prev_i].sibling_i = ni;
+        prev_i = ni;
+
+        ni = node_alloc( NODE_KIND::INT );
+        nodes[ni].u.i = tm->tm_min;
+        nodes[prev_i].sibling_i = ni;
+        prev_i = ni;
+
+        ni = node_alloc( NODE_KIND::INT );
+        nodes[ni].u.i = tm->tm_sec;
+        nodes[prev_i].sibling_i = ni;
+    }
+}
+
 inline Layout::real Layout::width( void ) const
 {
     return 0;
@@ -1466,13 +1515,14 @@ uint Layout::start_library( std::string libname, real units_user, real units_met
     prev_i = ni;
 
     ni = node_alloc( Layout::NODE_KIND::BGNLIB );
+    node_timestamp( nodes[ni] );
     nodes[prev_i].sibling_i = ni;
-    prev_i = ni;
+    prev_i = node_last_scalar_i( nodes[ni] );
     
-    ni2 = node_alloc( Layout::NODE_KIND::LIBNAME );
-    nodes[ni].u.child_first_i = ni2;
-    nodes[ni2].u.s_i = str_get( libname );
-    prev_i = ni2;
+    ni = node_alloc( Layout::NODE_KIND::LIBNAME );
+    nodes[prev_i].sibling_i = ni;
+    nodes[ni].u.s_i = str_get( libname );
+    prev_i = ni;
 
     ni = node_alloc( Layout::NODE_KIND::UNITS );
     gdsii_units_user = units_user;
@@ -1687,12 +1737,14 @@ void Layout::finalize_top_struct( uint last_i, std::string top_name )
     //-----------------------------------------------------
     uint bgnstr_i = node_alloc( NODE_KIND::BGNSTR );
     nodes[last_i].sibling_i = bgnstr_i;
+    node_timestamp( nodes[bgnstr_i] );
+    uint prev_i = node_last_scalar_i( nodes[bgnstr_i] );
 
     uint strname_i = node_alloc( NODE_KIND::STRNAME );
-    nodes[bgnstr_i].u.child_first_i = strname_i;
+    nodes[prev_i].sibling_i = strname_i;
     nodes[strname_i].u.s_i = str_get( top_name );
+    prev_i = strname_i;
 
-    uint prev_i = strname_i;
     for( size_t i = 0; i < hdr->top_inst_cnt; i++ )
     {
         uint sref_i = node_alloc( NODE_KIND::SREF );
