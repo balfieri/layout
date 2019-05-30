@@ -343,6 +343,7 @@ public:
     // instancing
     uint inst_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, std::string name );
     uint inst_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name );
+    void finalize_top_struct( uint last_i, std::string top_name );
 
     // fill
     void fill_dielectrics( void );
@@ -393,6 +394,7 @@ private:
     // struct info
     std::map< uint, uint >                      name_i_to_struct_i;
     std::map< uint, std::map<uint, bool> * > *  struct_i_to_has_layer;
+    std::vector< std::string >                  top_structs;
 
     // state used during reading and and writing of AEDT files
     uint aedt_begin_str_i;              // these are to make it easier to compare
@@ -1045,7 +1047,6 @@ inline uint Layout::node_name_i( const Node& node ) const
     } else if ( node_is_hier( node ) ) {
         for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
         {
-            assert( child_i != 0 );
             uint name_i = node_name_i( nodes[child_i] );
             if ( name_i != uint(-1) ) return name_i;
         }
@@ -1406,6 +1407,15 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::stri
             uint struct_name_i = node_name_i( nodes[dst_i] );
             assert( struct_name_i != uint(-1) );
             name_i_to_struct_i[struct_name_i] = dst_i;
+
+            if ( node_name( src_node ) == src_struct_name ) {
+                //-----------------------------------------------------
+                // Add dst struct name to the list of top-level structures.
+                //-----------------------------------------------------
+                size_t len = top_structs.size();
+                top_structs.resize( len+1 );
+                top_structs[len] = std::string( &strings[struct_name_i] );
+            }
         }
     } else {
         //-----------------------------------------------------
@@ -1457,6 +1467,40 @@ void Layout::fill_material( uint material_i, real x, real y, real z, real w, rea
     // material at origin [x,y,z] and dimensions [w,l,h].
     // Simple.
     //-----------------------------------------------------
+}
+
+void Layout::finalize_top_struct( uint last_i, std::string top_name )
+{
+    //-----------------------------------------------------
+    // Create one final struct that instantiates all top_structs.
+    //-----------------------------------------------------
+    uint bgnstr_i = node_alloc( NODE_KIND::BGNSTR );
+    nodes[last_i].sibling_i = bgnstr_i;
+
+    uint strname_i = node_alloc( NODE_KIND::STRNAME );
+    nodes[bgnstr_i].u.child_first_i = strname_i;
+    nodes[strname_i].u.s_i = str_get( top_name );
+
+    size_t len = top_structs.size();
+    uint prev_i = strname_i;
+    for( size_t i = 0; i < len; i++ )
+    {
+        uint sref_i = node_alloc( NODE_KIND::SREF );
+        nodes[prev_i].sibling_i = sref_i;
+        prev_i = sref_i;
+
+        uint sname_i = node_alloc( NODE_KIND::SNAME );
+        nodes[sname_i].u.s_i = str_get( top_structs[i] );
+        nodes[sref_i].u.child_first_i = sname_i;
+
+        uint xy_i = node_alloc( NODE_KIND::XY );
+        uint x_i = node_alloc( NODE_KIND::INT );
+        nodes[xy_i].sibling_i = x_i;
+        nodes[x_i].u.i = 0;
+        uint y_i = node_alloc( NODE_KIND::INT );
+        nodes[x_i].sibling_i = y_i;
+        nodes[y_i].u.i = 0;
+    }
 }
 
 // returns array of T on a page boundary
