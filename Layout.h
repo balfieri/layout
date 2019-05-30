@@ -1491,8 +1491,10 @@ void Layout::finalize_top_struct( uint last_i, std::string top_name )
         nodes[sref_i].u.child_first_i = sname_i;
 
         uint xy_i = node_alloc( NODE_KIND::XY );
+        nodes[sname_i].sibling_i = xy_i;
+
         uint x_i = node_alloc( NODE_KIND::INT );
-        nodes[xy_i].sibling_i = x_i;
+        nodes[xy_i].u.child_first_i = x_i;
         nodes[x_i].u.i = 0;
         uint y_i = node_alloc( NODE_KIND::INT );
         nodes[x_i].sibling_i = y_i;
