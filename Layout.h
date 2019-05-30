@@ -1481,6 +1481,7 @@ void Layout::node_timestamp( Node& node )
         ni = node_alloc( NODE_KIND::INT );
         nodes[ni].u.i = tm->tm_sec;
         nodes[prev_i].sibling_i = ni;
+        prev_i = ni;
     }
 }
 
