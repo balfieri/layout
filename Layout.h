@@ -1291,23 +1291,20 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, std::string sr
         //-----------------------------------------------------
         // Find the top struct in the new layout.
         // It must exist.
+        // Translate all XY nodes only in this structure.
         //-----------------------------------------------------
-        std::string dst_top_struct_name = name + "_" + src_struct_name;
+        std::string dst_top_struct_name = inst_name + "_" + src_struct_name;
         uint dst_top_struct_name_i = str_get( dst_top_struct_name );
         assert( name_i_to_struct_i.find( dst_top_struct_name_i ) != name_i_to_struct_i.end() );
         uint dst_top_struct_i = name_i_to_struct_i[dst_top_struct_name_i];
         Node& dst_top_node = nodes[dst_top_struct_i];
         for( uint dst_child_i = dst_top_node.u.child_first_i; dst_child_i != uint(-1); dst_child_i = nodes[dst_child_i].sibling_i )
         {
-            assert( !node_is_element( nodes[dst_child_i] ) );
-            if ( nodes[dst_child_i].kind == NODE_KIND::SREF || nodes[dst_child_i].kind == NODE_KIND::AREF ) {
+            uint xy_i = node_xy_i( nodes[dst_child_i] );
+            if ( xy_i != uint(-1) ) {
                 //-----------------------------------------------------
-                // For each SREF/AREF, find its XY node.
-                // Must offset all XY coordinates by [x,y].
+                // Offset all XY coordinates by [x,y].
                 //-----------------------------------------------------
-                uint xy_i = node_xy_i( nodes[dst_child_i] );
-                assert( xy_i != uint(-1) );
-                
                 bool for_x = true;
                 for( uint dst_gchild_i = nodes[xy_i].u.child_first_i; dst_gchild_i != uint(-1); dst_gchild_i = nodes[dst_gchild_i].sibling_i )
                 {
@@ -1400,6 +1397,15 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::stri
                     dst_prev_i = dst_child_i;
                 }
             }
+        }
+
+        if ( src_kind == NODE_KIND::BGNSTR ) {
+            //-----------------------------------------------------
+            // Record struct by name.
+            //-----------------------------------------------------
+            uint struct_name_i = node_name_i( nodes[dst_i] );
+            assert( struct_name_i != uint(-1) );
+            name_i_to_struct_i[struct_name_i] = dst_i;
         }
     } else {
         //-----------------------------------------------------
