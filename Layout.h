@@ -435,7 +435,7 @@ private:
     void gdsii_write_record( uint node_i, std::string indent_str="" );
     void gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII_DATATYPE datatype, std::string indent_str );
     void gdsii_write_bytes( const uint8_t * bytes, uint byte_cnt );
-    void gdsii_flush( void );
+    void gdsii_flush( bool for_end_of_file=false );
     
     bool aedt_read( std::string file );                 // .aedt
     bool aedt_read_expr( uint& node_i );
@@ -845,8 +845,8 @@ static const ColorInfo color_info[] =
     { "chart reuse", 		0x7FFF00 },
     { "green yellow", 		0xADFF2F },
     { "dark green", 		0x006400 },
-    { "green", 			0x008000 },
-    { "g", 			0x008000 },
+    { "green", 			0x00FF00 },
+    { "g", 			0x00FF00 },
     { "forest green", 		0x228B22 },
     { "lime", 			0x00FF00 },
     { "lime green", 		0x32CD32 },
@@ -2066,7 +2066,7 @@ bool Layout::gdsii_write( std::string gdsii_path )
     ldout << "Writing " << gdsii_path << " root_i=" << hdr->root_i << "\n";
     if ( hdr->root_i != uint(-1) ) gdsii_write_record( hdr->root_i );
 
-    gdsii_flush();
+    gdsii_flush( true );
     fsync( gdsii_fd ); // flush
     close( gdsii_fd );
     cmd( "chmod +rw " + gdsii_path );
@@ -2258,9 +2258,19 @@ void Layout::gdsii_write_bytes( const uint8_t * bytes, uint byte_cnt )
     }
 }
 
-void Layout::gdsii_flush( void )
+void Layout::gdsii_flush( bool for_end_of_file )
 {
     if ( gdsii_buff_byte_cnt == 0 ) return;
+
+    if ( for_end_of_file ) {
+        // pad to multiple of 2048 bytes to keep some software happy
+        //
+        uint page_bytes_left = 2048 - (gdsii_buff_byte_cnt % 2048);
+        for( uint i = 0; i < page_bytes_left; i++ )
+        {
+            gdsii_buff[gdsii_buff_byte_cnt++] = 0;
+        }
+    }
 
     if ( ::write( gdsii_fd, gdsii_buff, gdsii_buff_byte_cnt ) <= 0 ) { 
         close( gdsii_fd ); 
