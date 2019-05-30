@@ -2592,23 +2592,25 @@ bool Layout::gds3d_write_layer_info( std::string file )
 {
     std::ofstream out( file, std::ofstream::out );
 
+    real height = 0.0;
     for( uint i = 0; i < hdr->layer_cnt; i++ )
     {
         const Layer& layer = layers[i];
 
         out << "LayerStart: " << &strings[layer.name_i] << "\n";
         out << "Layer:      " << i << "\n";
-        int datatype = layer.gdsii_datatype;
-        if ( datatype != uint(-1) ) out << "Datatype:   " << datatype << "\n";
-        out << "Height:     " << layer.thickness << "\n";
+        if ( layer.gdsii_datatype != uint(-1) ) out << "Datatype:   " << layer.gdsii_datatype << "\n";
+        out << "Height:     " << height << "\n";
+        out << "Thickness:  " << layer.thickness << "\n";
         out << "Red:        " << (real((layer.material_rgba >> 24) & 0xff) / 255.0) << "\n";
         out << "Green:      " << (real((layer.material_rgba >> 16) & 0xff) / 255.0) << "\n";
         out << "Blue:       " << (real((layer.material_rgba >>  8) & 0xff) / 255.0) << "\n";
-        out << "Filter:     " << (1.0 - (real((layer.material_rgba >>  0) & 0xff) / 255.0)) << "\n";
-        out << "Metal:      " << 0 << "\n";
+        if ( false ) out << "Filter:     " << (1.0 - (real((layer.material_rgba >>  0) & 0xff) / 255.0)) << "\n";
         if ( i <= 9 ) out << "Shortkey:   " << i << "\n";
         out << "Show:       " << 1 << "\n";
         out << "LayerEnd\n\n";
+
+        height += layer.thickness;
     }
 
     out.close();
