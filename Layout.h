@@ -1089,7 +1089,9 @@ bool Layout::node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache,
         //------------------------------------------------------------
         // Finally hit a LAYER.
         //------------------------------------------------------------
-        return node_layer( node ) == layer_num;
+        uint li = node_layer( node );
+        ldout << indent_str << "node_has_layer: LAYER=" << li << " and want layer_num=" << layer_num << "\n";
+        return li == layer_num;
 
     } else if ( node.kind == NODE_KIND::SREF || node.kind == NODE_KIND::AREF ) {
         //------------------------------------------------------------
@@ -1135,6 +1137,8 @@ bool Layout::node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache,
             layer_exists[layer_num] = has_layer;
             ldout << indent_str << "node_has_layer: struct " << node_name( nodes[ni] ) << " layer_exists[" << layer_num << "]=" << has_layer << "\n";
         }
+
+        return has_layer;
     }
     return false;
 }
@@ -1302,9 +1306,10 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
         // If struct or ref does not have desired layer, then bail.
         //-----------------------------------------------------
         if ( !src_layout->node_has_layer( src_i, src_layer_num, cache, indent_str ) ) {
-            ldout << indent_str << str(src_node.kind) << " does not use src_layer=" << std::to_string(src_layer_num) << "\n";
+            ldout << indent_str << str(src_node.kind) << " does NOT use src_layer=" << std::to_string(src_layer_num) << "\n";
             return uint(-1);
         }
+        ldout << indent_str << str(src_node.kind) << " uses src_layer=" << std::to_string(src_layer_num) << "\n";
     }
 
     if ( !src_layout->node_is_ref( src_node ) && 
@@ -1388,7 +1393,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
             if ( !node_is_scalar( src_layout->nodes[src_child_i] ) ) {
                 uint dst_child_i = inst_layout_node( last_i, src_layout, x, y, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
                 if ( dst_child_i != uint(-1) ) {
-                    nodes[last_i].sibling_i = dst_child_i; 
+                    if ( last_i != uint(-1) ) nodes[last_i].sibling_i = dst_child_i; 
                     last_i = dst_child_i;
                 }
             } else {
