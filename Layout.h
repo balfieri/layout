@@ -301,7 +301,6 @@ public:
     uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
     std::string node_name( const Node& node ) const;            // find name for node
     uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
-    bool        node_has_layer( const Node& node, uint layer, std::map< uint, std::map<uint, bool>* > * cache=nullptr ) const; 
     uint        node_xy_i( const Node& node ) const;            // find index of XY node within node
 
     enum class COPY_KIND
@@ -406,8 +405,10 @@ private:
     bool layout_read( std::string file_path );          // .layout
     bool layout_write( std::string file_path );         
 
+    using has_layer_cache_t = std::map< uint, std::map<uint, bool>* >;
+    bool node_has_layer( const Node& node, uint layer_num, has_layer_cache_t * cache ) const;
     uint inst_layout_node( uint last_i, const Layout * src_layout, real x, real y, uint src_i, uint src_layer_num, 
-                           uint dst_layer_num, std::string name, std::string indent_str="" );
+                           uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
 
     bool gdsii_read( std::string file_path, bool count_only ); // .gds
     bool gdsii_read_record( uint& node_i, uint curr_struct_i, bool count_only );
@@ -1073,7 +1074,7 @@ inline uint Layout::node_layer( const Node& node ) const
     return uint(-1);
 }
 
-bool Layout::node_has_layer( const Node& node, uint layer_num, std::map< uint, std::map<uint, bool>* > * cache ) const
+bool Layout::node_has_layer( const Node& node, uint layer_num, has_layer_cache_t * cache ) const
 {
     if ( node.kind == NODE_KIND::LAYER ) {
         //------------------------------------------------------------
@@ -1259,6 +1260,11 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, real x, real y
 uint Layout::inst_layout( uint last_i, const Layout * src_layout, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name )
 {
     //-----------------------------------------------------
+    // Initialize our cache.
+    //-----------------------------------------------------
+    auto cache = new has_layer_cache_t;
+
+    //-----------------------------------------------------
     // Do the instancing separately for each dst_layer.
     // Use a unique name for each.
     //-----------------------------------------------------
@@ -1271,7 +1277,7 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, real x, real y
         std::string inst_name = std::to_string( i ) + "_" + name;
         uint src_layer_num = layers[i].gdsii_num;
         ldout << "inst_layout: dst_layer=" << i << " src_layer=" << layers[i].gdsii_num << " inst_name=" << inst_name << "\n";
-        uint inst_last_i = inst_layout_node( last_i, src_layout, x, y, src_layout->hdr->root_i, src_layer_num, i, inst_name );
+        uint inst_last_i = inst_layout_node( last_i, src_layout, x, y, src_layout->hdr->root_i, src_layer_num, i, cache, inst_name );
         if ( inst_last_i != uint(-1) ) {
             last_i = inst_last_i;
         }
@@ -1280,14 +1286,25 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, real x, real y
 }
 
 uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, real y, uint src_i, uint src_layer_num, uint dst_layer_num, 
-                               std::string name, std::string indent_str )
+                               has_layer_cache_t * cache, std::string name, std::string indent_str )
 {
     //-----------------------------------------------------
     // See if node should be copied.
+    // We do this proactively.
     //-----------------------------------------------------
     bool do_copy = true;
     const Node& src_node = src_layout->nodes[src_i];
     NODE_KIND src_kind = src_node.kind;
+    if ( (src_kind == NODE_KIND::BGNSTR || src_kind == NODE_KIND::SREF || src_kind == NODE_KIND::AREF) ) {
+        //-----------------------------------------------------
+        // If struct or ref does not have desired layer, then bail.
+        //-----------------------------------------------------
+        if ( !node_has_layer( src_node, src_layer_num, cache ) ) {
+            ldout << indent_str << str(src_node.kind) << " does not use src_layer=" << std::to_string(src_layer_num) << "\n";
+            return uint(-1);
+        }
+    }
+
     if ( !src_layout->node_is_ref( src_node ) && 
           src_layout->node_is_element( src_node ) && 
           src_layout->node_layer( src_node ) != src_layer_num) {
@@ -1338,7 +1355,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
             uint dst_prev_i = node_last_scalar_i( nodes[dst_i] );
             for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
             {
-                uint dst_child_i = inst_layout_node( dst_prev_i, src_layout, x, y, src_child_i, src_layer_num, dst_layer_num, name, indent_str + "    " );
+                uint dst_child_i = inst_layout_node( dst_prev_i, src_layout, x, y, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
                 if ( dst_child_i != uint(-1) ) {
                     if ( dst_prev_i == uint(-1) ) {
                         assert( nodes[dst_i].kind != NODE_KIND::BGNSTR || nodes[dst_child_i].kind != NODE_KIND::BGNSTR );
@@ -1363,10 +1380,11 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
         //-----------------------------------------------------
         // Skip BGNLIB/HIER and process non-scalar children.
         //-----------------------------------------------------
+        last_i = uint(-1);
         for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
         {
             if ( !node_is_scalar( src_layout->nodes[src_child_i] ) ) {
-                uint dst_child_i = inst_layout_node( last_i, src_layout, x, y, src_child_i, src_layer_num, dst_layer_num, name, indent_str + "    " );
+                uint dst_child_i = inst_layout_node( last_i, src_layout, x, y, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
                 if ( dst_child_i != uint(-1) ) {
                     nodes[last_i].sibling_i = dst_child_i; 
                     last_i = dst_child_i;
@@ -1377,7 +1395,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
         }
     }
 
-    ldout << indent_str << "    returning last_i=" << last_i << "\n";
+    ldout << indent_str << "    " << str(src_kind) << " returning last_i=" << last_i << "\n";
     return last_i;
 }
 
