@@ -1292,6 +1292,7 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, std::string sr
         //-----------------------------------------------------
         // Find the top struct in the new layout.
         // It must exist.
+        // Add top struct to the list of top-level structures.
         // Translate all XY nodes only in this structure.
         //-----------------------------------------------------
         std::string dst_top_struct_name = inst_name + "_" + src_struct_name;
@@ -1299,6 +1300,11 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, std::string sr
         assert( name_i_to_struct_i.find( dst_top_struct_name_i ) != name_i_to_struct_i.end() );
         uint dst_top_struct_i = name_i_to_struct_i[dst_top_struct_name_i];
         Node& dst_top_node = nodes[dst_top_struct_i];
+
+        size_t len = top_structs.size();
+        top_structs.resize( len+1 );
+        top_structs[len] = dst_top_struct_i;
+        
         for( uint dst_child_i = dst_top_node.u.child_first_i; dst_child_i != uint(-1); dst_child_i = nodes[dst_child_i].sibling_i )
         {
             uint xy_i = node_xy_i( nodes[dst_child_i] );
@@ -1407,15 +1413,6 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::stri
             uint struct_name_i = node_name_i( nodes[dst_i] );
             assert( struct_name_i != uint(-1) );
             name_i_to_struct_i[struct_name_i] = dst_i;
-
-            if ( node_name( src_node ) == src_struct_name ) {
-                //-----------------------------------------------------
-                // Add dst struct name to the list of top-level structures.
-                //-----------------------------------------------------
-                size_t len = top_structs.size();
-                top_structs.resize( len+1 );
-                top_structs[len] = dst_i;
-            }
         }
     } else {
         //-----------------------------------------------------
