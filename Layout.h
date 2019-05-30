@@ -2611,7 +2611,7 @@ bool Layout::gds3d_write_layer_info( std::string file )
         out << "Show:       " << 1 << "\n";
         out << "LayerEnd\n\n";
 
-        height += thickness;
+        if ( i != (hdr->layer_cnt-1) && !layers[i+1].same_zoffset_as_prev ) height += thickness;
     }
 
     out.close();
