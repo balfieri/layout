@@ -394,7 +394,7 @@ private:
     // struct info
     std::map< uint, uint >                      name_i_to_struct_i;
     std::map< uint, std::map<uint, bool> * > *  struct_i_to_has_layer;
-    std::vector< std::string >                  top_structs;
+    std::vector< uint >                         top_structs;
 
     // state used during reading and and writing of AEDT files
     uint aedt_begin_str_i;              // these are to make it easier to compare
@@ -1414,7 +1414,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::stri
                 //-----------------------------------------------------
                 size_t len = top_structs.size();
                 top_structs.resize( len+1 );
-                top_structs[len] = std::string( &strings[struct_name_i] );
+                top_structs[len] = dst_i;
             }
         }
     } else {
@@ -1490,7 +1490,7 @@ void Layout::finalize_top_struct( uint last_i, std::string top_name )
         prev_i = sref_i;
 
         uint sname_i = node_alloc( NODE_KIND::SNAME );
-        nodes[sname_i].u.s_i = str_get( top_structs[i] );
+        nodes[sname_i].u.s_i = node_name_i( nodes[top_structs[i]] );
         nodes[sref_i].u.child_first_i = sname_i;
 
         uint xy_i = node_alloc( NODE_KIND::XY );
