@@ -1330,9 +1330,9 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
 
     if ( src_kind != NODE_KIND::BGNLIB && src_kind != NODE_KIND::HIER ) {
         //-----------------------------------------------------
-        // Copy this node and recurse.
+        // Copy this node and its scalar children.
         //-----------------------------------------------------
-        uint dst_i = node_copy( src_layout, src_i, COPY_KIND::SCALAR_CHILDREN );    // don't copy children yet
+        uint dst_i = node_copy( src_layout, src_i, COPY_KIND::SCALAR_CHILDREN );    // don't copy non-children yet
         ldout << indent_str << "    dst_i=" << dst_i << " last_i=" << last_i << "\n";
         if ( last_i != uint(-1) ) nodes[last_i].sibling_i = dst_i;
         last_i = dst_i;
@@ -1359,8 +1359,10 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
             //-----------------------------------------------------
             // Recursively copy children.
             //-----------------------------------------------------
+            uint src_prev_i = src_layout->node_last_scalar_i( src_node );
             uint dst_prev_i = node_last_scalar_i( nodes[dst_i] );
-            for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
+            uint src_child_i = (src_prev_i == uint(-1)) ? src_node.u.child_first_i : src_layout->nodes[src_prev_i].sibling_i; 
+            for( ; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
             {
                 uint dst_child_i = inst_layout_node( dst_prev_i, src_layout, x, y, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
                 if ( dst_child_i != uint(-1) ) {
