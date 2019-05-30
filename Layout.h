@@ -128,6 +128,7 @@ public:
         uint        material_cnt;           // in materials array
         uint        layer_cnt;              // in layers array
         uint        node_cnt;               // in nodes array  
+        uint        top_inst_cnt;           // in top_insts array
         uint        root_i;                 // index of root node in nodes array
     };
 
@@ -341,6 +342,14 @@ public:
     Layer *             layers;
     Node *              nodes;
 
+    struct TopInstInfo
+    {
+        uint            struct_i;
+        real            x;
+        real            y;
+    };
+    TopInstInfo *       top_insts;
+
     // current dimensions
     real width( void ) const;
     real length( void ) const;
@@ -400,22 +409,15 @@ private:
     real        gdsii_units_user;
     real        gdsii_units_meters;
 
-    // struct info
-    std::map< uint, uint >                      name_i_to_struct_i;
-    std::map< uint, std::map<uint, bool> * > *  struct_i_to_has_layer;
-    struct TopInstInfo
-    {
-        uint            struct_i;
-        real            x;
-        real            y;
-    };
-    std::vector< TopInstInfo >                  top_insts;
-
     // state used during reading and and writing of AEDT files
     uint aedt_begin_str_i;              // these are to make it easier to compare
     uint aedt_end_str_i;
     uint true_str_i;
     uint false_str_i;
+
+    // struct info
+    std::map< uint, uint >                      name_i_to_struct_i;
+    std::map< uint, std::map<uint, bool> * > *  struct_i_to_has_layer;
 
     void init( bool alloc_arrays );
 
@@ -678,6 +680,7 @@ void Layout::init( bool alloc_arrays )
         max->char_cnt = max->node_cnt * 128;
         max->material_cnt = 16;
         max->layer_cnt = 8;
+        max->top_inst_cnt = 8;
 
         //------------------------------------------------------------
         // Allocate initial arrays
@@ -686,6 +689,7 @@ void Layout::init( bool alloc_arrays )
         materials  = aligned_alloc<Material>( max->material_cnt );
         layers     = aligned_alloc<Layer>( max->layer_cnt );
         nodes      = aligned_alloc<Node>( max->node_cnt );
+        top_insts  = aligned_alloc<TopInstInfo>( max->node_cnt );
 
         materials_init();
     }
@@ -735,8 +739,11 @@ Layout::~Layout()
         delete mapped_region;
         mapped_region = nullptr;
     } else {
-        delete nodes;
         delete strings;
+        delete materials;
+        delete layers;
+        delete nodes;
+        delete top_insts;
     }
 }
 
@@ -773,11 +780,10 @@ bool Layout::write_layer_info( std::string file_path )
     std::string dir_name;
     std::string base_name;
     dissect_path( file_path, dir_name, base_name, ext_name );
-    if ( ext_name == std::string( ".aedt" ) ) {
+    if ( ext_name == std::string( ".gds3d" ) ) {
         return gds3d_write_layer_info( file_path );
     } else {
-        error_msg = "unknown file ext_name: " + ext_name;
-        return false;
+        rtn_assert( false, "unknown file ext_name: " + ext_name );
     }
 }
 
@@ -1526,10 +1532,9 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, std::string sr
         uint dst_top_struct_i = name_i_to_struct_i[dst_top_struct_name_i];
         Node& dst_top_node = nodes[dst_top_struct_i];
 
-        size_t len = top_insts.size();
-        top_insts.resize( len+1 );
-        TopInstInfo info{ dst_top_struct_i, x, y };
-        top_insts[len] = info;
+        perhaps_realloc( top_insts, hdr->top_inst_cnt, max->top_inst_cnt, 1 );
+        uint ii = hdr->top_inst_cnt++;
+        top_insts[ii] = TopInstInfo{ dst_top_struct_i, x, y };
     }
     return last_i;
 }
@@ -1687,9 +1692,8 @@ void Layout::finalize_top_struct( uint last_i, std::string top_name )
     nodes[bgnstr_i].u.child_first_i = strname_i;
     nodes[strname_i].u.s_i = str_get( top_name );
 
-    size_t len = top_insts.size();
     uint prev_i = strname_i;
-    for( size_t i = 0; i < len; i++ )
+    for( size_t i = 0; i < hdr->top_inst_cnt; i++ )
     {
         uint sref_i = node_alloc( NODE_KIND::SREF );
         nodes[prev_i].sibling_i = sref_i;
@@ -2406,7 +2410,7 @@ bool Layout::aedt_write( std::string file )
     std::ofstream out( file, std::ofstream::out );
     aedt_write_expr( out, hdr->root_i, "\n" );
     out.close();
-    return false;
+    return true;
 }
 
 void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_str )
@@ -2586,6 +2590,27 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
 
 bool Layout::gds3d_write_layer_info( std::string file )
 {
+    std::ofstream out( file, std::ofstream::out );
+
+    for( uint i = 0; i < hdr->layer_cnt; i++ )
+    {
+        const Layer& layer = layers[i];
+
+        out << "LayerStart: " << &strings[layer.name_i] << "\n";
+        out << "Layer:      " << i << "\n";
+        if ( layer.gdsii_datatype != uint(-1) ) out << "Datatype:   " << layer.gdsii_datatype << "\n";
+        out << "Height:     " << layer.thickness << "\n";
+        out << "Red:        " << (real((layer.material_rgba >> 24) & 0xff) / 255.0) << "\n";
+        out << "Green:      " << (real((layer.material_rgba >> 16) & 0xff) / 255.0) << "\n";
+        out << "Blue:       " << (real((layer.material_rgba >>  8) & 0xff) / 255.0) << "\n";
+        out << "#Filter:    " << (real((layer.material_rgba >>  0) & 0xff) / 255.0) << "\n";
+        out << "Metal:      " << 0 << "\n";
+        if ( i <= 9 ) out << "Shortkey:   " << i << "\n";
+        out << "Show:       " << 1 << "\n";
+        out << "LayerEnd\n\n";
+    }
+
+    out.close();
     return true;
 }
 
