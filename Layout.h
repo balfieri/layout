@@ -406,7 +406,7 @@ private:
     bool layout_write( std::string file_path );         
 
     using has_layer_cache_t = std::map< uint, std::map<uint, bool>* >;
-    bool node_has_layer( const Node& node, uint layer_num, has_layer_cache_t * cache ) const;
+    bool node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache, std::string indent_str ) const;
     uint inst_layout_node( uint last_i, const Layout * src_layout, real x, real y, uint src_i, uint src_layer_num, 
                            uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
 
@@ -1062,20 +1062,29 @@ inline std::string Layout::node_name( const Node& node ) const
 
 inline uint Layout::node_layer( const Node& node ) const
 {
-    assert( node_is_element( node ) );
-    for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
-    {
-        if ( nodes[child_i].kind == NODE_KIND::LAYER ) {
-            uint int_node_i = nodes[child_i].u.child_first_i;
-            assert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT );
-            return nodes[int_node_i].u.i;
+    if ( node.kind == NODE_KIND::LAYER ) {
+        uint int_node_i = node.u.child_first_i;
+        assert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT );
+        return nodes[int_node_i].u.i;
+    } else {
+        assert( node_is_element( node ) );
+        for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
+        {
+            if ( nodes[child_i].kind == NODE_KIND::LAYER ) {
+                uint int_node_i = nodes[child_i].u.child_first_i;
+                assert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT );
+                return nodes[int_node_i].u.i;
+            }
         }
+        assert( false );
+        return uint(-1);
     }
-    return uint(-1);
 }
 
-bool Layout::node_has_layer( const Node& node, uint layer_num, has_layer_cache_t * cache ) const
+bool Layout::node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache, std::string indent_str ) const
 {
+    assert( ni < hdr->node_cnt );
+    const Node& node = nodes[ni];
     if ( node.kind == NODE_KIND::LAYER ) {
         //------------------------------------------------------------
         // Finally hit a LAYER.
@@ -1092,13 +1101,12 @@ bool Layout::node_has_layer( const Node& node, uint layer_num, has_layer_cache_t
         auto sit = name_i_to_struct_i.find( name_i );
         assert( sit != name_i_to_struct_i.end() );
         uint struct_i = sit->second;
-        return node_has_layer( nodes[struct_i], layer_num, cache );
+        return node_has_layer( struct_i, layer_num, cache, indent_str );
 
     } else if ( node_is_hier( node ) ) {
         //------------------------------------------------------------
         // If this is a struct, then we may have already computed the answer.
         //------------------------------------------------------------
-        uint ni = &node - nodes;
         if ( node.kind == NODE_KIND::BGNSTR ) {
             auto it = cache->find( ni );
             if ( it == cache->end() ) {
@@ -1114,16 +1122,9 @@ bool Layout::node_has_layer( const Node& node, uint layer_num, has_layer_cache_t
         // Check children.
         //------------------------------------------------------------
         bool has_layer = false;
-        for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
+        for( uint child_i = node.u.child_first_i; !has_layer && child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
         {
-            if ( nodes[child_i].kind == NODE_KIND::LAYER ) {
-                uint int_node_i = nodes[child_i].u.child_first_i;
-                assert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT );
-                if ( nodes[int_node_i].u.i == layer_num ) {
-                    has_layer = true;
-                    break;
-                }
-            }
+            has_layer |= node_has_layer( child_i, layer_num, cache, indent_str );
         }
 
         if ( node.kind == NODE_KIND::BGNSTR ) {
@@ -1132,6 +1133,7 @@ bool Layout::node_has_layer( const Node& node, uint layer_num, has_layer_cache_t
             //------------------------------------------------------------
             std::map<uint, bool>& layer_exists = *(*cache)[ni];
             layer_exists[layer_num] = has_layer;
+            ldout << indent_str << "node_has_layer: struct " << node_name( nodes[ni] ) << " layer_exists[" << layer_num << "]=" << has_layer << "\n";
         }
     }
     return false;
@@ -1299,7 +1301,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, real x, r
         //-----------------------------------------------------
         // If struct or ref does not have desired layer, then bail.
         //-----------------------------------------------------
-        if ( !node_has_layer( src_node, src_layer_num, cache ) ) {
+        if ( !src_layout->node_has_layer( src_i, src_layer_num, cache, indent_str ) ) {
             ldout << indent_str << str(src_node.kind) << " does not use src_layer=" << std::to_string(src_layer_num) << "\n";
             return uint(-1);
         }
