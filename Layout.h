@@ -301,7 +301,7 @@ public:
     uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
     std::string node_name( const Node& node ) const;            // find name for node
     uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
-    bool        node_has_layer( const Node& node, uint layer ); // return true node or any descendent uses the given layer 
+    bool        node_has_layer( const Node& node, uint layer, std::map< uint, std::map<uint, bool>* > * cache=nullptr ) const; 
     uint        node_xy_i( const Node& node ) const;            // find index of XY node within node
 
     enum class COPY_KIND
@@ -393,7 +393,7 @@ private:
 
     // struct info
     std::map< uint, uint >                      name_i_to_struct_i;
-    std::map< uint, std::map<uint, bool> * >    struct_i_to_has_layer;
+    std::map< uint, std::map<uint, bool> * > *  struct_i_to_has_layer;
 
     // state used during reading and and writing of AEDT files
     uint aedt_begin_str_i;              // these are to make it easier to compare
@@ -1073,7 +1073,7 @@ inline uint Layout::node_layer( const Node& node ) const
     return uint(-1);
 }
 
-bool Layout::node_has_layer( const Node& node, uint layer_num ) 
+bool Layout::node_has_layer( const Node& node, uint layer_num, std::map< uint, std::map<uint, bool>* > * cache ) const
 {
     if ( node.kind == NODE_KIND::LAYER ) {
         //------------------------------------------------------------
@@ -1089,9 +1089,9 @@ bool Layout::node_has_layer( const Node& node, uint layer_num )
         uint name_i = node_name_i( node );
         if ( name_i == uint(-1) ) return false;
         auto sit = name_i_to_struct_i.find( name_i );
-        rtn_assert( sit != name_i_to_struct_i.end(), "could not find struct_i for name=" + std::string(&strings[name_i]) );
+        assert( sit != name_i_to_struct_i.end() );
         uint struct_i = sit->second;
-        return node_has_layer( nodes[struct_i], layer_num );
+        return node_has_layer( nodes[struct_i], layer_num, cache );
 
     } else if ( node_is_hier( node ) ) {
         //------------------------------------------------------------
@@ -1099,10 +1099,10 @@ bool Layout::node_has_layer( const Node& node, uint layer_num )
         //------------------------------------------------------------
         uint ni = &node - nodes;
         if ( node.kind == NODE_KIND::BGNSTR ) {
-            auto it = struct_i_to_has_layer.find( ni );
-            if ( it == struct_i_to_has_layer.end() ) {
-                struct_i_to_has_layer[ni] = new std::map<uint, bool>;
-                it = struct_i_to_has_layer.find( ni );
+            auto it = cache->find( ni );
+            if ( it == cache->end() ) {
+                (*cache)[ni] = new std::map<uint, bool>;
+                it = cache->find( ni );
             }
             std::map<uint, bool>& layer_exists = *it->second;
             auto eit = layer_exists.find( layer_num );
@@ -1129,7 +1129,7 @@ bool Layout::node_has_layer( const Node& node, uint layer_num )
             //------------------------------------------------------------
             // Save the answer for this struct.
             //------------------------------------------------------------
-            std::map<uint, bool>& layer_exists = *struct_i_to_has_layer[ni];
+            std::map<uint, bool>& layer_exists = *(*cache)[ni];
             layer_exists[layer_num] = has_layer;
         }
     }
