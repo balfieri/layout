@@ -394,7 +394,13 @@ private:
     // struct info
     std::map< uint, uint >                      name_i_to_struct_i;
     std::map< uint, std::map<uint, bool> * > *  struct_i_to_has_layer;
-    std::vector< uint >                         top_structs;
+    struct TopInstInfo
+    {
+        uint            struct_i;
+        real            x;
+        real            y;
+    };
+    std::vector< TopInstInfo >                  top_insts;
 
     // state used during reading and and writing of AEDT files
     uint aedt_begin_str_i;              // these are to make it easier to compare
@@ -409,7 +415,7 @@ private:
 
     using has_layer_cache_t = std::map< uint, std::map<uint, bool>* >;
     bool node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache, std::string indent_str ) const;
-    uint inst_layout_node( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, uint src_i, uint src_layer_num, 
+    uint inst_layout_node( uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, 
                            uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
 
     bool gdsii_read( std::string file_path, bool count_only ); // .gds
@@ -1284,7 +1290,7 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, std::string sr
         std::string inst_name = std::to_string( i ) + "_" + name;
         uint src_layer_num = layers[i].gdsii_num;
         ldout << "inst_layout: dst_layer=" << i << " src_layer=" << layers[i].gdsii_num << " x_off=" << x << " y_off=" << y << " inst_name=" << inst_name << "\n";
-        uint inst_last_i = inst_layout_node( last_i, src_layout, src_struct_name, x, y, src_layout->hdr->root_i, src_layer_num, i, cache, inst_name );
+        uint inst_last_i = inst_layout_node( last_i, src_layout, src_struct_name, src_layout->hdr->root_i, src_layer_num, i, cache, inst_name );
         if ( inst_last_i != uint(-1) ) {
             last_i = inst_last_i;
         }
@@ -1301,31 +1307,15 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, std::string sr
         uint dst_top_struct_i = name_i_to_struct_i[dst_top_struct_name_i];
         Node& dst_top_node = nodes[dst_top_struct_i];
 
-        size_t len = top_structs.size();
-        top_structs.resize( len+1 );
-        top_structs[len] = dst_top_struct_i;
-        
-        for( uint dst_child_i = dst_top_node.u.child_first_i; dst_child_i != uint(-1); dst_child_i = nodes[dst_child_i].sibling_i )
-        {
-            uint xy_i = node_xy_i( nodes[dst_child_i] );
-            if ( xy_i != uint(-1) ) {
-                //-----------------------------------------------------
-                // Offset all XY coordinates by [x,y].
-                //-----------------------------------------------------
-                bool for_x = true;
-                for( uint dst_gchild_i = nodes[xy_i].u.child_first_i; dst_gchild_i != uint(-1); dst_gchild_i = nodes[dst_gchild_i].sibling_i )
-                {
-                    assert( nodes[dst_gchild_i].kind == NODE_KIND::INT );
-                    nodes[dst_gchild_i].u.i += int( ((for_x) ? x : y) / gdsii_units_user );  
-                    for_x = !for_x;
-                }
-            }
-        }
+        size_t len = top_insts.size();
+        top_insts.resize( len+1 );
+        TopInstInfo info{ dst_top_struct_i, x, y };
+        top_insts[len] = info;
     }
     return last_i;
 }
 
-uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, uint src_i, uint src_layer_num, uint dst_layer_num, 
+uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, uint dst_layer_num, 
                                has_layer_cache_t * cache, std::string name, std::string indent_str )
 {
     //-----------------------------------------------------
@@ -1398,7 +1388,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::stri
             uint src_child_i = (src_prev_i == uint(-1)) ? src_node.u.child_first_i : src_layout->nodes[src_prev_i].sibling_i; 
             for( ; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
             {
-                uint dst_child_i = inst_layout_node( dst_prev_i, src_layout, src_struct_name, x, y, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
+                uint dst_child_i = inst_layout_node( dst_prev_i, src_layout, src_struct_name, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
                 if ( dst_child_i != uint(-1) ) {
                     if ( dst_prev_i == uint(-1) ) nodes[dst_i].u.child_first_i = dst_child_i;
                     dst_prev_i = dst_child_i;
@@ -1421,7 +1411,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::stri
         for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
         {
             if ( !node_is_scalar( src_layout->nodes[src_child_i] ) ) {
-                uint dst_child_i = inst_layout_node( last_i, src_layout, src_struct_name, x, y, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
+                uint dst_child_i = inst_layout_node( last_i, src_layout, src_struct_name, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
                 if ( dst_child_i != uint(-1) ) last_i = dst_child_i;
             } else {
                 ldout << indent_str << "    " << "skipping " << str(src_layout->nodes[src_child_i].kind) << "\n";
@@ -1469,7 +1459,7 @@ void Layout::fill_material( uint material_i, real x, real y, real z, real w, rea
 void Layout::finalize_top_struct( uint last_i, std::string top_name )
 {
     //-----------------------------------------------------
-    // Create one final struct that instantiates all top_structs.
+    // Create one final struct that instantiates all top_insts.
     //-----------------------------------------------------
     uint bgnstr_i = node_alloc( NODE_KIND::BGNSTR );
     nodes[last_i].sibling_i = bgnstr_i;
@@ -1478,7 +1468,7 @@ void Layout::finalize_top_struct( uint last_i, std::string top_name )
     nodes[bgnstr_i].u.child_first_i = strname_i;
     nodes[strname_i].u.s_i = str_get( top_name );
 
-    size_t len = top_structs.size();
+    size_t len = top_insts.size();
     uint prev_i = strname_i;
     for( size_t i = 0; i < len; i++ )
     {
@@ -1486,8 +1476,10 @@ void Layout::finalize_top_struct( uint last_i, std::string top_name )
         nodes[prev_i].sibling_i = sref_i;
         prev_i = sref_i;
 
+        const TopInstInfo& info = top_insts[i];
+
         uint sname_i = node_alloc( NODE_KIND::SNAME );
-        nodes[sname_i].u.s_i = node_name_i( nodes[top_structs[i]] );
+        nodes[sname_i].u.s_i = node_name_i( nodes[info.struct_i] );
         nodes[sref_i].u.child_first_i = sname_i;
 
         uint xy_i = node_alloc( NODE_KIND::XY );
@@ -1495,10 +1487,10 @@ void Layout::finalize_top_struct( uint last_i, std::string top_name )
 
         uint x_i = node_alloc( NODE_KIND::INT );
         nodes[xy_i].u.child_first_i = x_i;
-        nodes[x_i].u.i = 0;
+        nodes[x_i].u.i = int( info.x / gdsii_units_user );
         uint y_i = node_alloc( NODE_KIND::INT );
         nodes[x_i].sibling_i = y_i;
-        nodes[y_i].u.i = 0;
+        nodes[y_i].u.i = int( info.y / gdsii_units_user );
     }
 }
 
