@@ -680,9 +680,9 @@ void Layout::init( bool alloc_arrays )
         max = aligned_alloc<Header>( 1 );
         max->node_cnt =  1024;
         max->char_cnt = max->node_cnt * 128;
-        max->material_cnt = 16;
-        max->layer_cnt = 8;
-        max->top_inst_cnt = 8;
+        max->material_cnt = 1024;
+        max->layer_cnt = 1024;
+        max->top_inst_cnt = 1024;
 
         //------------------------------------------------------------
         // Allocate initial arrays
@@ -691,7 +691,7 @@ void Layout::init( bool alloc_arrays )
         materials  = aligned_alloc<Material>( max->material_cnt );
         layers     = aligned_alloc<Layer>( max->layer_cnt );
         nodes      = aligned_alloc<Node>( max->node_cnt );
-        top_insts  = aligned_alloc<TopInstInfo>( max->node_cnt );
+        top_insts  = aligned_alloc<TopInstInfo>( max->top_inst_cnt );
 
         materials_init();
     }
@@ -1832,6 +1832,7 @@ bool Layout::layout_read( std::string layout_path )
     _uread( materials,   Material,    hdr->material_cnt );
     _uread( layers,      Layer,       hdr->layer_cnt );
     _uread( nodes,       Node,        hdr->node_cnt );
+    _uread( top_insts,   TopInstInfo, hdr->top_inst_cnt );
 
     is_good = true;
 
@@ -1874,6 +1875,7 @@ bool Layout::layout_write( std::string layout_path )
     _uwrite( materials,   hdr->material_cnt  * sizeof(materials[0]) );
     _uwrite( layers,      hdr->layer_cnt     * sizeof(layers[0]) );
     _uwrite( nodes,       hdr->node_cnt      * sizeof(nodes[0]) );
+    _uwrite( top_insts,   hdr->top_inst_cnt  * sizeof(top_insts[0] ));
 
     fsync( fd ); // flush
     close( fd );
@@ -2851,7 +2853,7 @@ inline bool Layout::expect_char( char ch, uint8_t *& xxx, uint8_t * xxx_end, boo
     return true;
 }
 
-inline uint Layout::str_get( std::string s )
+uint Layout::str_get( std::string s )
 {
     auto it = str_to_str_i.find( s );
     if ( it != str_to_str_i.end() ) return it->second;
@@ -2859,11 +2861,11 @@ inline uint Layout::str_get( std::string s )
     uint s_len = s.length();
     perhaps_realloc( strings, hdr->char_cnt, max->char_cnt, s_len+1 );
     uint s_i = hdr->char_cnt;
-    str_to_str_i[s] = s_i;
     char * to_s = &strings[s_i];
     hdr->char_cnt += s_len + 1;
     memcpy( to_s, s.c_str(), s_len+1 );
-    ldout << "str_i[" + s + "]=" + std::to_string(s_i) + " strings[]=" + std::string(&strings[s_i]) << "\n";
+    str_to_str_i[s] = s_i;
+    ldout << "str_i[" + s + "]=" + std::to_string(s_i) << "\n";
     return s_i;
 }
 
