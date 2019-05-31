@@ -27,19 +27,11 @@
 //     1) #include "Layout.h"
 //
 //        Layout * layout = new Layout( "my_chip.aedt" );
-//        if ( !layout->is_good ) {
-//            std::cout << "Layout load failed with error: " << layout->error_msg << "\n";
-//            exit( 1 );
-//        }
 //        layout->write( "my_chip.layout" );    // will write out the self-contained binary layout layout
 //
 //     2) After that, you can quickly read in the single binary layout file using:
 //
 //        Layout * layout = new Layout( "my_chip.layout" );  
-//        if ( !layout->is_good ) {
-//            std::cout << "Layout load failed with error: " << layout->error_msg << "\n";
-//            exit( 1 );
-//        }
 //
 //     3) You can also write out (export) other types of files:
 //      
@@ -328,7 +320,6 @@ public:
     // global scalars
     static const uint   VERSION = 0xB0BA1f01; // current version 
     bool                is_good;            // set to true if constructor succeeds
-    std::string         error_msg;          // if !is_good
 
     // structs
     std::string         file_path;          // pathname of file passed to Layout()
@@ -481,10 +472,7 @@ private:
 #endif
 
 // these are done as macros to avoid evaluating msg (it makes a big difference)
-#include <assert.h>
-#define rtn_assert(  bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false ); return false; }
-#define rtnn_assert( bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false );               }
-#define node_assert( bool, msg ) if ( !(bool) ) { error_msg = std::string(msg); std::cout << msg << "\n"; assert( false ); goto error;   }
+#define lassert( bool, msg ) if ( !(bool) ) { std::cout << "ERROR: " << std::string(msg) << "\n"; exit( 1 ); }
 
 std::string Layout::str( Layout::NODE_KIND kind )
 {
@@ -662,7 +650,6 @@ Layout::GDSII_DATATYPE Layout::kind_to_datatype( Layout::NODE_KIND kind )
 void Layout::init( bool alloc_arrays )
 {
     is_good = false;
-    error_msg = "<unknown error>";
     mapped_region = nullptr;
     nnn = nullptr;
     line_num = 1;
@@ -727,8 +714,7 @@ Layout::Layout( std::string top_file, bool count_only )
         } else if ( ext_name == std::string( ".aedt" ) ) {
             if ( !aedt_read( top_file ) ) return;
         } else {
-            error_msg = "unknown top file ext_name: " + ext_name;
-            return;
+            lassert( false, "unknown top file ext_name: " + ext_name );
         }
 
         is_good = true;
@@ -746,6 +732,11 @@ Layout::~Layout()
         delete layers;
         delete nodes;
         delete top_insts;
+        strings = nullptr;
+        materials = nullptr;
+        layers = nullptr;
+        nodes = nullptr;
+        top_insts = nullptr;
     }
 }
 
@@ -768,7 +759,7 @@ bool Layout::write( std::string top_file )
         } else if ( ext_name == std::string( ".gds" ) ) {
             return gdsii_write( top_file );
         } else {
-            error_msg = "unknown file ext_name: " + ext_name;
+            lassert( false, "unknown file ext_name: " + ext_name );
             return false;
         }
     }
@@ -785,7 +776,8 @@ bool Layout::write_layer_info( std::string file_path )
     if ( ext_name == std::string( ".gds3d" ) ) {
         return gds3d_write_layer_info( file_path );
     } else {
-        rtn_assert( false, "unknown file ext_name: " + ext_name );
+        lassert( false, "write_layer_info: unknown file ext_name: " + ext_name );
+        return false;
     }
 }
 
@@ -976,8 +968,7 @@ uint Layout::color( std::string name, real a )
     {
         if ( strcmp( color_info[i].name, name_c ) == 0 ) return (color_info[i].rgb << 8) | (au << 0);
     }
-    std::cout << "Unknown color: " << name << "\n";
-    assert( false );
+    lassert( false, "unknown color: " + name );
     return 0;
 }
 
@@ -1090,8 +1081,8 @@ uint Layout::material_get( std::string name )
 
 void Layout::layer_set( uint layer_i, const Layer& layer )
 {
-    assert( layer_i != uint(-1) );
-    assert( layer_i <= hdr->layer_cnt );
+    lassert( layer_i != uint(-1), "layer_i is -1" );
+    lassert( layer_i <= hdr->layer_cnt, "layer_i is out of range" );
     if( layer_i == hdr->layer_cnt ) {
         perhaps_realloc( layers, hdr->material_cnt, max->material_cnt, 1 );
         hdr->layer_cnt++;
@@ -1227,7 +1218,7 @@ Layout::NODE_KIND Layout::hier_end_kind( Layout::NODE_KIND kind ) const
             return NODE_KIND::ENDEL;
 
         default:
-            assert( false );
+            lassert( false, "bad kind to hier_end_kind()" );
             return NODE_KIND::ENDEL;  // for compiler
     }
 }
@@ -1262,7 +1253,7 @@ inline bool Layout::node_is_ref( const Node& node ) const
 
 inline uint Layout::node_last_scalar_i( const Node& node ) const
 {
-    assert( node_is_parent( node ) );    
+    lassert( node_is_parent( node ), "node_last_scalar_i: node is not a parent" );    
     uint last_i = uint(-1);
     for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
     {
@@ -1298,26 +1289,26 @@ inline uint Layout::node_layer( const Node& node ) const
 {
     if ( node.kind == NODE_KIND::LAYER ) {
         uint int_node_i = node.u.child_first_i;
-        assert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT && nodes[int_node_i].sibling_i == uint(-1) );
+        lassert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT && nodes[int_node_i].sibling_i == uint(-1), "bad LAYER node" );
         return nodes[int_node_i].u.i;
     } else {
-        assert( node_is_element( node ) );
+        lassert( node_is_element( node ), "node_layer: node is not a LAYER or an ELEMENT" );
         for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
         {
             if ( nodes[child_i].kind == NODE_KIND::LAYER ) {
                 uint int_node_i = nodes[child_i].u.child_first_i;
-                assert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT && nodes[int_node_i].sibling_i == uint(-1) );
+                lassert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT && nodes[int_node_i].sibling_i == uint(-1), "bad LAYER node" );
                 return nodes[int_node_i].u.i;
             }
         }
-        assert( false );
+        lassert( false, "could not find layer for node" );
         return uint(-1);
     }
 }
 
 bool Layout::node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache, std::string indent_str ) const
 {
-    assert( ni < hdr->node_cnt );
+    lassert( ni < hdr->node_cnt, "node index ni is out of range in node_has_layer" );
     const Node& node = nodes[ni];
     if ( node.kind == NODE_KIND::LAYER ) {
         //------------------------------------------------------------
@@ -1335,7 +1326,7 @@ bool Layout::node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache,
         uint name_i = node_name_i( node );
         if ( name_i == uint(-1) ) return false;
         auto sit = name_i_to_struct_i.find( name_i );
-        assert( sit != name_i_to_struct_i.end() );
+        lassert( sit != name_i_to_struct_i.end(), "could not find structure with name " + std::string(&strings[name_i]) );
         uint struct_i = sit->second;
         return node_has_layer( struct_i, layer_num, cache, indent_str );
 
@@ -1439,8 +1430,8 @@ inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND 
 
 void Layout::node_timestamp( Node& node )
 {
-    assert( node.kind == NODE_KIND::BGNLIB || node.kind == NODE_KIND::BGNSTR );
-    assert( node.u.child_first_i == uint(-1) );
+    lassert( node.kind == NODE_KIND::BGNLIB || node.kind == NODE_KIND::BGNSTR, "node_timestamp: node must be BGNLIB or BGNSTR" );
+    lassert( node.u.child_first_i == uint(-1), "node_timestamp found node with children already" );
 
     time_t t;
     time( &t );
@@ -1502,7 +1493,7 @@ inline Layout::real Layout::height( void ) const
 
 uint Layout::start_library( std::string libname, real units_user, real units_meters )
 {
-    assert( hdr->root_i == uint(-1) );
+    lassert( hdr->root_i == uint(-1), "starting a library when layout is not empty" );
     
     uint ni = node_alloc( Layout::NODE_KIND::HIER );   // for file level (one node)
     hdr->root_i = ni;
@@ -1579,7 +1570,7 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, std::string sr
         //-----------------------------------------------------
         std::string dst_top_struct_name = inst_name + "_" + src_struct_name;
         uint dst_top_struct_name_i = str_get( dst_top_struct_name );
-        assert( name_i_to_struct_i.find( dst_top_struct_name_i ) != name_i_to_struct_i.end() );
+        lassert( name_i_to_struct_i.find( dst_top_struct_name_i ) != name_i_to_struct_i.end(), "could not find top struct with name " + dst_top_struct_name );
         uint dst_top_struct_i = name_i_to_struct_i[dst_top_struct_name_i];
         Node& dst_top_node = nodes[dst_top_struct_i];
 
@@ -1640,9 +1631,9 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::stri
             // Change LAYER from src_layer_num to dst_layer_num.
             //-----------------------------------------------------
             uint dst_int_node_i = nodes[dst_i].u.child_first_i;
-            assert( dst_int_node_i != uint(-1) ); 
+            lassert( dst_int_node_i != uint(-1), "LAYER node has no layer number" ); 
             Node& dst_int_node = nodes[dst_int_node_i];
-            assert( dst_int_node.kind == NODE_KIND::INT && dst_int_node.u.i == src_layer_num && dst_int_node.sibling_i == uint(-1) );
+            lassert( dst_int_node.kind == NODE_KIND::INT && dst_int_node.u.i == src_layer_num && dst_int_node.sibling_i == uint(-1), "unexpected layer_num in LAYER node" );
             dst_int_node.u.i = dst_layer_num;
             ldout << indent_str << "    layer change: " << src_layer_num << " => " << dst_layer_num << "\n";
 
@@ -1676,7 +1667,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::stri
             // Record struct by name.
             //-----------------------------------------------------
             uint struct_name_i = node_name_i( nodes[dst_i] );
-            assert( struct_name_i != uint(-1) );
+            lassert( struct_name_i != uint(-1), "could not find struct name"  );
             name_i_to_struct_i[struct_name_i] = dst_i;
         }
     } else {
@@ -1788,7 +1779,7 @@ inline void Layout::perhaps_realloc( T *& array, const Layout::uint& hdr_cnt, La
         uint   old_max_cnt = max_cnt;
         max_cnt *= 2;
         if ( max_cnt < old_max_cnt ) {
-            assert( old_max_cnt != uint(-1) );
+            lassert( old_max_cnt != uint(-1), "old_max_cnt should have been reasonable" );
             max_cnt = uint(-1);
         }
         T * new_array = aligned_alloc<T>( max_cnt );
@@ -1824,7 +1815,8 @@ bool Layout::layout_read( std::string layout_path )
 
     _uread( hdr,         Header,   1 );
     if ( hdr->version != VERSION ) {
-        rtn_assert( 0, "hdr->version does not match VERSION=" + std::to_string(VERSION) + ", got " + std::to_string(hdr->version) );
+        lassert( 0, "hdr->version does not match VERSION=" + std::to_string(VERSION) + ", got " + std::to_string(hdr->version) );
+        return false;
     }
     max = aligned_alloc<Header>( 1 );
     memcpy( max, hdr, sizeof( Header ) );
@@ -1844,7 +1836,7 @@ bool Layout::layout_write( std::string layout_path )
     cmd( "rm -f " + layout_path );
     int fd = open( layout_path.c_str(), O_CREAT|O_WRONLY|O_TRUNC|O_SYNC|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP );
     if ( fd < 0 ) std::cout << "open() for write error: " << strerror( errno ) << "\n";
-    rtn_assert( fd >= 0, "could not open() file " + layout_path + " for writing - open() error: " + strerror( errno ) );
+    lassert( fd >= 0, "could not open() file " + layout_path + " for writing - open() error: " + strerror( errno ) );
 
     //------------------------------------------------------------
     // Write out header then individual arrays.
@@ -1863,7 +1855,7 @@ bool Layout::layout_write( std::string layout_path )
             if ( _byte_cnt < _this_byte_cnt ) _this_byte_cnt = _byte_cnt; \
             if ( ::write( fd, _addr, _this_byte_cnt ) <= 0 ) { \
                 close( fd ); \
-                rtn_assert( 0, "could not write() file " + layout_path + " - write() error: " + strerror( errno ) ); \
+                lassert( 0, "could not write() file " + layout_path + " - write() error: " + strerror( errno ) ); \
             } \
             _byte_cnt -= _this_byte_cnt; \
             _addr     += _this_byte_cnt; \
@@ -1913,7 +1905,6 @@ bool Layout::gdsii_read( std::string file, bool count_only )
             if ( prev_i == uint(-1) ) {
                 nodes[ni].u.child_first_i = child_i;
             } else {
-                assert( child_i != 0 );
                 nodes[prev_i].sibling_i = child_i;
             }
             prev_i = child_i;
@@ -1935,20 +1926,20 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
     //------------------------------------------------------------
     // Parse record header.
     //------------------------------------------------------------
-    rtn_assert( (nnn + 4) <= nnn_end, "unexpected end of gdsii file rec_cnt=" + std::to_string(gdsii_rec_cnt) );
+    lassert( (nnn + 4) <= nnn_end, "unexpected end of gdsii file rec_cnt=" + std::to_string(gdsii_rec_cnt) );
     uint32_t       byte_cnt = ( nnn[0] << 8 ) | nnn[1];
     NODE_KIND      kind     = NODE_KIND( nnn[2] );
     if ( false && (gdsii_rec_cnt % 1000000) == 0 ) std::cout << gdsii_rec_cnt << ": " << kind << "\n";
     GDSII_DATATYPE datatype = GDSII_DATATYPE( nnn[3] );
-    rtn_assert( byte_cnt >= 4, std::to_string(gdsii_rec_cnt) + ": gdsii record byte_cnt must be at least 4, byte_cnt=" + std::to_string(byte_cnt) + " kind=" + str(kind) );
+    lassert( byte_cnt >= 4, std::to_string(gdsii_rec_cnt) + ": gdsii record byte_cnt must be at least 4, byte_cnt=" + std::to_string(byte_cnt) + " kind=" + str(kind) );
     ldout << hdr->node_cnt << ": " << str(kind) << " " << str(datatype) << " byte_cnt=" << std::to_string(byte_cnt) << "\n";
     byte_cnt -= 4;
     nnn += 4;
-    rtn_assert( uint32_t(kind) < GDSII_KIND_CNT, std::to_string(gdsii_rec_cnt) + ": bad gdsii record kind " + std::to_string(uint32_t(kind)) );
-    rtn_assert( kind_to_datatype( kind ) == datatype, 
-                std::to_string(gdsii_rec_cnt) + ": datatype=" + str(datatype) + " does not match expected datatype=" + 
-                str( kind_to_datatype( kind ) ) + " for record kind " + str(kind) );
-    rtn_assert( (nnn + byte_cnt) <= nnn_end, "unexpected end of gdsii file" );
+    lassert( uint32_t(kind) < GDSII_KIND_CNT, std::to_string(gdsii_rec_cnt) + ": bad gdsii record kind " + std::to_string(uint32_t(kind)) );
+    lassert( kind_to_datatype( kind ) == datatype, 
+             std::to_string(gdsii_rec_cnt) + ": datatype=" + str(datatype) + " does not match expected datatype=" + 
+             str( kind_to_datatype( kind ) ) + " for record kind " + str(kind) );
+    lassert( (nnn + byte_cnt) <= nnn_end, "unexpected end of gdsii file" );
   
     //------------------------------------------------------------
     // Create a GDSII node.
@@ -1969,23 +1960,23 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
     {
         case GDSII_DATATYPE::NO_DATA:
         {
-            rtn_assert( byte_cnt == 0, "NO_DATA gdsii datatype should have no payload" );
+            lassert( byte_cnt == 0, "NO_DATA gdsii datatype should have no payload" );
             break;
         }
 
         case GDSII_DATATYPE::BITARRAY:
         {
-            assert( !is_hier );
-            rtn_assert( byte_cnt == 2, "BITARRAY gdsii datatype should have 2-byte payload" );
+            lassert( !is_hier, "BITARRAY not allowed for hier nodes" );
+            lassert( byte_cnt == 2, "BITARRAY gdsii datatype should have 2-byte payload" );
             if ( !count_only ) nodes[ni].u.u = (nnn[1] << 8) | nnn[0];
             break;
         }
 
         case GDSII_DATATYPE::STRING:
         {
-            assert( !is_hier );
+            lassert( !is_hier, "STRING not allowed for hier nodes" );
             char c[1024];
-            rtn_assert( byte_cnt <= (sizeof(c)-1), "STRING too big byte_cnt=" + std::to_string(byte_cnt) );
+            lassert( byte_cnt <= (sizeof(c)-1), "STRING too big byte_cnt=" + std::to_string(byte_cnt) );
             if ( byte_cnt > 0 ) memcpy( c, nnn, byte_cnt );
             c[byte_cnt] = '\0';
             for( int i = byte_cnt-1; i >= 0; i-- ) 
@@ -2007,7 +1998,7 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
             uint datum_byte_cnt = (datatype == GDSII_DATATYPE::INTEGER_2) ? 2 :
                                   (datatype == GDSII_DATATYPE::REAL_8)    ? 8 : 4;
             uint cnt = byte_cnt / datum_byte_cnt;
-            rtn_assert( (cnt*datum_byte_cnt) == byte_cnt, "datum_byte_cnt does not divide evenly" );
+            lassert( (cnt*datum_byte_cnt) == byte_cnt, "datum_byte_cnt does not divide evenly" );
             uint8_t * uuu = nnn;
             for( uint i = 0; i < cnt; i++, uuu += datum_byte_cnt )
             {
@@ -2060,7 +2051,7 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
 
         default:
         {
-            rtn_assert( false, "something is wrong" );
+            lassert( false, "something is wrong" );
             break;
         }
     }
@@ -2072,15 +2063,15 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
     if ( !count_only && kind == NODE_KIND::STRNAME ) {
         // record name -> struct mapping
         uint name_i = node_name_i( nodes[ni] );
-        rtn_assert( name_i != uint(-1), "STRNAME should have had a string" );
-        rtn_assert( struct_i != uint(-1), "STRNAME found outside a structure" );
+        lassert( name_i != uint(-1), "STRNAME should have had a string" );
+        lassert( struct_i != uint(-1), "STRNAME found outside a structure" );
         name_i_to_struct_i[name_i] = struct_i;
     }
 
     if ( is_hier ) {
         if ( !count_only && kind == NODE_KIND::BGNSTR ) {
             // now inside a structure
-            rtn_assert( struct_i == uint(-1), "nested BGNSTR is not allowed" );
+            lassert( struct_i == uint(-1), "nested BGNSTR is not allowed" );
             struct_i = ni;
         }
 
@@ -2095,7 +2086,6 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
                 if ( prev_i == uint(-1) ) {
                     nodes[ni].u.child_first_i = child_i;
                 } else {
-                    assert( child_i != 0 );
                     nodes[prev_i].sibling_i = child_i;
                 }
                 prev_i = child_i;
@@ -2178,7 +2168,6 @@ void Layout::gdsii_write_record( uint ni, std::string indent_str )
             {
                 for( child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
                 {
-                    assert( child_i != 0 );
                     if ( nodes[child_i].kind != NODE_KIND::INT && nodes[child_i].kind != NODE_KIND::REAL ) break; // skip GDSII children
                     gdsii_write_number( bytes, byte_cnt, child_i, datatype, indent_str + "    " );
                 }
@@ -2187,7 +2176,7 @@ void Layout::gdsii_write_record( uint ni, std::string indent_str )
 
             default:
             {
-                assert( false );
+                lassert( false, "bad datatype in gdsii_write_record" );
                 break;
             }
         }
@@ -2220,12 +2209,11 @@ void Layout::gdsii_write_record( uint ni, std::string indent_str )
         // assume file wrapper, just loop through children
         for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
         {
-            assert( child_i != 0 );
             gdsii_write_record( child_i, indent_str + "    " );
         }
 
     } else {
-        rtnn_assert( false, "ignoring node kind " + str(node.kind) );
+        lassert( false, "ignoring node kind " + str(node.kind) );
     }
 }
 
@@ -2290,7 +2278,7 @@ void Layout::gdsii_write_number( uint8_t * bytes, uint& byte_cnt, uint ni, GDSII
 
         default:
         {
-            assert( false );
+            lassert( false, "bad datatype in gdsii_write_number()" );
         }
     }
 }
@@ -2329,7 +2317,7 @@ void Layout::gdsii_flush( bool for_end_of_file )
 
     if ( ::write( gdsii_fd, gdsii_buff, gdsii_buff_byte_cnt ) <= 0 ) { 
         close( gdsii_fd ); 
-        rtnn_assert( false, std::string("could not write() gdsii file - write() error: ") + strerror( errno ) );
+        lassert( false, std::string("could not write() gdsii file - write() error: ") + strerror( errno ) );
     }
     gdsii_buff_byte_cnt = 0;
 }
@@ -2353,7 +2341,7 @@ bool Layout::aedt_read( std::string file )
     false_str_i      = str_get( "false" );
 
     if ( !aedt_read_expr( hdr->root_i ) ) return false;
-    assert( nodes[hdr->root_i].kind == NODE_KIND::HIER );
+    lassert( nodes[hdr->root_i].kind == NODE_KIND::HIER, "aedt_read() root node should have been a HIER node, got " + str(nodes[hdr->root_i].kind) );
     return true;
 }
 
@@ -2374,13 +2362,13 @@ bool Layout::aedt_read_expr( uint& ni )
         uint id_i;
         uint8_t * nnn_save = nnn;
         if ( !parse_id( id_i, nnn, nnn_end ) ) {
-            rtn_assert( 0, "unable to parse an expression: std::string, number, or id " + surrounding_lines( nnn_save, nnn_end ) );
+            lassert( 0, "unable to parse an expression: std::string, number, or id " + surrounding_lines( nnn_save, nnn_end ) );
         }
         ldout << "ID START " << std::string(&strings[id_i]) << "\n";
         if ( id_i == aedt_begin_str_i ) {
             uint name_i;
             if ( !aedt_read_expr( name_i ) ) return false;             // STR node
-            rtn_assert( nodes[name_i].kind == NODE_KIND::STR, "$begin not followed by std::string" );
+            lassert( nodes[name_i].kind == NODE_KIND::STR, "$begin not followed by std::string" );
             ldout << "BEGIN " << std::string(&strings[nodes[name_i].u.s_i]) << "\n";
 
             nodes[ni].kind = NODE_KIND::HIER;
@@ -2396,14 +2384,14 @@ bool Layout::aedt_read_expr( uint& ni )
                         uint end_str_i;
                         if ( !parse_string_i( end_str_i, nnn, nnn_end ) ) return false;
                         ldout << "END " << std::string(&strings[end_str_i]) << "\n";
-                        rtn_assert( end_str_i == nodes[name_i].u.s_i, "$end id does not match $begin id " + surrounding_lines( nnn, nnn_end ) );
+                        lassert( end_str_i == nodes[name_i].u.s_i, "$end id does not match $begin id " + surrounding_lines( nnn, nnn_end ) );
                         break;
                     }
                 }
 
                 uint child_i;
                 if ( !aedt_read_expr( child_i ) ) return false;
-                assert( child_i != 0 );
+                lassert( child_i != 0, "aedt_read_expr() could not read expression within BEGIN" );
                 nodes[prev_i].sibling_i = child_i;
                 prev_i = child_i;
             }
@@ -2461,7 +2449,7 @@ bool Layout::aedt_read_expr( uint& ni )
 
             uint arg_i;
             if ( !aedt_read_expr( arg_i ) ) return false;
-            assert( arg_i != 0 );
+            lassert( arg_i != 0, "could not read expression in CALL or SLICE" );
             nodes[prev_i].sibling_i = arg_i;
             prev_i = arg_i;
         }
@@ -2480,7 +2468,7 @@ bool Layout::aedt_write( std::string file )
 
 void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_str )
 {
-    assert( ni != uint(-1) );
+    lassert( ni != uint(-1), "aedt_write_expr: bad node index" );
     const Node& node = nodes[ni];
     out << indent_str;
     switch( node.kind ) 
@@ -2743,13 +2731,13 @@ bool Layout::open_and_read( std::string file_path, uint8_t *& start, uint8_t *& 
     const char * fname = file_path.c_str();
     int fd = open( fname, O_RDONLY );
     if ( fd < 0 ) ldout << "open_and_read() error reading " << file_path << ": " << strerror( errno ) << "\n";
-    rtn_assert( fd >= 0, "could not open file " + file_path + " - open() error: " + strerror( errno ) );
+    lassert( fd >= 0, "could not open file " + file_path + " - open() error: " + strerror( errno ) );
 
     struct stat file_stat;
     int status = fstat( fd, &file_stat );
     if ( status < 0 ) {
         close( fd );
-        rtn_assert( 0, "could not stat file " + std::string(fname) + " - stat() error: " + strerror( errno ) );
+        lassert( 0, "could not stat file " + std::string(fname) + " - stat() error: " + strerror( errno ) );
     }
     size_t size = file_stat.st_size;
 
@@ -2757,7 +2745,7 @@ bool Layout::open_and_read( std::string file_path, uint8_t *& start, uint8_t *& 
     start = aligned_alloc<uint8_t>( size );
     if ( start == nullptr ) {
         close( fd );
-        rtn_assert( 0, "could not read file " + std::string(fname) + " - malloc() error: " + strerror( errno ) );
+        lassert( 0, "could not read file " + std::string(fname) + " - malloc() error: " + strerror( errno ) );
     }
     end = start + size;
 
@@ -2768,7 +2756,7 @@ bool Layout::open_and_read( std::string file_path, uint8_t *& start, uint8_t *& 
         if ( size < _this_size ) _this_size = size;
         if ( ::read( fd, addr, _this_size ) <= 0 ) {
             close( fd );
-            rtn_assert( 0, "could not read() file " + std::string(fname) + " - read error: " + std::string( strerror( errno ) ) );
+            lassert( 0, "could not read() file " + std::string(fname) + " - read error: " + std::string( strerror( errno ) ) );
         }
         size -= _this_size;
         addr += _this_size;
@@ -2847,8 +2835,8 @@ inline bool Layout::eol( uint8_t *& xxx, uint8_t *& xxx_end )
 inline bool Layout::expect_char( char ch, uint8_t *& xxx, uint8_t * xxx_end, bool skip_whitespace_first )
 {
     if ( skip_whitespace_first ) skip_whitespace( xxx, xxx_end );
-    rtn_assert( xxx != xxx_end, "premature end of file" );
-    rtn_assert( *xxx == ch, "expected character '" + std::string(1, ch) + "' got '" + std::string( 1, *xxx ) + "' " + surrounding_lines( xxx, xxx_end ) );
+    lassert( xxx != xxx_end, "premature end of file" );
+    lassert( *xxx == ch, "expected character '" + std::string(1, ch) + "' got '" + std::string( 1, *xxx ) + "' " + surrounding_lines( xxx, xxx_end ) );
     xxx++;
     return true;
 }
@@ -2898,7 +2886,7 @@ inline bool Layout::parse_string( std::string& s, uint8_t *& xxx, uint8_t *& xxx
     s = "";
     for( ;; ) 
     {
-        rtn_assert( xxx != xxx_end, "no terminating \" for std::string" );
+        lassert( xxx != xxx_end, "no terminating \" for std::string" );
         if ( *xxx == '\'' ) {
             xxx++;
             return true;
@@ -2976,7 +2964,7 @@ inline bool Layout::parse_real( Layout::real& r, uint8_t *& xxx, uint8_t *& xxx_
         }
 
         if ( ch == 'e' || ch == 'E' ) {
-            rtn_assert( !has_exp, "real has more than one 'e' exponent" );
+            lassert( !has_exp, "real has more than one 'e' exponent" );
             has_exp = true;
             s += std::string( 1, ch );
             xxx++;
@@ -2992,7 +2980,7 @@ inline bool Layout::parse_real( Layout::real& r, uint8_t *& xxx, uint8_t *& xxx_
         xxx++;
     }
 
-    rtn_assert( s.length() != 0, "unable to parse real in " + ext_name + " file " + surrounding_lines( xxx, xxx_end ) );
+    lassert( s.length() != 0, "unable to parse real in " + ext_name + " file " + surrounding_lines( xxx, xxx_end ) );
 
     r = std::atof( s.c_str() );
     ldout << "real=" + std::to_string( r ) << "\n";
@@ -3010,12 +2998,12 @@ inline bool Layout::parse_int( _int& i, uint8_t *& xxx, uint8_t *& xxx_end )
     {
         char ch = *xxx;
         if ( ch == '+' ) {
-            rtn_assert( !is_neg, "-+ not allowed for an int" );
+            lassert( !is_neg, "-+ not allowed for an int" );
             xxx++;
             continue;
         }    
         if ( ch == '-' ) {
-            rtn_assert( !is_neg, "too many minus signs" );
+            lassert( !is_neg, "too many minus signs" );
             is_neg = true;
             xxx++;
             continue;
@@ -3029,7 +3017,7 @@ inline bool Layout::parse_int( _int& i, uint8_t *& xxx, uint8_t *& xxx_end )
     }
 
     if ( is_neg ) i = -i;
-    rtn_assert( vld, "unable to parse int in " + ext_name + " file " + surrounding_lines( xxx, xxx_end ) );
+    lassert( vld, "unable to parse int in " + ext_name + " file " + surrounding_lines( xxx, xxx_end ) );
     return true;
 }
 
@@ -3037,7 +3025,7 @@ inline bool Layout::parse_uint( uint& u, uint8_t *& xxx, uint8_t *& xxx_end )
 {
     _int i;
     if ( !parse_int( i, xxx, xxx_end ) ) return false;
-    rtn_assert( i >= 0, "parse_uint encountered negative integer" );
+    lassert( i >= 0, "parse_uint encountered negative integer" );
     u = i;
     return true;
 }

@@ -18,7 +18,6 @@ int main( int argc, const char * argv[] )
 
     std::cout << "Reading " + file + "...\n";
     Layout * layout = new Layout( file );
-    if ( !layout->is_good ) die( "could not read " + file + ": " + layout->error_msg );
 
     std::string layout_file = file_base + ".layout";
     std::cout << "Writing " + layout_file + "...\n";
@@ -27,7 +26,6 @@ int main( int argc, const char * argv[] )
 
     std::cout << "Reading " + layout_file + "...\n";
     layout = new Layout( layout_file );
-    if ( !layout->is_good ) die( "could not read " + layout_file + ": " + layout->error_msg );
 
     file = file_base + ".exported.aedt";
     std::cout << "Writing " + file + "...\n";

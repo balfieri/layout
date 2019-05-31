@@ -18,7 +18,6 @@ int main( int argc, const char * argv[] )
 
     std::cout << "Reading " + file + "...\n";
     Layout * layout = new Layout( file, true );
-    if ( !layout->is_good ) die( "could not read " + file + ": " + layout->error_msg );
 
     std::cout << std::flush;
     return 0; 
