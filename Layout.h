@@ -300,7 +300,7 @@ public:
         FLATTEN,                            // copy all children but flatten all REFs
     };
     uint        node_alloc( NODE_KIND kind );                   // allocate a node of the given kind
-    uint        node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind, real x=0, real y=0, real angle=0, bool reflect=false );
+    uint        node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind, real x=0, real y=0, real angle=0, bool reflect=false, bool in_flatten=false );
 
     static GDSII_DATATYPE kind_to_datatype( NODE_KIND kind );
     static std::string    str( GDSII_DATATYPE datatype );
@@ -1356,12 +1356,108 @@ inline uint Layout::node_alloc( NODE_KIND kind )
     return ni;
 }
 
-inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind, real x, real y, real angle, bool reflect )
+inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind, real x, real y, real angle, bool reflect, bool in_flatten )
 {
+    const Node& src_node = src_layout->nodes[src_i];
+    if ( kind == COPY_KIND::FLATTEN ) {
+        switch( src_node.kind )
+        {
+            case NODE_KIND::STRNAME:
+            {
+                //-----------------------------------------------------
+                // Blow off this node if we're in a struct that's
+                // being flattened.
+                //-----------------------------------------------------
+                if ( in_flatten ) return uint(-1);
+                break;
+            }
+
+            case NODE_KIND::SREF:
+            case NODE_KIND::AREF:
+            {
+                //-----------------------------------------------------
+                // First extract the instancing params.
+                //-----------------------------------------------------
+                const Node * src_nodes = src_layout->nodes;
+                uint sname_i = uint(-1);
+                uint strans = 0;
+                real angle = 0.0;
+                uint col_cnt = 1;
+                uint row_cnt = 1;
+                _int x[3] = { 0, 0, 0 };
+                _int y[3] = { 0, 0, 0 };
+                for( uint src_i = src_node.u.child_first_i; src_i != uint(-1); src_i = src_nodes[src_i].sibling_i )
+                {
+                    const Node& child = src_nodes[src_i];
+                    switch( child.kind )
+                    {
+                        case NODE_KIND::SNAME:
+                            lassert( sname_i == uint(-1), "SREF/AREF has duplicate SNAME child" );
+                            sname_i = child.u.s_i;
+                            break;
+
+                        case NODE_KIND::STRANS:
+                            strans = child.u.u;
+                            break;
+
+                        case NODE_KIND::ANGLE:
+                            angle = child.u.r;
+                            break;
+                            
+                        case NODE_KIND::COLROW:
+                        {
+                            lassert( src_node.kind == NODE_KIND::AREF, "COLROW not allowed for an SREF" );
+                            uint gchild = child.u.child_first_i;
+                            lassert( gchild != uint(-1), "COLROW has no COL value" );
+                            lassert( src_nodes[gchild].kind == NODE_KIND::INT, "COLROW COL is not an INT" );
+                            col_cnt = src_nodes[gchild].u.i;
+
+                            gchild = child.sibling_i;
+                            lassert( gchild != uint(-1), "COLROW has no ROW value" );
+                            lassert( src_nodes[gchild].kind == NODE_KIND::INT, "COLROW ROW is not an INT" );
+                            row_cnt = src_nodes[gchild].u.i;
+                            break;
+                        }
+                             
+                        case NODE_KIND::XY:
+                        {
+                            uint i = 0;
+                            for( uint gchild_i = child.u.child_first_i; gchild_i != uint(-1); gchild_i = src_nodes[gchild_i].sibling_i )
+                            {
+                                lassert( i == 0 || src_node.kind == NODE_KIND::AREF, "SREF may not have more than 2 XY coords" );
+                                lassert( i < 6, "AREF may not have more than 6 XY coords" );
+                                if ( i & 1 ) {
+                                    y[i>>1] = src_nodes[gchild_i].u.r;
+                                } else {
+                                    x[i>>1] = src_nodes[gchild_i].u.r;
+                                }
+                                i++;
+                            }
+                            lassert( i == 2 || i == 6, "wrong number of XY coords for " + str(src_node.kind) );
+                            break;
+                        }
+
+                        default:
+                            lassert( false, "unexpected SREF/AREF child node: " + str(child.kind) );
+                            break;
+                    }
+                }
+                return uint(-1);
+            }
+
+            default:
+            {
+                //-----------------------------------------------------
+                // We can copy this node.
+                //-----------------------------------------------------
+                break;
+            }
+        }
+    }
+
     //-----------------------------------------------------
     // Copy the main node.
     //-----------------------------------------------------
-    const Node& src_node = src_layout->nodes[src_i];
     uint dst_i = node_alloc( src_node.kind );
     bool src_is_parent = src_layout->node_is_parent( src_node );
     if ( src_is_parent ) {
