@@ -50,6 +50,8 @@ public:
     typedef int32_t  _int;                  // by default, we use 32-bit integers
     typedef double   real;
 
+    const uint NULL_I = -1;                 // null index into an array
+
     // FILE PATHS
     // 
     static void        dissect_path( std::string path, std::string& dir_name, std::string& base_name, std::string& ext_name ); // utility
@@ -76,11 +78,11 @@ public:
     uint start_library( std::string libname, real units_user=0.001, real units_meters=1e-9 );
 
     // instancing of other layouts
-    uint inst_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, std::string name );
-    uint inst_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, 
+    uint inst_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, std::string name );
+    uint inst_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, 
                       uint dst_layer_first, uint dst_layer_last, std::string name );
-    void finalize_top_struct( uint last_i, std::string top_name );              // use to create top-level struct of all insts
-    uint flatten_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name="" );  // straight copy with flattening
+    void finalize_top_struct( uint parent_i, uint last_i, std::string top_name );              // use to create top-level struct of all insts
+    uint flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name="" );  // straight copy with flattening
     
     // fill of dielectrics or arbitrary material
     void fill_dielectrics( void );
@@ -135,7 +137,7 @@ public:
     //
     void        materials_init( void );
 
-    // these return index in materials[] array or uint(-1) when failure or not found
+    // these return index in materials[] array or NULL_I when failure or not found
     // set() will override material properties if name already exists
     //
     uint        material_set( std::string name, const Material& material );
@@ -147,8 +149,8 @@ public:
         uint        name_i;                 	// index of layer name in strings[]
         uint        gdsii_num;              	// layer number of main material in GDSII file
         uint        dielectric_gdsii_num;   	// layer number of dielectric material in GDSII file
-        uint        gdsii_datatype;         	// which datatype to use - uint(-1) means all
-        uint        dielectric_gdsii_datatype; 	// which datatype to use - uint(-1) means all
+        uint        gdsii_datatype;         	// which datatype to use - NULL_I means all
+        uint        dielectric_gdsii_datatype; 	// which datatype to use - NULL_I means all
         bool        same_zoffset_as_prev;   	// starts at same zoffset as previous layer in stackkup?
         real        thickness;              	// thickness in um
         uint        material_i;             	// index of main material in materials[]
@@ -159,7 +161,7 @@ public:
     static uint color( real r, real g, real b, real a=1.0 );
     static uint color( std::string name, real a=1.0 );
 
-    // these return index in layers[] array or uint(-1) when failure or not found
+    // these return index in layers[] array or NULL_I when failure or not found
     // set() will override layer properties if name already exists
     //
     void        layer_set( uint layer_i, const Layer& layer );
@@ -270,7 +272,7 @@ public:
             real        r;                  // REAL
             uint        child_first_i;      // non-scalars - index into nodes[] array of first child on list
         } u;
-        uint        sibling_i;              // index in nodes array of sibling on list, else uint(-1)
+        uint        sibling_i;              // index in nodes array of sibling on list, else NULL_I
 
     };
 
@@ -283,7 +285,7 @@ public:
     bool        node_is_name( const Node& node ) const;         // return true if node is a name node
     bool        node_is_hier( const Node& node ) const;         // return true if node is a hierarchy
     bool        node_is_ref( const Node& node ) const;          // return true if node is an AREF or SREF
-    uint        node_last_scalar_i( const Node& node ) const;   // find node index of last scalar child, else uint(-1) if none
+    uint        node_last_scalar_i( const Node& node ) const;   // find node index of last scalar child, else NULL_I if none
     uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
     std::string node_name( const Node& node ) const;            // find name for node
     uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
@@ -300,7 +302,7 @@ public:
         FLATTEN,                            // copy all children but flatten all REFs
     };
     uint        node_alloc( NODE_KIND kind );                   // allocate a node of the given kind
-    uint        node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind, real x=0, real y=0, real angle=0, bool reflect=false, bool in_flatten=false );
+    uint        node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND kind, real x=0, real y=0, real angle=0, bool reflect=false, bool in_flatten=false );
 
     static GDSII_DATATYPE kind_to_datatype( NODE_KIND kind );
     static std::string    str( GDSII_DATATYPE datatype );
@@ -386,7 +388,7 @@ private:
 
     using has_layer_cache_t = std::map< uint, std::map<uint, bool>* >;
     bool node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache, std::string indent_str ) const;
-    uint inst_layout_node( uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, 
+    uint inst_layout_node( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, 
                            uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
 
     void node_timestamp( Node& node );                  // adds timestamp fields
@@ -631,7 +633,7 @@ void Layout::init( bool alloc_arrays )
         hdr = aligned_alloc<Header>( 1 );
         memset( hdr, 0, sizeof( Header ) );
         hdr->version = VERSION;
-        hdr->root_i = uint(-1);
+        hdr->root_i = NULL_I;
 
         max = aligned_alloc<Header>( 1 );
         max->node_cnt =  1024;
@@ -1028,7 +1030,7 @@ void Layout::materials_init( void )
 uint Layout::material_set( std::string name, const Material& material )
 {
     uint mi = material_get( name );
-    if ( mi == uint(-1) ) {
+    if ( mi == NULL_I ) {
         perhaps_realloc( materials, hdr->material_cnt, max->material_cnt, 1 );
         mi = hdr->material_cnt++;
     }
@@ -1045,12 +1047,12 @@ uint Layout::material_get( std::string name )
         if ( materials[mi].name_i == name_i ) return mi;
     }
 
-    return uint(-1);
+    return NULL_I;
 }
 
 void Layout::layer_set( uint layer_i, const Layer& layer )
 {
-    lassert( layer_i != uint(-1), "layer_i is -1" );
+    lassert( layer_i != NULL_I, "layer_i is NULL_I" );
     lassert( layer_i <= hdr->layer_cnt, "layer_i is out of range" );
     if( layer_i == hdr->layer_cnt ) {
         perhaps_realloc( layers, hdr->material_cnt, max->material_cnt, 1 );
@@ -1069,7 +1071,7 @@ uint Layout::layer_get( std::string name )
         if ( layers[li].name_i == name_i ) return li;
     }
 
-    return uint(-1);
+    return NULL_I;
 }
 
 inline bool Layout::node_is_header_footer( const Node& node ) const
@@ -1223,8 +1225,8 @@ inline bool Layout::node_is_ref( const Node& node ) const
 inline uint Layout::node_last_scalar_i( const Node& node ) const
 {
     lassert( node_is_parent( node ), "node_last_scalar_i: node is not a parent" );    
-    uint last_i = uint(-1);
-    for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+    uint last_i = NULL_I;
+    for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
     {
         if ( !node_is_scalar( nodes[child_i] ) ) break;
 
@@ -1238,19 +1240,19 @@ inline uint Layout::node_name_i( const Node& node ) const
     if ( node_is_name( node ) ) {
         return node.u.s_i;
     } else if ( node_is_hier( node ) ) {
-        for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
+        for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i ) 
         {
             uint name_i = node_name_i( nodes[child_i] );
-            if ( name_i != uint(-1) ) return name_i;
+            if ( name_i != NULL_I ) return name_i;
         }
     }
-    return uint(-1);
+    return NULL_I;
 }
 
 inline std::string Layout::node_name( const Node& node ) const
 {
     uint name_i = node_name_i( node );
-    if ( name_i != uint(-1) ) return &strings[name_i];
+    if ( name_i != NULL_I ) return &strings[name_i];
     return "";
 }
 
@@ -1258,20 +1260,20 @@ inline uint Layout::node_layer( const Node& node ) const
 {
     if ( node.kind == NODE_KIND::LAYER ) {
         uint int_node_i = node.u.child_first_i;
-        lassert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT && nodes[int_node_i].sibling_i == uint(-1), "bad LAYER node" );
+        lassert( int_node_i != NULL_I && nodes[int_node_i].kind == NODE_KIND::INT && nodes[int_node_i].sibling_i == NULL_I, "bad LAYER node" );
         return nodes[int_node_i].u.i;
     } else {
         lassert( node_is_element( node ), "node_layer: node is not a LAYER or an ELEMENT" );
-        for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
+        for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i ) 
         {
             if ( nodes[child_i].kind == NODE_KIND::LAYER ) {
                 uint int_node_i = nodes[child_i].u.child_first_i;
-                lassert( int_node_i != uint(-1) && nodes[int_node_i].kind == NODE_KIND::INT && nodes[int_node_i].sibling_i == uint(-1), "bad LAYER node" );
+                lassert( int_node_i != NULL_I && nodes[int_node_i].kind == NODE_KIND::INT && nodes[int_node_i].sibling_i == NULL_I, "bad LAYER node" );
                 return nodes[int_node_i].u.i;
             }
         }
         lassert( false, "could not find layer for node" );
-        return uint(-1);
+        return NULL_I;
     }
 }
 
@@ -1293,7 +1295,7 @@ bool Layout::node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache,
         // We may have already computed this.
         //------------------------------------------------------------
         uint name_i = node_name_i( node );
-        if ( name_i == uint(-1) ) return false;
+        if ( name_i == NULL_I ) return false;
         auto sit = name_i_to_struct_i.find( name_i );
         lassert( sit != name_i_to_struct_i.end(), "could not find structure with name " + std::string(&strings[name_i]) );
         uint struct_i = sit->second;
@@ -1318,7 +1320,7 @@ bool Layout::node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache,
         // Check children.
         //------------------------------------------------------------
         bool has_layer = false;
-        for( uint child_i = node.u.child_first_i; !has_layer && child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
+        for( uint child_i = node.u.child_first_i; !has_layer && child_i != NULL_I; child_i = nodes[child_i].sibling_i ) 
         {
             has_layer |= node_has_layer( child_i, layer_num, cache, indent_str );
         }
@@ -1339,11 +1341,11 @@ bool Layout::node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache,
 
 inline uint Layout::node_xy_i( const Node& node ) const
 {
-    for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i ) 
+    for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i ) 
     {
         if ( nodes[child_i].kind == NODE_KIND::XY ) return child_i;
     }
-    return uint(-1);
+    return NULL_I;
 }
 
 inline uint Layout::node_alloc( NODE_KIND kind )
@@ -1351,15 +1353,18 @@ inline uint Layout::node_alloc( NODE_KIND kind )
     perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
     uint ni = hdr->node_cnt++;
     nodes[ni].kind = kind;
-    nodes[ni].sibling_i = uint(-1);
-    nodes[ni].u.child_first_i = uint(-1);
+    nodes[ni].sibling_i = NULL_I;
+    nodes[ni].u.child_first_i = NULL_I;
     return ni;
 }
 
-inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind, real x, real y, real angle, bool reflect, bool in_flatten )
+inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND kind, real x, real y, real angle, bool reflect, bool in_flatten )
 {
     const Node& src_node = src_layout->nodes[src_i];
     if ( kind == COPY_KIND::FLATTEN ) {
+        //-----------------------------------------------------
+        // Flattening handles certain nodes differently than hier copies.
+        //-----------------------------------------------------
         switch( src_node.kind )
         {
             case NODE_KIND::STRNAME:
@@ -1368,7 +1373,7 @@ inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND 
                 // Blow off this node if we're in a struct that's
                 // being flattened.
                 //-----------------------------------------------------
-                if ( in_flatten ) return uint(-1);
+                if ( in_flatten ) return NULL_I;
                 break;
             }
 
@@ -1379,21 +1384,24 @@ inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND 
                 // First extract the instancing params.
                 //-----------------------------------------------------
                 const Node * src_nodes = src_layout->nodes;
-                uint sname_i = uint(-1);
+                uint sname_i = NULL_I;
+                uint struct_i = NULL_I;
                 uint strans = 0;
-                real angle = 0.0;
+                real sangle = 0.0;
                 uint col_cnt = 1;
                 uint row_cnt = 1;
-                _int x[3] = { 0, 0, 0 };
-                _int y[3] = { 0, 0, 0 };
-                for( uint src_i = src_node.u.child_first_i; src_i != uint(-1); src_i = src_nodes[src_i].sibling_i )
+                real xy[3][2] = { {0, 0}, {0, 0}, {0, 0} };
+                for( uint src_i = src_node.u.child_first_i; src_i != NULL_I; src_i = src_nodes[src_i].sibling_i )
                 {
                     const Node& child = src_nodes[src_i];
                     switch( child.kind )
                     {
                         case NODE_KIND::SNAME:
-                            lassert( sname_i == uint(-1), "SREF/AREF has duplicate SNAME child" );
+                            lassert( sname_i == NULL_I, "SREF/AREF has duplicate SNAME child" );
                             sname_i = child.u.s_i;
+                            auto it = src_layout->name_i_to_struct_i.find( sname_i );
+                            lassert( it != src_layout->name_i_to_struct_i.end(), "SREF/AREF SNAME " + std::string(&src_layout->strings[sname_i]) + " does not denote a known struct" );
+                            struct_i = it->second;
                             break;
 
                         case NODE_KIND::STRANS:
@@ -1401,36 +1409,34 @@ inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND 
                             break;
 
                         case NODE_KIND::ANGLE:
-                            angle = child.u.r;
+                            sangle = child.u.r;
                             break;
                             
                         case NODE_KIND::COLROW:
                         {
                             lassert( src_node.kind == NODE_KIND::AREF, "COLROW not allowed for an SREF" );
                             uint gchild = child.u.child_first_i;
-                            lassert( gchild != uint(-1), "COLROW has no COL value" );
+                            lassert( gchild != NULL_I, "COLROW has no COL value" );
                             lassert( src_nodes[gchild].kind == NODE_KIND::INT, "COLROW COL is not an INT" );
                             col_cnt = src_nodes[gchild].u.i;
+                            lassert( col_cnt > 0, "COLROW COL must be non-zero" );
 
                             gchild = child.sibling_i;
-                            lassert( gchild != uint(-1), "COLROW has no ROW value" );
+                            lassert( gchild != NULL_I, "COLROW has no ROW value" );
                             lassert( src_nodes[gchild].kind == NODE_KIND::INT, "COLROW ROW is not an INT" );
                             row_cnt = src_nodes[gchild].u.i;
+                            lassert( row_cnt > 0, "COLROW ROW must be non-zero" );
                             break;
                         }
                              
                         case NODE_KIND::XY:
                         {
                             uint i = 0;
-                            for( uint gchild_i = child.u.child_first_i; gchild_i != uint(-1); gchild_i = src_nodes[gchild_i].sibling_i )
+                            for( uint gchild_i = child.u.child_first_i; gchild_i != NULL_I; gchild_i = src_nodes[gchild_i].sibling_i )
                             {
                                 lassert( i == 0 || src_node.kind == NODE_KIND::AREF, "SREF may not have more than 2 XY coords" );
                                 lassert( i < 6, "AREF may not have more than 6 XY coords" );
-                                if ( i & 1 ) {
-                                    y[i>>1] = src_nodes[gchild_i].u.r;
-                                } else {
-                                    x[i>>1] = src_nodes[gchild_i].u.r;
-                                }
+                                xy[i>>1][i&1] = real(src_nodes[gchild_i].u.i) / src_layout->gdsii_units_user + 0.5; 
                                 i++;
                             }
                             lassert( i == 2 || i == 6, "wrong number of XY coords for " + str(src_node.kind) );
@@ -1438,11 +1444,35 @@ inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND 
                         }
 
                         default:
+                        {
                             lassert( false, "unexpected SREF/AREF child node: " + str(child.kind) );
                             break;
+                        }
                     }
                 }
-                return uint(-1);
+
+                //-----------------------------------------------------
+                // Now the fun part.
+                //-----------------------------------------------------
+                in_flatten = true;
+                lassert( struct_i != NULL_I, "SREF/AREF has no SNAME" );
+                for( uint r = 0; r < row_cnt; r++ )
+                {
+                    for( uint c = 0; c < col_cnt; c++ )
+                    {
+                        //-----------------------------------------------------
+                        // Copy the structure's children with new transformation parameters.
+                        //-----------------------------------------------------
+                        real inst_x = x + xy[0][0];  
+                        real inst_y = y + xy[1][0];
+                        real inst_angle = angle + sangle;
+                        real inst_reflect = reflect;
+                        for( uint child_i = src_nodes[struct_i].u.child_first_i; child_i != NULL_I; child_i = src_nodes[child_i].sibling_i )
+                        {
+                        }
+                    }
+                }
+                return NULL_I;
             }
 
             default:
@@ -1461,26 +1491,17 @@ inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND 
     uint dst_i = node_alloc( src_node.kind );
     bool src_is_parent = src_layout->node_is_parent( src_node );
     if ( src_is_parent ) {
-        nodes[dst_i].u.child_first_i = uint(-1);
+        nodes[dst_i].u.child_first_i = NULL_I;
         if ( kind != COPY_KIND::ONE ) {
             //-----------------------------------------------------
             // Copy children.
             //-----------------------------------------------------
-            uint dst_prev_i = uint(-1);
-            for( src_i = src_node.u.child_first_i; src_i != uint(-1); src_i = src_layout->nodes[src_i].sibling_i )
+            uint dst_prev_i = NULL_I;
+            for( src_i = src_node.u.child_first_i; src_i != NULL_I; src_i = src_layout->nodes[src_i].sibling_i )
             {
-                if ( kind != COPY_KIND::DEEP && !node_is_scalar( src_layout->nodes[src_i] ) ) break;
+                if ( kind != COPY_KIND::DEEP && kind != COPY_KIND::FLATTEN && !node_is_scalar( src_layout->nodes[src_i] ) ) break;
 
-                //-----------------------------------------------------
-                // Scalars can't have hier, so ok to pass kind down.
-                //-----------------------------------------------------
-                uint dst_child_i = node_copy( src_layout, src_i, kind, x, y, angle, reflect );
-                if ( nodes[dst_i].u.child_first_i == uint(-1) ) {
-                    nodes[dst_i].u.child_first_i = dst_child_i;
-                } else {
-                    nodes[dst_prev_i].sibling_i = dst_child_i;
-                }
-                dst_prev_i = dst_child_i;
+                dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, kind, x, y, angle, reflect );
             }
         }
     } else {
@@ -1490,19 +1511,27 @@ inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND 
             nodes[dst_i].u = src_node.u;
         }
     }
+    
+    if ( last_i != NULL_I ) {
+        lassert( nodes[last_i].sibling_i == NULL_I, "node_copy: nodes[last_i] sibling_i is already set" ); 
+        nodes[last_i].sibling_i = dst_i;
+    } else if ( parent_i != NULL_I ) {
+        lassert( nodes[parent_i].u.child_first_i == NULL_I, "node_copy: nodes[parent_i] child_first_i is already set but last_i is NULL_I" ); 
+        nodes[parent_i].u.child_first_i = dst_i;
+    }
     return dst_i;
 }
 
 void Layout::node_timestamp( Node& node )
 {
     lassert( node.kind == NODE_KIND::BGNLIB || node.kind == NODE_KIND::BGNSTR, "node_timestamp: node must be BGNLIB or BGNSTR" );
-    lassert( node.u.child_first_i == uint(-1), "node_timestamp found node with children already" );
+    lassert( node.u.child_first_i == NULL_I, "node_timestamp found node with children already" );
 
     time_t t;
     time( &t );
     struct tm * tm = gmtime( &t );
 
-    uint prev_i = uint(-1);
+    uint prev_i = NULL_I;
     for( uint i = 0; i < 2; i++ ) 
     {
         uint ni = node_alloc( NODE_KIND::INT );
@@ -1558,7 +1587,7 @@ inline Layout::real Layout::height( void ) const
 
 uint Layout::start_library( std::string libname, real units_user, real units_meters )
 {
-    lassert( hdr->root_i == uint(-1), "starting a library when layout is not empty" );
+    lassert( hdr->root_i == NULL_I, "starting a library when layout is not empty" );
     
     uint ni = node_alloc( Layout::NODE_KIND::HIER );   // for file level (one node)
     hdr->root_i = ni;
@@ -1597,12 +1626,12 @@ uint Layout::start_library( std::string libname, real units_user, real units_met
     return prev_i;
 }
 
-uint Layout::inst_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, std::string name )
+uint Layout::inst_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, std::string name )
 {
-    return inst_layout( last_i, src_layout, src_struct_name, x, y, 0, hdr->layer_cnt-1, name );
+    return inst_layout( parent_i, last_i, src_layout, src_struct_name, x, y, 0, hdr->layer_cnt-1, name );
 }
 
-uint Layout::inst_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name )
+uint Layout::inst_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name )
 {
     //-----------------------------------------------------
     // Initialize our cache.
@@ -1622,8 +1651,8 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, std::string sr
         std::string inst_name = std::to_string( i ) + "_" + name;
         uint src_layer_num = layers[i].gdsii_num;
         ldout << "inst_layout: dst_layer=" << i << " src_layer=" << layers[i].gdsii_num << " x_off=" << x << " y_off=" << y << " inst_name=" << inst_name << "\n";
-        uint inst_last_i = inst_layout_node( last_i, src_layout, src_struct_name, src_layout->hdr->root_i, src_layer_num, i, cache, inst_name );
-        if ( inst_last_i != uint(-1) ) {
+        uint inst_last_i = inst_layout_node( parent_i, last_i, src_layout, src_struct_name, src_layout->hdr->root_i, src_layer_num, i, cache, inst_name );
+        if ( inst_last_i != NULL_I ) {
             last_i = inst_last_i;
         }
 
@@ -1646,7 +1675,7 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, std::string sr
     return last_i;
 }
 
-uint Layout::flatten_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name )
+uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name )
 {
     //------------------------------------------------------------
     // Locate the the src struct.
@@ -1659,10 +1688,10 @@ uint Layout::flatten_layout( uint last_i, const Layout * src_layout, std::string
     //------------------------------------------------------------
     // Recursively copy the src_struct.
     //------------------------------------------------------------
-    return node_copy( src_layout, src_struct_i, COPY_KIND::FLATTEN );
+    return node_copy( parent_i, last_i, src_layout, src_struct_i, COPY_KIND::FLATTEN );
 }
 
-uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, uint dst_layer_num, 
+uint Layout::inst_layout_node( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, uint dst_layer_num, 
                                has_layer_cache_t * cache, std::string name, std::string indent_str )
 {
     //-----------------------------------------------------
@@ -1678,7 +1707,7 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::stri
         //-----------------------------------------------------
         if ( !src_layout->node_has_layer( src_i, src_layer_num, cache, indent_str ) ) {
             //ldout << indent_str << str(src_node.kind) << " does NOT use src_layer=" << std::to_string(src_layer_num) << "\n";
-            return uint(-1);
+            return NULL_I;
         }
         //ldout << indent_str << str(src_node.kind) << " uses src_layer=" << std::to_string(src_layer_num) << "\n";
     }
@@ -1697,24 +1726,23 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::stri
     }
 
     ldout << indent_str << str(src_kind) << ": do_copy=" << do_copy << "\n";
-    if ( !do_copy ) return uint(-1);
+    if ( !do_copy ) return NULL_I;
 
     if ( src_kind != NODE_KIND::BGNLIB && src_kind != NODE_KIND::HIER ) {
         //-----------------------------------------------------
         // Copy this node and its scalar children.
         //-----------------------------------------------------
-        uint dst_i = node_copy( src_layout, src_i, COPY_KIND::SCALAR_CHILDREN );    // don't copy non-children yet
-        ldout << indent_str << "    dst_i=" << dst_i << " last_i=" << last_i << "\n";
-        if ( last_i != uint(-1) ) nodes[last_i].sibling_i = dst_i;
+        uint dst_i = node_copy( parent_i, last_i, src_layout, src_i, COPY_KIND::SCALAR_CHILDREN );    // don't copy non-children yet
+        lassert( dst_i != NULL_I, "node_copy should have returned a non-null node index" );
         last_i = dst_i;
         if ( src_kind == NODE_KIND::LAYER ) {
             //-----------------------------------------------------
             // Change LAYER from src_layer_num to dst_layer_num.
             //-----------------------------------------------------
             uint dst_int_node_i = nodes[dst_i].u.child_first_i;
-            lassert( dst_int_node_i != uint(-1), "LAYER node has no layer number" ); 
+            lassert( dst_int_node_i != NULL_I, "LAYER node has no layer number" ); 
             Node& dst_int_node = nodes[dst_int_node_i];
-            lassert( dst_int_node.kind == NODE_KIND::INT && dst_int_node.u.i == src_layer_num && dst_int_node.sibling_i == uint(-1), "unexpected layer_num in LAYER node" );
+            lassert( dst_int_node.kind == NODE_KIND::INT && dst_int_node.u.i == src_layer_num && dst_int_node.sibling_i == NULL_I, "unexpected layer_num in LAYER node" );
             dst_int_node.u.i = dst_layer_num;
             ldout << indent_str << "    layer change: " << src_layer_num << " => " << dst_layer_num << "\n";
 
@@ -1732,12 +1760,12 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::stri
             //-----------------------------------------------------
             uint src_prev_i = src_layout->node_last_scalar_i( src_node );
             uint dst_prev_i = node_last_scalar_i( nodes[dst_i] );
-            uint src_child_i = (src_prev_i == uint(-1)) ? src_node.u.child_first_i : src_layout->nodes[src_prev_i].sibling_i; 
-            for( ; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
+            uint src_child_i = (src_prev_i == NULL_I) ? src_node.u.child_first_i : src_layout->nodes[src_prev_i].sibling_i; 
+            for( ; src_child_i != NULL_I; src_child_i = src_layout->nodes[src_child_i].sibling_i )
             {
-                uint dst_child_i = inst_layout_node( dst_prev_i, src_layout, src_struct_name, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
-                if ( dst_child_i != uint(-1) ) {
-                    if ( dst_prev_i == uint(-1) ) nodes[dst_i].u.child_first_i = dst_child_i;
+                uint dst_child_i = inst_layout_node( src_i, dst_prev_i, src_layout, src_struct_name, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
+                if ( dst_child_i != NULL_I ) {
+                    if ( dst_prev_i == NULL_I ) nodes[dst_i].u.child_first_i = dst_child_i;
                     dst_prev_i = dst_child_i;
                 }
             }
@@ -1748,25 +1776,24 @@ uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::stri
             // Record struct by name.
             //-----------------------------------------------------
             uint struct_name_i = node_name_i( nodes[dst_i] );
-            lassert( struct_name_i != uint(-1), "could not find struct name"  );
+            lassert( struct_name_i != NULL_I, "could not find struct name"  );
             name_i_to_struct_i[struct_name_i] = dst_i;
         }
     } else {
         //-----------------------------------------------------
         // Skip BGNLIB/HIER and process non-scalar children.
         //-----------------------------------------------------
-        for( uint src_child_i = src_node.u.child_first_i; src_child_i != uint(-1); src_child_i = src_layout->nodes[src_child_i].sibling_i )
+        for( uint src_child_i = src_node.u.child_first_i; src_child_i != NULL_I; src_child_i = src_layout->nodes[src_child_i].sibling_i )
         {
             if ( !node_is_scalar( src_layout->nodes[src_child_i] ) ) {
-                uint dst_child_i = inst_layout_node( last_i, src_layout, src_struct_name, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
-                if ( dst_child_i != uint(-1) ) last_i = dst_child_i;
+                uint dst_child_i = inst_layout_node( src_i, last_i, src_layout, src_struct_name, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
+                if ( dst_child_i != NULL_I ) last_i = dst_child_i;
             } else {
                 ldout << indent_str << "    " << "skipping " << str(src_layout->nodes[src_child_i].kind) << "\n";
             }
         }
     }
 
-    //ldout << indent_str << "    " << str(src_kind) << " returning last_i=" << last_i << "\n";
     return last_i;
 }
 
@@ -1803,11 +1830,12 @@ void Layout::fill_material( uint material_i, real x, real y, real z, real w, rea
     //-----------------------------------------------------
 }
 
-void Layout::finalize_top_struct( uint last_i, std::string top_name )
+void Layout::finalize_top_struct( uint parent_i, uint last_i, std::string top_name )
 {
     //-----------------------------------------------------
     // Create one final struct that instantiates all top_insts.
     //-----------------------------------------------------
+    lassert( parent_i == NULL_I, "finalize parent_i must be NULL_I for now" );
     uint bgnstr_i = node_alloc( NODE_KIND::BGNSTR );
     nodes[last_i].sibling_i = bgnstr_i;
     node_timestamp( nodes[bgnstr_i] );
@@ -1860,8 +1888,8 @@ inline void Layout::perhaps_realloc( T *& array, const Layout::uint& hdr_cnt, La
         uint   old_max_cnt = max_cnt;
         max_cnt *= 2;
         if ( max_cnt < old_max_cnt ) {
-            lassert( old_max_cnt != uint(-1), "old_max_cnt should have been reasonable" );
-            max_cnt = uint(-1);
+            lassert( old_max_cnt != NULL_I, "old_max_cnt should have been reasonable" );
+            max_cnt = NULL_I;
         }
         T * new_array = aligned_alloc<T>( max_cnt );
         memcpy( new_array, array, hdr_cnt*sizeof(T) );
@@ -1967,21 +1995,21 @@ bool Layout::gdsii_read( std::string file, bool count_only )
     //------------------------------------------------------------
     // Create a file-level HIER node and read in all of them.
     //------------------------------------------------------------
-    uint ni = uint(-1);
+    uint ni = NULL_I;
     if ( !count_only ) {
         ni = node_alloc( NODE_KIND::HIER );
         hdr->root_i = ni;
     }
-    uint prev_i = uint(-1);
+    uint prev_i = NULL_I;
     gdsii_rec_cnt = 0;
-    uint struct_i = uint(-1);
+    uint struct_i = NULL_I;
     while( nnn < nnn_end )
     {
         uint child_i;
         if ( !gdsii_read_record( child_i, struct_i, count_only ) ) return false;
 
         if ( !count_only ) {
-            if ( prev_i == uint(-1) ) {
+            if ( prev_i == NULL_I ) {
                 nodes[ni].u.child_first_i = child_i;
             } else {
                 nodes[prev_i].sibling_i = child_i;
@@ -2034,7 +2062,7 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
     // Parse payload.
     //------------------------------------------------------------
     bool is_hier = node_is_hier( nodes[ni] );
-    uint prev_i = uint(-1);
+    uint prev_i = NULL_I;
     switch( datatype )
     {
         case GDSII_DATATYPE::NO_DATA:
@@ -2081,7 +2109,7 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
             uint8_t * uuu = nnn;
             for( uint i = 0; i < cnt; i++, uuu += datum_byte_cnt )
             {
-                uint child_i = uint(-1);
+                uint child_i = NULL_I;
                 if ( !count_only ) {
                     child_i = node_alloc( NODE_KIND::INT );
                     if ( i == 0 ) {
@@ -2142,15 +2170,15 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
     if ( !count_only && kind == NODE_KIND::STRNAME ) {
         // record name -> struct mapping
         uint name_i = node_name_i( nodes[ni] );
-        lassert( name_i != uint(-1), "STRNAME should have had a string" );
-        lassert( struct_i != uint(-1), "STRNAME found outside a structure" );
+        lassert( name_i != NULL_I, "STRNAME should have had a string" );
+        lassert( struct_i != NULL_I, "STRNAME found outside a structure" );
         name_i_to_struct_i[name_i] = struct_i;
     }
 
     if ( is_hier ) {
         if ( !count_only && kind == NODE_KIND::BGNSTR ) {
             // now inside a structure
-            lassert( struct_i == uint(-1), "nested BGNSTR is not allowed" );
+            lassert( struct_i == NULL_I, "nested BGNSTR is not allowed" );
             struct_i = ni;
         }
 
@@ -2162,7 +2190,7 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
             NODE_KIND kind = nodes[child_i].kind;
             if ( kind == NODE_KIND::ENDEL || kind == NODE_KIND::ENDSTR || kind == NODE_KIND::ENDLIB ) break;
             if ( !count_only ) {
-                if ( prev_i == uint(-1) ) {
+                if ( prev_i == NULL_I ) {
                     nodes[ni].u.child_first_i = child_i;
                 } else {
                     nodes[prev_i].sibling_i = child_i;
@@ -2188,7 +2216,7 @@ bool Layout::gdsii_write( std::string gdsii_path )
     if ( gdsii_fd < 0 ) ldout << "open() for write error: " << strerror( errno ) << "\n";
 
     ldout << "Writing " << gdsii_path << " root_i=" << hdr->root_i << "\n";
-    if ( hdr->root_i != uint(-1) ) gdsii_write_record( hdr->root_i );
+    if ( hdr->root_i != NULL_I ) gdsii_write_record( hdr->root_i );
 
     gdsii_flush( true );
     fsync( gdsii_fd ); // flush
@@ -2213,7 +2241,7 @@ void Layout::gdsii_write_record( uint ni, std::string indent_str )
         bytes[byte_cnt++] = int(node.kind);
         bytes[byte_cnt++] = int(datatype);
 
-        uint child_i = uint(-1);
+        uint child_i = NULL_I;
 
         switch( datatype )
         {
@@ -2245,7 +2273,7 @@ void Layout::gdsii_write_record( uint ni, std::string indent_str )
             case GDSII_DATATYPE::REAL_4:
             case GDSII_DATATYPE::REAL_8:
             {
-                for( child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                for( child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
                 {
                     if ( nodes[child_i].kind != NODE_KIND::INT && nodes[child_i].kind != NODE_KIND::REAL ) break; // skip GDSII children
                     gdsii_write_number( bytes, byte_cnt, child_i, datatype, indent_str + "    " );
@@ -2269,8 +2297,8 @@ void Layout::gdsii_write_record( uint ni, std::string indent_str )
 
         if ( node_is_hier( node ) ) {
             // recurse for rest of children
-            if ( child_i == uint(-1) ) child_i = node.u.child_first_i;
-            for( ; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+            if ( child_i == NULL_I ) child_i = node.u.child_first_i;
+            for( ; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
             {
                 gdsii_write_record( child_i, indent_str + "    " );
             }
@@ -2286,7 +2314,7 @@ void Layout::gdsii_write_record( uint ni, std::string indent_str )
 
     } else if ( node.kind == NODE_KIND::HIER ) {
         // assume file wrapper, just loop through children
-        for( uint child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+        for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
         {
             gdsii_write_record( child_i, indent_str + "    " );
         }
@@ -2547,7 +2575,7 @@ bool Layout::aedt_write( std::string file )
 
 void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_str )
 {
-    lassert( ni != uint(-1), "aedt_write_expr: bad node index" );
+    lassert( ni != NULL_I, "aedt_write_expr: bad node index" );
     const Node& node = nodes[ni];
     out << indent_str;
     switch( node.kind ) 
@@ -2592,7 +2620,7 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
             aedt_write_expr( out, child_i, "" );
             out << "(";
             bool have_one = false;
-            for( child_i = nodes[child_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+            for( child_i = nodes[child_i].sibling_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
             {
                 if ( have_one ) out << ", ";
                 aedt_write_expr( out, child_i, "" );
@@ -2608,11 +2636,11 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
             aedt_write_expr( out, child_i, "" );
             out << "[";
             child_i = nodes[child_i].sibling_i;
-            if ( child_i != uint(-1) ) {
+            if ( child_i != NULL_I ) {
                 aedt_write_expr( out, child_i, "" );
                 out << ":";
                 bool have_one = false;
-                for( child_i = nodes[child_i].sibling_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                for( child_i = nodes[child_i].sibling_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
                 {
                     out << (have_one ? ", " : " ");
                     aedt_write_expr( out, child_i, "" );
@@ -2627,20 +2655,20 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
         {
             uint id_i = node.u.child_first_i;
             uint child_i;
-            if ( id_i != uint(-1) && nodes[id_i].kind == NODE_KIND::STR ) {
+            if ( id_i != NULL_I && nodes[id_i].kind == NODE_KIND::STR ) {
                 out << "$begin '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
                 child_i = nodes[id_i].sibling_i;
             } else {
                 out << "$begin 'FILE'";
                 child_i = id_i;
-                id_i = uint(-1);
+                id_i = NULL_I;
             }
-            for( ; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+            for( ; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
             {
                 aedt_write_expr( out, child_i, indent_str + "\t" );
             }
             out << indent_str;
-            if ( id_i != uint(-1) ) {
+            if ( id_i != NULL_I ) {
                 out << "$end '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
             } else {
                 out << "$end 'FILE'\n";
@@ -2655,7 +2683,7 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
                 if ( node_is_hier( node ) ) {
                     out << "$begin '" << node.kind << "'";
                 }
-                uint child_i = uint(-1);
+                uint child_i = NULL_I;
                 switch( datatype )
                 {
                     case GDSII_DATATYPE::NO_DATA:
@@ -2680,7 +2708,7 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
                     case GDSII_DATATYPE::REAL_8:
                     {
                         std::string vals = "";
-                        for( child_i = node.u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                        for( child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
                         {
                             if ( nodes[child_i].kind != NODE_KIND::INT && nodes[child_i].kind != NODE_KIND::REAL ) break;
                             if ( vals != "" ) vals += ", ";
@@ -2702,8 +2730,8 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
                 }
 
                 if ( node_is_hier( node ) ) {
-                    if ( child_i == uint(-1) ) child_i = node.u.child_first_i;
-                    for( ; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+                    if ( child_i == NULL_I ) child_i = node.u.child_first_i;
+                    for( ; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
                     {
                         aedt_write_expr( out, child_i, indent_str + "\t" );
                     }
@@ -2731,7 +2759,7 @@ bool Layout::gds3d_write_layer_info( std::string file )
 
         out << "LayerStart: " << &strings[layer.name_i] << "\n";
         out << "Layer:      " << i << "\n";
-        if ( layer.gdsii_datatype != uint(-1) ) out << "Datatype:   " << layer.gdsii_datatype << "\n";
+        if ( layer.gdsii_datatype != NULL_I ) out << "Datatype:   " << layer.gdsii_datatype << "\n";
         out << "Height:     " << height << "\n";
         real thickness = layer.thickness / gdsii_units_user;
         out << "Thickness:  " << thickness << "\n";
@@ -2945,7 +2973,7 @@ uint Layout::str_find( std::string s ) const
 {
     auto it = str_to_str_i.find( s );
     if ( it != str_to_str_i.end() ) return it->second;
-    return uint(-1);
+    return NULL_I;
 }
 
 inline bool Layout::parse_number( uint node_i, uint8_t *& xxx, uint8_t *& xxx_end )
