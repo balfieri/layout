@@ -35,8 +35,8 @@
 //
 //     3) You can also write out (export) other types of files:
 //      
-//        layout->write( "new_chip.aedt" );     // writes out an .aedt files
 //        layout->write( "new_chip.gds" );      // writes out a .gds II file
+//        layout->write( "new_chip.aedt" );     // writes out an .aedt files
 //        layout->write( "new_chip.lst" );      // writes out a .lst file for FastCap2
 //        layout->write( "new_chip.henry" );    // writes out a FastHenry2 files
 //
@@ -86,10 +86,13 @@ public:
     typedef int32_t  _int;                  // by default, we use 32-bit integers
     typedef double   real;
 
-    // static functions for manipulating file paths
+    // FILE PATHS
+    // 
     static void        dissect_path( std::string path, std::string& dir_name, std::string& base_name, std::string& ext_name ); // utility
     static std::string path_without_ext( std::string path, std::string * file_ext=nullptr );  // returns path without file extension part
 
+    // LAYOUTS
+    //
     Layout( void );
     Layout( std::string top_file, bool count_only=false );
     ~Layout(); 
@@ -100,7 +103,26 @@ public:
     // write out layer info used by viewer programs (file extension determines format)
     bool write_layer_info( std::string file_path );
 
-    // following data structures will be populated
+    // current layout dimensions
+    real width( void ) const;
+    real length( void ) const;
+    real height( void ) const;
+
+    // start of a new library; returns last_i of last node
+    uint start_library( std::string libname, real units_user=0.001, real units_meters=1e-9 );
+
+    // instancing
+    uint inst_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, std::string name );
+    uint inst_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, 
+                      uint dst_layer_first, uint dst_layer_last, std::string name );
+    void finalize_top_struct( uint last_i, std::string top_name );
+
+    // fill
+    void fill_dielectrics( void );
+    void fill_material( uint material_i, real x, real y, real z, real w, real l, real h );
+
+
+    // PUBLIC DATA STRUCTURES
     //
     //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     // NOTE: THERE ARE NO POINTERS IN THESE DATA STRUCTURES.
@@ -260,9 +282,6 @@ public:
             
     static constexpr uint32_t GDSII_KIND_CNT = uint(NODE_KIND::LIBSECUR) + 1;
 
-    static std::string  str( NODE_KIND kind );
-    NODE_KIND           hier_end_kind( NODE_KIND kind ) const;      // returns corresponding end kind for hier kind
-    
     enum class GDSII_DATATYPE
     {
         NO_DATA,
@@ -305,6 +324,9 @@ public:
     uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
     uint        node_xy_i( const Node& node ) const;            // find index of XY node within node
 
+    static std::string  str( NODE_KIND kind );
+    NODE_KIND           hier_end_kind( NODE_KIND kind ) const;      // returns corresponding end kind for hier kind
+    
     enum class COPY_KIND
     {
         ONE,                                // copy only the one source node, no children
@@ -319,7 +341,6 @@ public:
 
     // global scalars
     static const uint   VERSION = 0xB0BA1f01; // current version 
-    bool                is_good;            // set to true if constructor succeeds
 
     // structs
     std::string         file_path;          // pathname of file passed to Layout()
@@ -332,32 +353,6 @@ public:
     Material *          materials;
     Layer *             layers;
     Node *              nodes;
-
-    struct TopInstInfo
-    {
-        uint            struct_i;
-        real            x;
-        real            y;
-    };
-    TopInstInfo *       top_insts;
-
-    // current dimensions
-    real width( void ) const;
-    real length( void ) const;
-    real height( void ) const;
-
-    // start of a new library; returns last_i of last node
-    uint start_library( std::string libname, real units_user=0.001, real units_meters=1e-9 );
-
-    // instancing
-    uint inst_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, std::string name );
-    uint inst_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name );
-    void finalize_top_struct( uint last_i, std::string top_name );
-
-    // fill
-    void fill_dielectrics( void );
-    void fill_material( uint material_i, real x, real y, real z, real w, real l, real h );
-
 
 
 
@@ -414,6 +409,14 @@ private:
 
     bool layout_read( std::string file_path );          // .layout
     bool layout_write( std::string file_path );         
+
+    struct TopInstInfo
+    {
+        uint            struct_i;
+        real            x;
+        real            y;
+    };
+    TopInstInfo *       top_insts;
 
     using has_layer_cache_t = std::map< uint, std::map<uint, bool>* >;
     bool node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache, std::string indent_str ) const;
@@ -649,7 +652,6 @@ Layout::GDSII_DATATYPE Layout::kind_to_datatype( Layout::NODE_KIND kind )
 
 void Layout::init( bool alloc_arrays )
 {
-    is_good = false;
     mapped_region = nullptr;
     nnn = nullptr;
     line_num = 1;
@@ -687,7 +689,6 @@ void Layout::init( bool alloc_arrays )
 Layout::Layout( void )
 {
     init( true );
-    is_good = true;
 }
 
 Layout::Layout( std::string top_file, bool count_only ) 
@@ -717,7 +718,6 @@ Layout::Layout( std::string top_file, bool count_only )
             lassert( false, "unknown top file ext_name: " + ext_name );
         }
 
-        is_good = true;
     }
 }
 
@@ -1825,8 +1825,6 @@ bool Layout::layout_read( std::string layout_path )
     _uread( layers,      Layer,       hdr->layer_cnt );
     _uread( nodes,       Node,        hdr->node_cnt );
     _uread( top_insts,   TopInstInfo, hdr->top_inst_cnt );
-
-    is_good = true;
 
     return true;
 }
