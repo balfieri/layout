@@ -20,42 +20,6 @@
 // 
 // Layout.h - 3D Layout reader/writer in one .h file
 //
-// How to use it:
-//
-//     0) Clone this repository
-//
-//     1) #include "Layout.h"
-//
-//        Layout * layout = new Layout( "my_chip.aedt" );
-//        layout->write( "my_chip.layout" );    // will write out the self-contained binary layout layout
-//
-//     2) After that, you can quickly read in the single binary layout file using:
-//
-//        Layout * layout = new Layout( "my_chip.layout" );  
-//
-//     3) You can also write out (export) other types of files:
-//      
-//        layout->write( "new_chip.gds" );      // writes out a .gds II file
-//        layout->write( "new_chip.aedt" );     // writes out an .aedt files
-//        layout->write( "new_chip.lst" );      // writes out a .lst file for FastCap2
-//        layout->write( "new_chip.henry" );    // writes out a FastHenry2 files
-//
-//        layout->write_layer_info( "new_chip.gds3d" ); // writes out layer info used by GDS3D viewer app
-//
-// How it works:
-//
-//     1) Allocate large virtual memory 1D arrays for records and other structures.
-//        These are allocated on a page boundary to make uncompressed writes faster.
-//        These arrays are dynamically resized.
-//     2) Read entire .aedt or other file into memory (the o/s should effectively make this work like an mmap).
-//     3) Parse .aedt file using custom parser that goes character-by-character and does its own number conversions. 
-//     4) Add elements to 1D arrays.  
-//     5) Write to  uncompressed file is fast because all structures are aligned on a page boundary in mem and in file.
-//     6) Read from uncompressed file is fast because all structures are aligned on a page boundary in mem and in file.
-//        The O/S will do the equivalent of an mmap() for each array.
-//
-// Note: this code was taken from Bob's 3D graphics model reader/writer https://github.com/balfieri/gfx3d.
-//
 #ifndef _Layout_h
 #define _Layout_h
 
@@ -108,20 +72,20 @@ public:
     real length( void ) const;
     real height( void ) const;
 
-    // start of a new library; returns last_i of last node
+    // start of a new library; Layout must be empty
     uint start_library( std::string libname, real units_user=0.001, real units_meters=1e-9 );
 
-    // instancing
+    // instancing of other layouts
     uint inst_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, std::string name );
     uint inst_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, 
                       uint dst_layer_first, uint dst_layer_last, std::string name );
     void finalize_top_struct( uint last_i, std::string top_name );
 
-    // fill
+    // fill of dielectrics or arbitrary material
     void fill_dielectrics( void );
     void fill_material( uint material_i, real x, real y, real z, real w, real l, real h );
 
-
+    
     // PUBLIC DATA STRUCTURES
     //
     //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
