@@ -16,7 +16,7 @@ Single Layout.h file provides:
 <pre>
 How to use it:
 
-    0) Clone this repository
+    0) Clone this repository.  This code should build on Linux, MacOS, and Cygwin with a C++14 compiler.
 
     1) #include "Layout.h"
 
@@ -29,12 +29,14 @@ How to use it:
 
     3) You can also write out (export) other types of files:
      
-       layout->write( "new_chip.gds" );      // writes out a .gds II file
-       layout->write( "new_chip.aedt" );     // writes out an .aedt files
-       layout->write( "new_chip.lst" );      // writes out a .lst file for FastCap2
-       layout->write( "new_chip.henry" );    // writes out a FastHenry2 files
+       layout->write( "new_chip.gds" );         // writes out a .gds II file
+       layout->write( "new_chip.aedt" );        // writes out an .aedt file for HFSS (includes layer info)
+       layout->write( "new_chip.fastcap" );     // writes out files for FastCap2, FFTCap 
+       layout->write( "new_chip.fasthenry" );   // writes out FastHenry2 files
+       layout->write( "new_chip.obj" );         // writes out Alias/Wavefront 3D .obj/.mtl files 
 
        layout->write_layer_info( "new_chip.gds3d" ); // writes out layer info used by GDS3D viewer app
+       layout->write_layer_info( "new_chip.vbs" );   // writes out HFSS scripting file with layer info
 </pre>
 
 <p>
