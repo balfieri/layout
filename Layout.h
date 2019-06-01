@@ -1502,6 +1502,47 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
 
                 //-----------------------------------------------------
                 // Now the fun part.
+                // 
+                // SREF:
+		//		res = object_view;
+	        //      	if(sref->Mag!=1.0){
+                //			mod.SetScale(VECTOR3D(sref->Mag, sref->Mag, 1));
+	        //			res = res * mod;
+		//		}
+		//		mod.SetTranslation(VECTOR3D(sref->X, sref->Y, 0.0f));
+		//		res = res * mod;
+		//		if(sref->Rotate.Y){
+		//			mod.SetRotationAxis(-sref->Rotate.Y, VECTOR3D(0.0f, 0.0f, 1.0f));
+		//			res = res * mod;
+		//		}
+		//		if(sref->Flipped){
+		//			mod.SetScale(VECTOR3D(1.0f, -1.0f, 1.0f));
+		//			res = res * mod;
+                //
+                // AREF:
+                //              dx1 = (float)(aref->X2 - aref->X1) / (float)aref->Columns;
+                //              dy1 = (float)(aref->Y2 - aref->Y1) / (float)aref->Columns;
+                //              dx2 = (float)(aref->X3 - aref->X1) / (float)aref->Rows;
+                //              dy2 = (float)(aref->Y3 - aref->Y1) / (float)aref->Rows;
+                //              for(i=0; i<aref->Rows; i++){
+                // for(j=0; j<aref->Columns; j++){
+                //      res = object_view;
+                //      if(aref->Mag!=1.0){
+                //          mod.SetScale(VECTOR3D(aref->Mag, aref->Mag, 1));
+                //          res = res * mod;
+                //      }
+                //      mod.SetTranslation(VECTOR3D(aref->X1+dx1*(float)j+dx2*(float)i, aref->Y1+dy2*(float)i+dy1*(float)j, 0.0f));
+                //      res = res * mod;
+                //      if(aref->Rotate.Y){
+                //          mod.SetRotationAxis(-aref->Rotate.Y, VECTOR3D(0.0f, 0.0f, 1.0f));
+                //          res = res * mod;
+                //      }
+                //      if(aref->Flipped){
+                //          mod.SetScale(VECTOR3D(1.0f, -1.0f, 1.0f));
+                //          res = res * mod;
+                //      }
+                //-----------------------------------------------------
+
                 //-----------------------------------------------------
                 in_flatten = true;
                 lassert( struct_i != NULL_I, "SREF/AREF has no SNAME" );
