@@ -50,7 +50,7 @@ public:
     typedef int32_t  _int;                  // by default, we use 32-bit integers
     typedef double   real;
 
-    const uint NULL_I = -1;                 // null index into an array
+    static const uint NULL_I = -1;                 // null index into an array
 
     // FILE PATHS
     // 
@@ -1397,21 +1397,27 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                     switch( child.kind )
                     {
                         case NODE_KIND::SNAME:
+                        {
                             lassert( sname_i == NULL_I, "SREF/AREF has duplicate SNAME child" );
                             sname_i = child.u.s_i;
                             auto it = src_layout->name_i_to_struct_i.find( sname_i );
                             lassert( it != src_layout->name_i_to_struct_i.end(), "SREF/AREF SNAME " + std::string(&src_layout->strings[sname_i]) + " does not denote a known struct" );
                             struct_i = it->second;
                             break;
+                        }
 
                         case NODE_KIND::STRANS:
+                        {
                             strans = child.u.u;
                             break;
+                        }
 
                         case NODE_KIND::ANGLE:
+                        {
                             sangle = child.u.r;
                             break;
-                            
+                        }
+
                         case NODE_KIND::COLROW:
                         {
                             lassert( src_node.kind == NODE_KIND::AREF, "COLROW not allowed for an SREF" );
@@ -1763,7 +1769,7 @@ uint Layout::inst_layout_node( uint parent_i, uint last_i, const Layout * src_la
             uint src_child_i = (src_prev_i == NULL_I) ? src_node.u.child_first_i : src_layout->nodes[src_prev_i].sibling_i; 
             for( ; src_child_i != NULL_I; src_child_i = src_layout->nodes[src_child_i].sibling_i )
             {
-                uint dst_child_i = inst_layout_node( src_i, dst_prev_i, src_layout, src_struct_name, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
+                uint dst_child_i = inst_layout_node( dst_i, dst_prev_i, src_layout, src_struct_name, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
                 if ( dst_child_i != NULL_I ) {
                     if ( dst_prev_i == NULL_I ) nodes[dst_i].u.child_first_i = dst_child_i;
                     dst_prev_i = dst_child_i;
@@ -1786,7 +1792,7 @@ uint Layout::inst_layout_node( uint parent_i, uint last_i, const Layout * src_la
         for( uint src_child_i = src_node.u.child_first_i; src_child_i != NULL_I; src_child_i = src_layout->nodes[src_child_i].sibling_i )
         {
             if ( !node_is_scalar( src_layout->nodes[src_child_i] ) ) {
-                uint dst_child_i = inst_layout_node( src_i, last_i, src_layout, src_struct_name, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
+                uint dst_child_i = inst_layout_node( parent_i, last_i, src_layout, src_struct_name, src_child_i, src_layer_num, dst_layer_num, cache, name, indent_str + "    " );
                 if ( dst_child_i != NULL_I ) last_i = dst_child_i;
             } else {
                 ldout << indent_str << "    " << "skipping " << str(src_layout->nodes[src_child_i].kind) << "\n";
