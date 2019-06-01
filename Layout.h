@@ -79,13 +79,13 @@ public:
     uint inst_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, std::string name );
     uint inst_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, 
                       uint dst_layer_first, uint dst_layer_last, std::string name );
-    void finalize_top_struct( uint last_i, std::string top_name );
-
+    void finalize_top_struct( uint last_i, std::string top_name );              // use to create top-level struct of all insts
+    uint flatten_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name="" );  // straight copy with flattening
+    
     // fill of dielectrics or arbitrary material
     void fill_dielectrics( void );
     void fill_material( uint material_i, real x, real y, real z, real w, real l, real h );
 
-    
     // PUBLIC DATA STRUCTURES
     //
     //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -114,6 +114,7 @@ public:
     // creates new index if s is not already in strings[]
     //
     uint str_get( std::string s );
+    uint str_find( std::string s ) const;
 
     class Material
     {
@@ -296,9 +297,10 @@ public:
         ONE,                                // copy only the one source node, no children
         SCALAR_CHILDREN,                    // copy scalar children only (INT, REAL, etc.)
         DEEP,                               // copy all children and descendents
+        FLATTEN,                            // copy all children but flatten all REFs
     };
     uint        node_alloc( NODE_KIND kind );                   // allocate a node of the given kind
-    uint        node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind );
+    uint        node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind, real x=0, real y=0, real angle=0, bool reflect=false );
 
     static GDSII_DATATYPE kind_to_datatype( NODE_KIND kind );
     static std::string    str( GDSII_DATATYPE datatype );
@@ -403,6 +405,7 @@ private:
     void aedt_write_expr( std::ofstream& out, uint node_i, std::string indent_str );
 
     bool gds3d_write_layer_info( std::string file );
+    bool vbs_write_layer_info( std::string file );
 
     bool cmd( std::string c );
     bool open_and_read( std::string file_name, uint8_t *& start, uint8_t *& end );
@@ -739,6 +742,8 @@ bool Layout::write_layer_info( std::string file_path )
     dissect_path( file_path, dir_name, base_name, ext_name );
     if ( ext_name == std::string( ".gds3d" ) ) {
         return gds3d_write_layer_info( file_path );
+    } else if ( ext_name == std::string( ".vbs" ) ) {
+        return vbs_write_layer_info( file_path );
     } else {
         lassert( false, "write_layer_info: unknown file ext_name: " + ext_name );
         return false;
@@ -1351,7 +1356,7 @@ inline uint Layout::node_alloc( NODE_KIND kind )
     return ni;
 }
 
-inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind )
+inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND kind, real x, real y, real angle, bool reflect )
 {
     //-----------------------------------------------------
     // Copy the main node.
@@ -1373,7 +1378,7 @@ inline uint Layout::node_copy( const Layout * src_layout, uint src_i, COPY_KIND 
                 //-----------------------------------------------------
                 // Scalars can't have hier, so ok to pass kind down.
                 //-----------------------------------------------------
-                uint dst_child_i = node_copy( src_layout, src_i, kind );
+                uint dst_child_i = node_copy( src_layout, src_i, kind, x, y, angle, reflect );
                 if ( nodes[dst_i].u.child_first_i == uint(-1) ) {
                     nodes[dst_i].u.child_first_i = dst_child_i;
                 } else {
@@ -1543,6 +1548,22 @@ uint Layout::inst_layout( uint last_i, const Layout * src_layout, std::string sr
         top_insts[ii] = TopInstInfo{ dst_top_struct_i, x, y };
     }
     return last_i;
+}
+
+uint Layout::flatten_layout( uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name )
+{
+    //------------------------------------------------------------
+    // Locate the the src struct.
+    //------------------------------------------------------------
+    uint src_struct_name_i = src_layout->str_find( src_struct_name );
+    auto it = src_layout->name_i_to_struct_i.find( src_struct_name_i );
+    lassert( it != src_layout->name_i_to_struct_i.end(), "no src struct with the name " + src_struct_name );
+    uint src_struct_i = it->second;
+
+    //------------------------------------------------------------
+    // Recursively copy the src_struct.
+    //------------------------------------------------------------
+    return node_copy( src_layout, src_struct_i, COPY_KIND::FLATTEN );
 }
 
 uint Layout::inst_layout_node( uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, uint dst_layer_num, 
@@ -2633,6 +2654,11 @@ bool Layout::gds3d_write_layer_info( std::string file )
     return true;
 }
 
+bool Layout::vbs_write_layer_info( std::string file )
+{
+    return false;
+}
+
 void Layout::dissect_path( std::string path, std::string& dir_name, std::string& base_name, std::string& ext_name ) 
 {
     // in case they are not found:
@@ -2817,6 +2843,13 @@ uint Layout::str_get( std::string s )
     str_to_str_i[s] = s_i;
     ldout << "str_i[" + s + "]=" + std::to_string(s_i) << "\n";
     return s_i;
+}
+
+uint Layout::str_find( std::string s ) const
+{
+    auto it = str_to_str_i.find( s );
+    if ( it != str_to_str_i.end() ) return it->second;
+    return uint(-1);
 }
 
 inline bool Layout::parse_number( uint node_i, uint8_t *& xxx, uint8_t *& xxx_end )
