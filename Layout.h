@@ -77,12 +77,125 @@ public:
     // start of a new library; Layout must be empty
     uint start_library( std::string libname, real units_user=0.001, real units_meters=1e-9 );
 
+    class real4
+    {
+    public:
+        real c[4];
+        
+        real4( void )                               { c[0] = 0;  c[1] = 0;  c[2] = 0;  c[3] = 0;  }
+        real4( real c0, real c1, real c2, real c3 ) { c[0] = c0; c[1] = c1; c[2] = c2; c[3] = c3; }
+
+        real   dot( const real4 &v2 ) const;
+        real   length( void ) const;
+        real   length_sqr( void ) const ;
+        real4& normalize( void );
+        real4  normalized( void ) const;
+        real4  operator + ( const real4& v ) const;
+        real4  operator - ( const real4& v ) const;
+        real4  operator * ( const real4& v ) const;
+        real4  operator * ( real s ) const;
+        real4  operator / ( const real4& v ) const;
+        real4  operator / ( real s ) const;
+        real4& operator += ( const real4 &v2 );
+        real4& operator -= ( const real4 &v2 );
+        real4& operator *= ( const real4 &v2 );
+        real4& operator *= ( const real s );
+        real4& operator /= ( const real4 &v2 );
+        real4& operator /= ( const real s );
+    };
+
+    class real3
+    {
+    public:
+        real c[3];
+        
+        real3( void )                      { c[0] = 0;  c[1] = 0;  c[2] = 0;  }
+        real3( real c0, real c1, real c2 ) { c[0] = c0; c[1] = c1; c[2] = c2; }
+
+        real   dot( const real3 &v2 ) const;
+        real3  cross( const real3 &v2 ) const;
+        real   length( void ) const;
+        real   length_sqr( void ) const ;
+        real3& normalize( void );
+        real3  normalized( void ) const;
+        real3  operator + ( const real3& v ) const;
+        real3  operator - ( const real3& v ) const;
+        real3  operator * ( const real3& v ) const;
+        real3  operator * ( real s ) const;
+        real3  operator / ( const real3& v ) const;
+        real3  operator / ( real s ) const;
+        real3& operator += ( const real3 &v2 );
+        real3& operator -= ( const real3 &v2 );
+        real3& operator *= ( const real3 &v2 );
+        real3& operator *= ( const real s );
+        real3& operator /= ( const real3 &v2 );
+        real3& operator /= ( const real s );
+    };
+
+    class real2
+    {
+    public:
+        real c[2];
+
+        real2( void )             { c[0] = 0;  c[1] = 0;  }
+        real2( real c0, real c1 ) { c[0] = c0; c[1] = c1; }
+
+        real   dot( const real2 &v2 ) const;
+        real   length( void ) const;
+        real   length_sqr( void ) const ;
+        real2& normalize( void );
+        real2  normalized( void ) const;
+        real2  operator + ( const real2& v ) const;
+        real2  operator - ( const real2& v ) const;
+        real2  operator * ( const real2& v ) const;
+        real2  operator * ( real s ) const;
+        real2  operator / ( const real2& v ) const;
+        real2  operator / ( real s ) const;
+        real2& operator += ( const real2 &v2 );
+        real2& operator -= ( const real2 &v2 );
+        real2& operator *= ( const real2 &v2 );
+        real2& operator *= ( const real s );
+        real2& operator /= ( const real2 &v2 );
+        real2& operator /= ( const real s );
+    };
+
+    class Matrix                                        // used for instancing to transform
+    {
+    public:
+        real            m[4][4];
+
+        Matrix( void )          { identity(); }
+
+        void   identity(  void );                       // make this the identity matrix
+        void   translate( const real3& translation );   // translate this matrix by a real3
+        void   scale(     const real3& scaling );       // scale this matrix by a real3
+        void   rotate_xz( double radians );             // rotate by radians in xz plane (yaw)
+        void   rotate_yz( double radians );             // rotate by radians in yz plane (pitch)
+        void   rotate_xy( double radians );             // rotate by radians in xy plane (roll)
+
+        Matrix operator + ( const Matrix& m ) const;    // add two matrices
+        Matrix operator - ( const Matrix& m ) const;    // subtract two matrices
+        bool   operator == ( const Matrix& m ) const;   // return true if matrices are equal
+
+        void   multiply(    double s );                 // multiply this matrix by scalar
+
+        real4  row( uint r ) const;                     // returns row r as a vector
+        real4  column( uint c ) const;                  // returns column c as a vector
+        void   transform( const real4& v, real4& r ) const; // multiply this matrix (lhs) by vector, returning vector r without div by w
+        void   transform( const real3& v, real3& r, bool div_by_w=false ) const; // multiply this matrix (lhs) by vector, returning vector r
+        void   transform( const Matrix& m, Matrix& r ) const; // multiply this matrix (lhs) by matrix m, returning matrix r
+        void   transpose( Matrix& mt ) const;           // return the transpose this matrix 
+    };
+
     // instancing of other layouts
     uint inst_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, std::string name );
     uint inst_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, 
                       uint dst_layer_first, uint dst_layer_last, std::string name );
+    uint inst_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, const Matrix& M,
+                      uint dst_layer_first, uint dst_layer_last, std::string name );
     void finalize_top_struct( uint parent_i, uint last_i, std::string top_name );              // use to create top-level struct of all insts
-    uint flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name="" );  // straight copy with flattening
+    uint flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name="",
+                         const Matrix& M = Matrix() );  // straight copy with flattening
     
     // fill of dielectrics or arbitrary material
     void fill_dielectrics( void );
@@ -303,7 +416,7 @@ public:
     };
     uint        node_alloc( NODE_KIND kind );                   // allocate a node of the given kind
     uint        node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND kind, 
-                           real x=0, real y=0, real mag=0, real angle=0, bool reflect=false, bool in_flatten=false );
+                           const Matrix& M = Matrix(), bool in_flatten=false );
 
     static GDSII_DATATYPE kind_to_datatype( NODE_KIND kind );
     static std::string    str( GDSII_DATATYPE datatype );
@@ -382,8 +495,7 @@ private:
     struct TopInstInfo
     {
         uint            struct_i;
-        real            x;
-        real            y;
+        Matrix          M;
     };
     TopInstInfo *       top_insts;
 
@@ -1075,6 +1187,642 @@ uint Layout::layer_get( std::string name )
     return NULL_I;
 }
 
+inline std::ostream& operator << ( std::ostream& os, const Layout::real4& v ) 
+{
+    os << "[" << v.c[0] << "," << v.c[1] << "," << v.c[2] << "," << v.c[3] << "]";
+    return os;
+}
+
+inline std::ostream& operator << ( std::ostream& os, const Layout::real3& v ) 
+{
+    os << "[" << v.c[0] << "," << v.c[1] << "," << v.c[2] << "]";
+    return os;
+}
+
+inline std::ostream& operator << ( std::ostream& os, const Layout::real2& v ) 
+{
+    os << "[" << v.c[0] << "," << v.c[1] << "]";
+    return os;
+}
+
+inline std::ostream& operator << ( std::ostream& os, const Layout::Matrix& m ) 
+{
+    os << "[ [" << m.m[0][0] << "," << m.m[0][1] << "," << m.m[0][2] << "," << m.m[0][3] << "],\n" << 
+          "  [" << m.m[1][0] << "," << m.m[1][1] << "," << m.m[1][2] << "," << m.m[1][3] << "],\n" << 
+          "  [" << m.m[2][0] << "," << m.m[2][1] << "," << m.m[2][2] << "," << m.m[2][3] << "],\n" << 
+          "  [" << m.m[3][0] << "," << m.m[3][1] << "," << m.m[3][2] << "," << m.m[3][3] << "] ]\n";
+    return os;
+}
+
+inline Layout::real Layout::real4::dot( const Layout::real4 &v2 ) const
+{
+    return c[0] * v2.c[0] + c[1] * v2.c[1] + c[2] * v2.c[2] + c[3] * v2.c[3];
+}
+
+inline Layout::real Layout::real4::length( void ) const
+{ 
+    return std::sqrt( c[0]*c[0] + c[1]*c[1] + c[2]*c[2] + c[3]*c[3] ); 
+}
+
+inline Layout::real Layout::real4::length_sqr( void ) const 
+{ 
+    return c[0]*c[0] + c[1]*c[1] + c[2]*c[2] + c[3]*c[3];
+}
+
+inline Layout::real4& Layout::real4::normalize( void )
+{
+    *this /= length();
+    return *this;
+}
+
+inline Layout::real4 Layout::real4::normalized( void ) const
+{
+    return *this / length();
+}
+
+inline Layout::real4 Layout::real4::operator + ( const Layout::real4& v2 ) const
+{
+    real4 r;
+    r.c[0] = c[0] + v2.c[0];
+    r.c[1] = c[1] + v2.c[1];
+    r.c[2] = c[2] + v2.c[2];
+    r.c[3] = c[3] + v2.c[3];
+    return r;
+}
+
+inline Layout::real4 Layout::real4::operator - ( const Layout::real4& v2 ) const
+{
+    real4 r;
+    r.c[0] = c[0] - v2.c[0];
+    r.c[1] = c[1] - v2.c[1];
+    r.c[2] = c[2] - v2.c[2];
+    r.c[3] = c[3] - v2.c[3];
+    return r;
+}
+
+inline Layout::real4 Layout::real4::operator * ( const Layout::real4& v2 ) const
+{
+    real4 r;
+    r.c[0] = c[0] * v2.c[0];
+    r.c[1] = c[1] * v2.c[1];
+    r.c[2] = c[2] * v2.c[2];
+    r.c[3] = c[3] * v2.c[3];
+    return r;
+}
+
+inline Layout::real4 operator * ( Layout::real s, const Layout::real4& v ) 
+{
+    return Layout::real4( s*v.c[0], s*v.c[1], s*v.c[2], s*v.c[3] );
+}
+
+inline Layout::real4 Layout::real4::operator * ( Layout::real s ) const
+{
+    real4 r;
+    r.c[0] = c[0] * s;
+    r.c[1] = c[1] * s;
+    r.c[2] = c[2] * s;
+    r.c[3] = c[3] * s;
+    return r;
+}
+
+inline Layout::real4 Layout::real4::operator / ( const Layout::real4& v2 ) const
+{
+    real4 r;
+    r.c[0] = c[0] / v2.c[0];
+    r.c[1] = c[1] / v2.c[1];
+    r.c[2] = c[2] / v2.c[2];
+    r.c[3] = c[3] / v2.c[3];
+    return r;
+}
+
+inline Layout::real4 Layout::real4::operator / ( Layout::real s ) const
+{
+    real4 r;
+    r.c[0] = c[0] / s;
+    r.c[1] = c[1] / s;
+    r.c[2] = c[2] / s;
+    r.c[3] = c[3] / s;
+    return r;
+}
+
+inline Layout::real4& Layout::real4::operator += ( const Layout::real4 &v2 )
+{
+    c[0] += v2.c[0];
+    c[1] += v2.c[1];
+    c[2] += v2.c[2];
+    c[3] += v2.c[3];
+    return *this;
+}
+
+inline Layout::real4& Layout::real4::operator -= ( const Layout::real4 &v2 )
+{
+    c[0] -= v2.c[0];
+    c[1] -= v2.c[1];
+    c[2] -= v2.c[2];
+    c[3] -= v2.c[3];
+    return *this;
+}
+
+inline Layout::real4& Layout::real4::operator *= ( const Layout::real4 &v2 )
+{
+    c[0] *= v2.c[0];
+    c[1] *= v2.c[1];
+    c[2] *= v2.c[2];
+    c[3] *= v2.c[3];
+    return *this;
+}
+
+inline Layout::real4& Layout::real4::operator *= ( const Layout::real s )
+{
+    c[0] *= s;
+    c[1] *= s;
+    c[2] *= s;
+    c[3] *= s;
+    return *this;
+}
+
+inline Layout::real4& Layout::real4::operator /= ( const Layout::real4 &v2 )
+{
+    c[0] /= v2.c[0];
+    c[1] /= v2.c[1];
+    c[2] /= v2.c[2];
+    c[3] /= v2.c[3];
+    return *this;
+}
+
+inline Layout::real4& Layout::real4::operator /= ( const Layout::real s )
+{
+    c[0] /= s;
+    c[1] /= s;
+    c[2] /= s;
+    c[3] /= s;
+    return *this;
+}
+
+inline Layout::real Layout::real3::dot( const Layout::real3 &v2 ) const
+{
+    return c[0] * v2.c[0] + c[1] * v2.c[1] + c[2] * v2.c[2];
+}
+
+inline Layout::real3 Layout::real3::cross( const Layout::real3 &v2 ) const
+{
+    return real3( (c[1]*v2.c[2]   - c[2]*v2.c[1]),
+                  (-(c[0]*v2.c[2] - c[2]*v2.c[0])),
+                  (c[0]*v2.c[1]   - c[1]*v2.c[0]) );
+}
+
+inline Layout::real Layout::real3::length( void ) const
+{ 
+    return std::sqrt( c[0]*c[0] + c[1]*c[1] + c[2]*c[2] ); 
+}
+
+inline Layout::real Layout::real3::length_sqr( void ) const 
+{ 
+    return c[0]*c[0] + c[1]*c[1] + c[2]*c[2];
+}
+
+inline Layout::real3& Layout::real3::normalize( void )
+{
+    *this /= length();
+    return *this;
+}
+
+inline Layout::real3 Layout::real3::normalized( void ) const
+{
+    return *this / length();
+}
+
+inline Layout::real3 Layout::real3::operator + ( const Layout::real3& v2 ) const
+{
+    real3 r;
+    r.c[0] = c[0] + v2.c[0];
+    r.c[1] = c[1] + v2.c[1];
+    r.c[2] = c[2] + v2.c[2];
+    return r;
+}
+
+inline Layout::real3 Layout::real3::operator - ( const Layout::real3& v2 ) const
+{
+    real3 r;
+    r.c[0] = c[0] - v2.c[0];
+    r.c[1] = c[1] - v2.c[1];
+    r.c[2] = c[2] - v2.c[2];
+    return r;
+}
+
+inline Layout::real3 Layout::real3::operator * ( const Layout::real3& v2 ) const
+{
+    real3 r;
+    r.c[0] = c[0] * v2.c[0];
+    r.c[1] = c[1] * v2.c[1];
+    r.c[2] = c[2] * v2.c[2];
+    return r;
+}
+
+inline Layout::real3 operator * ( Layout::real s, const Layout::real3& v ) 
+{
+    return Layout::real3( s*v.c[0], s*v.c[1], s*v.c[2] );
+}
+
+inline Layout::real3 Layout::real3::operator * ( Layout::real s ) const
+{
+    real3 r;
+    r.c[0] = c[0] * s;
+    r.c[1] = c[1] * s;
+    r.c[2] = c[2] * s;
+    return r;
+}
+
+inline Layout::real3 Layout::real3::operator / ( const Layout::real3& v2 ) const
+{
+    real3 r;
+    r.c[0] = c[0] / v2.c[0];
+    r.c[1] = c[1] / v2.c[1];
+    r.c[2] = c[2] / v2.c[2];
+    return r;
+}
+
+inline Layout::real3 Layout::real3::operator / ( Layout::real s ) const
+{
+    real3 r;
+    r.c[0] = c[0] / s;
+    r.c[1] = c[1] / s;
+    r.c[2] = c[2] / s;
+    return r;
+}
+
+inline Layout::real3& Layout::real3::operator += ( const Layout::real3 &v2 )
+{
+    c[0] += v2.c[0];
+    c[1] += v2.c[1];
+    c[2] += v2.c[2];
+    return *this;
+}
+
+inline Layout::real3& Layout::real3::operator -= ( const Layout::real3 &v2 )
+{
+    c[0] -= v2.c[0];
+    c[1] -= v2.c[1];
+    c[2] -= v2.c[2];
+    return *this;
+}
+
+inline Layout::real3& Layout::real3::operator *= ( const Layout::real3 &v2 )
+{
+    c[0] *= v2.c[0];
+    c[1] *= v2.c[1];
+    c[2] *= v2.c[2];
+    return *this;
+}
+
+inline Layout::real3& Layout::real3::operator *= ( const Layout::real s )
+{
+    c[0] *= s;
+    c[1] *= s;
+    c[2] *= s;
+    return *this;
+}
+
+inline Layout::real3& Layout::real3::operator /= ( const Layout::real3 &v2 )
+{
+    c[0] /= v2.c[0];
+    c[1] /= v2.c[1];
+    c[2] /= v2.c[2];
+    return *this;
+}
+
+inline Layout::real3& Layout::real3::operator /= ( const Layout::real s )
+{
+    c[0] /= s;
+    c[1] /= s;
+    c[2] /= s;
+    return *this;
+}
+
+inline Layout::real Layout::real2::dot( const Layout::real2 &v2 ) const
+{
+    return c[0] * v2.c[0] + c[1] * v2.c[1];
+}
+
+inline Layout::real Layout::real2::length( void ) const
+{ 
+    return std::sqrt( c[0]*c[0] + c[1]*c[1] );
+}
+
+inline Layout::real Layout::real2::length_sqr( void ) const 
+{ 
+    return c[0]*c[0] + c[1]*c[1];
+}
+
+inline Layout::real2& Layout::real2::normalize( void )
+{
+    *this /= length();
+    return *this;
+}
+
+inline Layout::real2 Layout::real2::normalized( void ) const
+{
+    return *this / length();
+}
+
+inline Layout::real2 Layout::real2::operator + ( const Layout::real2& v2 ) const
+{
+    real2 r;
+    r.c[0] = c[0] + v2.c[0];
+    r.c[1] = c[1] + v2.c[1];
+    return r;
+}
+
+inline Layout::real2 Layout::real2::operator - ( const Layout::real2& v2 ) const
+{
+    real2 r;
+    r.c[0] = c[0] - v2.c[0];
+    r.c[1] = c[1] - v2.c[1];
+    return r;
+}
+
+inline Layout::real2 Layout::real2::operator * ( const Layout::real2& v2 ) const
+{
+    real2 r;
+    r.c[0] = c[0] * v2.c[0];
+    r.c[1] = c[1] * v2.c[1];
+    return r;
+}
+
+inline Layout::real2 Layout::real2::operator * ( Layout::real s ) const
+{
+    real2 r;
+    r.c[0] = c[0] * s;
+    r.c[1] = c[1] * s;
+    return r;
+}
+
+inline Layout::real2 Layout::real2::operator / ( const Layout::real2& v2 ) const
+{
+    real2 r;
+    r.c[0] = c[0] / v2.c[0];
+    r.c[1] = c[1] / v2.c[1];
+    return r;
+}
+
+inline Layout::real2 Layout::real2::operator / ( Layout::real s ) const
+{
+    real2 r;
+    r.c[0] = c[0] / s;
+    r.c[1] = c[1] / s;
+    return r;
+}
+
+inline Layout::real2& Layout::real2::operator += ( const Layout::real2 &v2 )
+{
+    c[0] += v2.c[0];
+    c[1] += v2.c[1];
+    return *this;
+}
+
+inline Layout::real2& Layout::real2::operator -= ( const Layout::real2 &v2 )
+{
+    c[0] -= v2.c[0];
+    c[1] -= v2.c[1];
+    return *this;
+}
+
+inline Layout::real2& Layout::real2::operator *= ( const Layout::real2 &v2 )
+{
+    c[0] *= v2.c[0];
+    c[1] *= v2.c[1];
+    return *this;
+}
+
+inline Layout::real2& Layout::real2::operator *= ( const Layout::real s )
+{
+    c[0] *= s;
+    c[1] *= s;
+    return *this;
+}
+
+inline Layout::real2& Layout::real2::operator /= ( const Layout::real2 &v2 )
+{
+    c[0] /= v2.c[0];
+    c[1] /= v2.c[1];
+    return *this;
+}
+
+inline Layout::real2& Layout::real2::operator /= ( const Layout::real s )
+{
+    c[0] /= s;
+    c[1] /= s;
+    return *this;
+}
+
+inline void Layout::Matrix::identity( void )
+{
+    for( uint i = 0; i < 4; i++ )
+    {
+        for( uint j = 0; j < 4; j++ )
+        {
+            m[i][j] = (i == j) ? 1 : 0;
+        }
+    }
+}
+
+inline void Layout::Matrix::translate( const real3& translation )
+{
+    m[0][3] += translation.c[0];
+    m[1][3] += translation.c[1];
+    m[2][3] += translation.c[2];
+}
+
+inline void Layout::Matrix::scale( const real3& scaling )
+{
+    m[0][0] *= scaling.c[0];
+    m[1][1] *= scaling.c[1];
+    m[2][2] *= scaling.c[2];
+}
+
+void Layout::Matrix::rotate_xy( double radians )
+{
+    if ( radians == 0.0 ) return;
+    double c = cos( radians );
+    double s = sin( radians );
+    Matrix mr;
+    mr.identity();
+    mr.m[0][0] = c;
+    mr.m[0][1] = s;
+    mr.m[1][0] = -s;
+    mr.m[1][1] = c;
+    Matrix r = *this;
+    mr.transform( r, *this );
+}
+
+void Layout::Matrix::rotate_xz( double radians )
+{
+    if ( radians == 0.0 ) return;
+    double c = cos( radians );
+    double s = sin( radians );
+    Matrix mr;
+    mr.identity();
+    mr.m[0][0] = c;
+    mr.m[0][2] = s;
+    mr.m[2][0] = -s;
+    mr.m[2][2] = c;
+    Matrix r = *this;
+    mr.transform( r, *this );
+}
+
+void Layout::Matrix::rotate_yz( double radians )
+{
+    if ( radians == 0.0 ) return;
+    double c = cos( radians );
+    double s = sin( radians );
+    Matrix mr;
+    mr.identity();
+    mr.m[1][1] = c;
+    mr.m[1][2] = -s;
+    mr.m[2][1] = s;
+    mr.m[2][2] = c;
+    Matrix r = *this;
+    mr.transform( r, *this );
+}
+
+inline Layout::Matrix Layout::Matrix::operator + ( const Matrix& m ) const
+{
+    Matrix r;
+    for( uint i = 0; i < 4; i++ )
+    {
+        for( uint j = 0; j < 4; j++ )
+        {
+            r.m[i][j] = this->m[i][j] + m.m[i][j];
+        }
+    }
+    return r;
+}
+
+inline Layout::Matrix Layout::Matrix::operator - ( const Matrix& m ) const
+{
+    Matrix r;
+    for( uint i = 0; i < 4; i++ )
+    {
+        for( uint j = 0; j < 4; j++ )
+        {
+            r.m[i][j] = this->m[i][j] - m.m[i][j];
+        }
+    }
+    return r;
+}
+
+inline bool Layout::Matrix::operator == ( const Matrix& m ) const
+{
+    for( uint i = 0; i < 4; i++ )
+    {
+        for( uint j = 0; j < 4; j++ )
+        {
+            if ( this->m[i][j] != m.m[i][j] ) return false;
+        }
+    }
+    return true;
+}
+
+inline void Layout::Matrix::multiply( double s ) 
+{
+    for( uint i = 0; i < 4; i++ )
+    {
+        for( uint j = 0; j < 4; j++ )
+        {
+            m[i][j] *= s;
+        }
+    }
+}
+
+void Layout::Matrix::transform( const real4& v, real4& r ) const
+{
+    for( uint i = 0; i < 4; i++ )
+    {
+        double sum = 0.0;               // use higher-precision here
+        for( uint j = 0; j < 4; j++ )
+        {
+            double partial = m[i][j];
+            partial *= v.c[j];
+            sum += partial;
+        }
+        r.c[i] = sum;
+    }
+}
+
+void Layout::Matrix::transform( const real3& v, real3& r, bool div_by_w ) const
+{
+    if ( div_by_w ) {
+        real4 v4 = real4( v.c[0], v.c[1], v.c[2], 1.0 );
+        real4 r4;
+        transform( v4, r4 );
+        r.c[0] = r4.c[0];
+        r.c[1] = r4.c[1];
+        r.c[2] = r4.c[2];
+        r /= r4.c[3];                   // w
+    } else {
+        for( uint i = 0; i < 3; i++ )
+        {
+            double sum = 0.0;               // use higher-precision here
+            for( uint j = 0; j < 3; j++ )
+            {
+                double partial = m[i][j];
+                partial *= v.c[j];
+                sum += partial;
+            }
+            r.c[i] = sum;
+        }
+    }
+}
+
+Layout::real4 Layout::Matrix::row( uint r ) const
+{
+    real4 v;
+    for( uint32_t c = 0; c < 4; c++ ) 
+    {
+        v.c[c] = m[r][c];
+    }
+    return v;
+}
+
+Layout::real4 Layout::Matrix::column( uint c ) const
+{
+    real4 v;
+    for( uint32_t r = 0; r < 4; r++ ) 
+    {
+        v.c[r] = m[r][c];
+    }
+    return v;
+}
+
+void Layout::Matrix::transform( const Matrix& M2, Matrix& M3 ) const
+{
+    for( uint r = 0; r < 4; r++ )
+    {
+        for( uint c = 0; c < 4; c++ )
+        {
+            double sum = 0.0;
+            for( int k = 0; k < 4; k++ )
+            {
+                double partial = m[r][k];
+                partial *= M2.m[k][c];
+                sum += partial;
+            }
+            M3.m[r][c] = sum;
+        }
+    }
+}
+
+void Layout::Matrix::transpose( Layout::Matrix& mt ) const
+{
+    for( int i = 0; i < 4; i++ )
+    {
+        for( int j = 0; j < 4; j++ )
+        {
+            mt.m[j][i] = m[i][j];
+        }
+    }
+}
+
 inline bool Layout::node_is_header_footer( const Node& node ) const
 {
     switch( node.kind ) 
@@ -1359,7 +2107,7 @@ inline uint Layout::node_alloc( NODE_KIND kind )
     return ni;
 }
 
-inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND kind, real x, real y, real mag, real angle, bool reflect, bool in_flatten )
+inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND kind, const Matrix& M, bool in_flatten )
 {
     const Node& src_node = src_layout->nodes[src_i];
     if ( kind == COPY_KIND::FLATTEN ) {
@@ -1502,68 +2250,45 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
 
                 //-----------------------------------------------------
                 // Now the fun part.
-                // 
-                // SREF:
-		//		res = object_view;
-	        //      	if(sref->Mag!=1.0){
-                //			mod.SetScale(VECTOR3D(sref->Mag, sref->Mag, 1));
-	        //			res = res * mod;
-		//		}
-		//		mod.SetTranslation(VECTOR3D(sref->X, sref->Y, 0.0f));
-		//		res = res * mod;
-		//		if(sref->Rotate.Y){
-		//			mod.SetRotationAxis(-sref->Rotate.Y, VECTOR3D(0.0f, 0.0f, 1.0f));
-		//			res = res * mod;
-		//		}
-		//		if(sref->Flipped){
-		//			mod.SetScale(VECTOR3D(1.0f, -1.0f, 1.0f));
-		//			res = res * mod;
-                //
-                // AREF:
-                //              dx1 = (float)(aref->X2 - aref->X1) / (float)aref->Columns;
-                //              dy1 = (float)(aref->Y2 - aref->Y1) / (float)aref->Columns;
-                //              dx2 = (float)(aref->X3 - aref->X1) / (float)aref->Rows;
-                //              dy2 = (float)(aref->Y3 - aref->Y1) / (float)aref->Rows;
-                //              for(i=0; i<aref->Rows; i++){
-                // for(j=0; j<aref->Columns; j++){
-                //      res = object_view;
-                //      if(aref->Mag!=1.0){
-                //          mod.SetScale(VECTOR3D(aref->Mag, aref->Mag, 1));
-                //          res = res * mod;
-                //      }
-                //      mod.SetTranslation(VECTOR3D(aref->X1+dx1*(float)j+dx2*(float)i, aref->Y1+dy2*(float)i+dy1*(float)j, 0.0f));
-                //      res = res * mod;
-                //      if(aref->Rotate.Y){
-                //          mod.SetRotationAxis(-aref->Rotate.Y, VECTOR3D(0.0f, 0.0f, 1.0f));
-                //          res = res * mod;
-                //      }
-                //      if(aref->Flipped){
-                //          mod.SetScale(VECTOR3D(1.0f, -1.0f, 1.0f));
-                //          res = res * mod;
-                //      }
                 //-----------------------------------------------------
-
-                //-----------------------------------------------------
-                in_flatten = true;
                 lassert( struct_i != NULL_I, "SREF/AREF has no SNAME" );
-                real xy_disp[2] = { (xy[1][0] - xy[0][0]) / double(col_cnt), 
-                                    (xy[2][1] - xy[0][1]) / double(row_cnt) };
-                real inst_mag     = mag * smag;
-                real inst_angle   = angle + sangle;
-                real inst_reflect = reflect;
+                real   dxy[2][2] = { { (xy[1][0] - xy[0][0]) / real(col_cnt), (xy[1][1] - xy[0][1]) / real(col_cnt) },
+                                     { (xy[2][0] - xy[0][0]) / real(row_cnt), (xy[2][1] - xy[0][1]) / real(row_cnt) } };
+
                 for( uint r = 0; r < row_cnt; r++ )
                 {
-                    real inst_y = y + xy[0][1] + r*xy_disp[1];
                     for( uint c = 0; c < col_cnt; c++ )
                     {
                         //-----------------------------------------------------
-                        // Copy the structure's children with new transformation parameters.
+                        // Apply transformations to previous ones.
                         //-----------------------------------------------------
-                        real inst_x = x + xy[0][0] + c*xy_disp[0];
+                        Matrix inst_M = M;
+                        if ( smag != 1.0 ) {
+                            inst_M.scale( real3(smag, smag, 1) );
+                        }
+
+                        if ( src_node.kind == NODE_KIND::SREF ) {
+                            inst_M.translate( real3(xy[0][0], xy[0][1], 0) );
+                        } else {
+                            real x_disp = real(c)*dxy[0][0] + real(r)*dxy[1][0];
+                            real y_disp = real(c)*dxy[0][1] + real(r)*dxy[1][1];
+                            inst_M.translate( real3(xy[0][0] + x_disp, xy[0][1] + y_disp, 0 ) );
+                        }
+
+                        if ( sangle != 0.0 ) {
+                            inst_M.rotate_xy( -sangle );
+                        }
+
+                        if ( sreflection ) {
+                            inst_M.scale( real3(1, -1, 1) );
+                        }
+
+                        //-----------------------------------------------------
+                        // Copy the structure's children with new transformations.
+                        //-----------------------------------------------------
                         for( uint src_child_i = src_nodes[struct_i].u.child_first_i; src_child_i != NULL_I; src_child_i = src_nodes[src_child_i].sibling_i )
                         {
-                            uint dst_child_i = node_copy( parent_i, last_i, src_layout, src_child_i, kind, 
-                                                          inst_x, inst_y, inst_mag, inst_angle, inst_reflect, true );
+                            uint dst_child_i = node_copy( parent_i, last_i, src_layout, src_child_i, kind, inst_M, true );
                             if ( dst_child_i != NULL_I ) last_i = dst_child_i;
                         }
                     }
@@ -1597,7 +2322,7 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
             {
                 if ( kind != COPY_KIND::DEEP && kind != COPY_KIND::FLATTEN && !node_is_scalar( src_layout->nodes[src_i] ) ) break;
 
-                dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, kind, x, y, mag, angle, reflect );
+                dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, kind, M );
             }
         }
     } else {
@@ -1727,7 +2452,16 @@ uint Layout::inst_layout( uint parent_i, uint last_i, const Layout * src_layout,
     return inst_layout( parent_i, last_i, src_layout, src_struct_name, x, y, 0, hdr->layer_cnt-1, name );
 }
 
-uint Layout::inst_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name )
+uint Layout::inst_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, 
+                          real x, real y, uint dst_layer_first, uint dst_layer_last, std::string name )
+{
+    Matrix M;
+    M.translate( real3( x, y, 0 ) );
+    return inst_layout( parent_i, last_i, src_layout, src_struct_name, M, 0, hdr->layer_cnt-1, name );
+}
+
+uint Layout::inst_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, 
+                          const Matrix& M, uint dst_layer_first, uint dst_layer_last, std::string name )
 {
     //-----------------------------------------------------
     // Initialize our cache.
@@ -1746,7 +2480,7 @@ uint Layout::inst_layout( uint parent_i, uint last_i, const Layout * src_layout,
         //-----------------------------------------------------
         std::string inst_name = std::to_string( i ) + "_" + name;
         uint src_layer_num = layers[i].gdsii_num;
-        ldout << "inst_layout: dst_layer=" << i << " src_layer=" << layers[i].gdsii_num << " x_off=" << x << " y_off=" << y << " inst_name=" << inst_name << "\n";
+        ldout << "inst_layout: dst_layer=" << i << " src_layer=" << layers[i].gdsii_num << " inst_name=" << inst_name << "\n";
         uint inst_last_i = inst_layout_node( parent_i, last_i, src_layout, src_struct_name, src_layout->hdr->root_i, src_layer_num, i, cache, inst_name );
         if ( inst_last_i != NULL_I ) {
             last_i = inst_last_i;
@@ -1766,12 +2500,13 @@ uint Layout::inst_layout( uint parent_i, uint last_i, const Layout * src_layout,
 
         perhaps_realloc( top_insts, hdr->top_inst_cnt, max->top_inst_cnt, 1 );
         uint ii = hdr->top_inst_cnt++;
-        top_insts[ii] = TopInstInfo{ dst_top_struct_i, x, y };
+        top_insts[ii] = TopInstInfo{ dst_top_struct_i, M };
     }
     return last_i;
 }
 
-uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name )
+uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name, 
+                             const Matrix& M )
 {
     //------------------------------------------------------------
     // Locate the the src struct.
@@ -1784,7 +2519,7 @@ uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layo
     //------------------------------------------------------------
     // Recursively copy the src_struct.
     //------------------------------------------------------------
-    return node_copy( parent_i, last_i, src_layout, src_struct_i, COPY_KIND::FLATTEN );
+    return node_copy( parent_i, last_i, src_layout, src_struct_i, COPY_KIND::FLATTEN, M );
 }
 
 uint Layout::inst_layout_node( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, uint dst_layer_num, 
@@ -1957,12 +2692,17 @@ void Layout::finalize_top_struct( uint parent_i, uint last_i, std::string top_na
         uint xy_i = node_alloc( NODE_KIND::XY );
         nodes[sname_i].sibling_i = xy_i;
 
+        real x = info.M.m[0][3];
+        real y = info.M.m[1][3];
+        Matrix Mt;
+        Mt.translate( real3( x, y, 0 ) );
+        lassert( info.M == Mt, "top-level instances must have only an XY translation for now; no other transformations at the top" );
         uint x_i = node_alloc( NODE_KIND::INT );
         nodes[xy_i].u.child_first_i = x_i;
-        nodes[x_i].u.i = int( info.x / gdsii_units_user );
+        nodes[x_i].u.i = int( x / gdsii_units_user );      
         uint y_i = node_alloc( NODE_KIND::INT );
         nodes[x_i].sibling_i = y_i;
-        nodes[y_i].u.i = int( info.y / gdsii_units_user );
+        nodes[y_i].u.i = int( y / gdsii_units_user );
     }
 }
 
