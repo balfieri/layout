@@ -486,6 +486,7 @@ private:
     // struct info
     std::map< uint, uint >                      name_i_to_struct_i;
     std::map< uint, std::map<uint, bool> * > *  struct_i_to_has_layer;
+    std::string all_struct_names( std::string delim = "\n    " ) const;
 
     void init( bool alloc_arrays );
 
@@ -2026,6 +2027,19 @@ inline uint Layout::node_layer( const Node& node ) const
     }
 }
 
+std::string Layout::all_struct_names( std::string delim ) const
+{
+    std::string names = "";
+    for( auto it = name_i_to_struct_i.begin(); it != name_i_to_struct_i.end(); it++ )
+    {
+        uint name_i = it->first;    
+        std::string name = std::string( &strings[name_i] );
+        if ( names != "" ) names += delim;
+        names += name;
+    }
+    return names;
+}
+
 bool Layout::node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache, std::string indent_str ) const
 {
     lassert( ni < hdr->node_cnt, "node index ni is out of range in node_has_layer" );
@@ -2046,7 +2060,8 @@ bool Layout::node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache,
         uint name_i = node_name_i( node );
         if ( name_i == NULL_I ) return false;
         auto sit = name_i_to_struct_i.find( name_i );
-        lassert( sit != name_i_to_struct_i.end(), "could not find structure with name " + std::string(&strings[name_i]) );
+        lassert( sit != name_i_to_struct_i.end(), "could not find structure with name " + std::string(&strings[name_i]) + 
+                                                  ", available structures:\n    " + all_struct_names() );
         uint struct_i = sit->second;
         return node_has_layer( struct_i, layer_num, cache, indent_str );
 
@@ -2154,7 +2169,8 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             lassert( sname_i == NULL_I, "SREF/AREF has duplicate SNAME child" );
                             sname_i = child.u.s_i;
                             auto it = src_layout->name_i_to_struct_i.find( sname_i );
-                            lassert( it != src_layout->name_i_to_struct_i.end(), "SREF/AREF SNAME " + std::string(&src_layout->strings[sname_i]) + " does not denote a known struct" );
+                            lassert( it != src_layout->name_i_to_struct_i.end(), "SREF/AREF SNAME " + std::string(&src_layout->strings[sname_i]) + 
+                                                                                 " does not denote a known struct; available structs are:\n" + all_struct_names() );
                             struct_i = it->second;
                             break;
                         }
@@ -2494,7 +2510,9 @@ uint Layout::inst_layout( uint parent_i, uint last_i, const Layout * src_layout,
         //-----------------------------------------------------
         std::string dst_top_struct_name = inst_name + "_" + src_struct_name;
         uint dst_top_struct_name_i = str_get( dst_top_struct_name );
-        lassert( name_i_to_struct_i.find( dst_top_struct_name_i ) != name_i_to_struct_i.end(), "could not find top struct with name " + dst_top_struct_name );
+        lassert( name_i_to_struct_i.find( dst_top_struct_name_i ) != name_i_to_struct_i.end(), "could not find top struct with name " + dst_top_struct_name + 
+                                                                                               ", available structures:\n    " + all_struct_names() );
+
         uint dst_top_struct_i = name_i_to_struct_i[dst_top_struct_name_i];
         Node& dst_top_node = nodes[dst_top_struct_i];
 
@@ -2513,7 +2531,7 @@ uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layo
     //------------------------------------------------------------
     uint src_struct_name_i = src_layout->str_find( src_struct_name );
     auto it = src_layout->name_i_to_struct_i.find( src_struct_name_i );
-    lassert( it != src_layout->name_i_to_struct_i.end(), "no src struct with the name " + src_struct_name );
+    lassert( it != src_layout->name_i_to_struct_i.end(), "no src struct with the name " + src_struct_name + ", available structures:\n    " + all_struct_names() );
     uint src_struct_i = it->second;
 
     //------------------------------------------------------------
