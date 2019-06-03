@@ -2677,6 +2677,8 @@ void Layout::finalize_top_struct( uint parent_i, uint last_i, std::string top_na
     nodes[strname_i].u.s_i = str_get( top_name );
     prev_i = strname_i;
 
+    name_i_to_struct_i[strname_i] = bgnstr_i;
+
     for( size_t i = 0; i < hdr->top_inst_cnt; i++ )
     {
         uint sref_i = node_alloc( NODE_KIND::SREF );
