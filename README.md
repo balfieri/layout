@@ -14,11 +14,10 @@ Single Layout.h file provides:
 </ul>
 
 <h2>How to Use It</h2>
+
+<nl>
+<li>Clone this repository.  This code should build on Linux, MacOS, and Cygwin with a C++14 compiler.</li>
 <pre>
-0) Clone this repository.  This code should build on Linux, MacOS, and Cygwin with a C++14 compiler.
-
-    1) #include "Layout.h"
-
        Layout * layout = new Layout( "my_chip.aedt" );
        layout->write( "my_chip.layout" );    // will write out the self-contained binary layout layout
 
