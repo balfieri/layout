@@ -17,7 +17,11 @@ Single Layout.h file provides:
 
 1. Clone this repository.  This code should build on Linux, MacOS, and Cygwin with a C++14 compiler.</li>
 
-2. After that, you can quickly read in the single binary layout file using:
+```
+git clone https://github.com/balfieri/layout
+```
+
+2. Quickly read in the single binary layout file using:
 
 ```
 Layout * layout = new Layout( "my_chip.layout" );  
@@ -25,11 +29,11 @@ Layout * layout = new Layout( "my_chip.layout" );
 
 3. You can also write out (export) other types of files:
 ```
-layout->write( "new_chip.gds" );         // writes out a .gds II file
-layout->write( "new_chip.aedt" );        // writes out an .aedt file for HFSS (includes layer info)
-layout->write( "new_chip.fastcap" );     // writes out files for FastCap2, FFTCap 
-layout->write( "new_chip.fasthenry" );   // writes out FastHenry2 files
-layout->write( "new_chip.obj" );         // writes out Alias/Wavefront 3D .obj/.mtl files 
+layout->write( "new_chip.gds" );                 // writes out a .gds II file
+layout->write( "new_chip.aedt" );                // writes out an .aedt file for HFSS (includes layer info)
+layout->write( "new_chip.fastcap" );             // writes out files for FastCap2, FFTCap 
+layout->write( "new_chip.fasthenry" );           // writes out FastHenry2 files
+layout->write( "new_chip.obj" );                 // writes out Alias/Wavefront 3D .obj/.mtl files 
 
 layout->write_layer_info( "new_chip.gds3d" );    // writes out layer mapping info used by GDS3D viewer app
 layout->write_layer_info( "new_chip.tech" );     // writes out layer mapping info used by HFSS
