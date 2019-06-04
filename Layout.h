@@ -2314,7 +2314,7 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             uint i = 0;
                             for( uint gchild_i = child.u.child_first_i; gchild_i != NULL_I; gchild_i = src_nodes[gchild_i].sibling_i )
                             {
-                                lassert( i == 0 || src_node.kind == NODE_KIND::AREF, "SREF may not have more than 2 XY coords" );
+                                lassert( i < 2 || src_node.kind == NODE_KIND::AREF, "SREF may not have more than 2 XY coords" );
                                 lassert( i < 6, "AREF may not have more than 6 XY coords" );
                                 xy[i>>1][i&1] = real(src_nodes[gchild_i].u.i) / src_layout->gdsii_units_user + 0.5; 
                                 i++;
@@ -2418,6 +2418,7 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
     
     if ( last_i != NULL_I ) {
         lassert( nodes[last_i].sibling_i == NULL_I, "node_copy: nodes[last_i] sibling_i is already set" ); 
+        lassert( parent_i == NULL_I || nodes[parent_i].u.child_first_i != NULL_I, "node_copy: nodes[parent_i] is not set but last_i is set" );
         nodes[last_i].sibling_i = dst_i;
     } else if ( parent_i != NULL_I ) {
         lassert( nodes[parent_i].u.child_first_i == NULL_I, "node_copy: nodes[parent_i] child_first_i is already set but last_i is NULL_I" ); 
@@ -2598,7 +2599,7 @@ uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layo
     //------------------------------------------------------------
     uint src_struct_name_i = src_layout->str_find( src_struct_name );
     auto it = src_layout->name_i_to_struct_i.find( src_struct_name_i );
-    lassert( it != src_layout->name_i_to_struct_i.end(), "no src struct with the name " + src_struct_name + ", available structures:\n    " + all_struct_names() );
+    lassert( it != src_layout->name_i_to_struct_i.end(), "no src struct with the name " + src_struct_name + ", available structures:\n    " + src_layout->all_struct_names() );
     uint src_struct_i = it->second;
 
     //------------------------------------------------------------
@@ -2762,7 +2763,7 @@ void Layout::finalize_top_struct( uint parent_i, uint last_i, std::string top_na
     nodes[strname_i].u.s_i = str_get( top_name );
     prev_i = strname_i;
 
-    name_i_to_struct_i[strname_i] = bgnstr_i;
+    name_i_to_struct_i[nodes[strname_i].u.s_i] = bgnstr_i;
 
     for( size_t i = 0; i < hdr->top_inst_cnt; i++ )
     {
