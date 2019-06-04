@@ -48,8 +48,8 @@ layout->write_material_info( "new_chip.amat" );  // writes out material informat
 <p>
 There are some example programs in this directory:
 
-- count.cpp - parses a .gds file but doesn't build a tree; instead, prints out the number of records found; runs fast on large .gds files; doit.count builds and runs it
-- test.cpp - can read in a .gds, .aedt, or .layout file, then writes out .layout, .gds, and .aedt files; doit.test builds and runs it
+- ```count.cpp``` - parses a .gds file but doesn't build a tree; instead, prints out the number of records found; runs fast on large .gds files; doit.count builds and runs it
+- ```test.cpp``` - can read in a .gds, .aedt, or .layout file, then writes out .layout, .gds, and .aedt files; doit.test builds and runs it
 
 I need to add a more interesting test case that is not proprietary.
 
