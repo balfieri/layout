@@ -14,7 +14,6 @@ Single Layout.h file provides:
 </ul>
 
 <h2>How to Use It</h2>
-<p>
 <pre>
     0) Clone this repository.  This code should build on Linux, MacOS, and Cygwin with a C++14 compiler.
 
