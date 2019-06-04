@@ -43,7 +43,8 @@ Layout * layout = new Layout( "my_chip.layout" ); // optional: useful only for l
 
 4. You can also export other types of files:
 ```
-layout->write( "new_chip.gds" );                 // writes out a .gds II file
+layout->write( "new_chip.gds" );                 // writes out a .gds file
+layout->write( "new_chip.raw" );                 // writes out a .raw file with an ASCII version of the .gds file
 layout->write( "new_chip.aedt" );                // writes out an .aedt file for HFSS (includes layer info)
 layout->write( "new_chip.fastcap" );             // writes out files for FastCap2, FFTCap 
 layout->write( "new_chip.fasthenry" );           // writes out FastHenry2 files
