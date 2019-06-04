@@ -19,12 +19,12 @@ Single Layout.h file provides:
 
 2. After that, you can quickly read in the single binary layout file using:
 
-----
+```
 Layout * layout = new Layout( "my_chip.layout" );  
-----
+```
 
 3. You can also write out (export) other types of files:
-----     
+```
 layout->write( "new_chip.gds" );         // writes out a .gds II file
 layout->write( "new_chip.aedt" );        // writes out an .aedt file for HFSS (includes layer info)
 layout->write( "new_chip.fastcap" );     // writes out files for FastCap2, FFTCap 
@@ -35,7 +35,7 @@ layout->write_layer_info( "new_chip.gds3d" );    // writes out layer mapping inf
 layout->write_layer_info( "new_chip.tech" );     // writes out layer mapping info used by HFSS
 
 layout->write_material_info( "new_chip.amat" );  // writes out material information used by HFSS
-----
+```
 
 <h2>Example Programs</h2>
 
