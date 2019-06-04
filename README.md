@@ -27,14 +27,20 @@ git clone https://github.com/balfieri/layout
 #include "Layout.h"
 ```
 
-2. Quickly read in the single binary layout file using:
+2. Import some .gds file and optionally write out our .layout binary format.  By the way, you may read in multiple .gds files at the same time.
+
+```
+Layout * layout = new Layout( "my_chip.gds" );   // creates a new layout with .gds sucked into Layout's format
+layout->write( "my_chip.layout" );               // writes out Layout-format file
+```
+
+3. Later, you can quickly read in the Layout-format file.  This is useful only for very large layouts.
 
 ```
 Layout * layout = new Layout( "my_chip.layout" );  
-layout->write( "my_chip.layout" );               // writes out our self-contained binary .layout format
 ```
 
-3. You can also write out (export) other types of files:
+4. You can also export other types of files:
 ```
 layout->write( "new_chip.gds" );                 // writes out a .gds II file
 layout->write( "new_chip.aedt" );                // writes out an .aedt file for HFSS (includes layer info)
