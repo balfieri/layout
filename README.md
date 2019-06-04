@@ -15,10 +15,16 @@ Single Layout.h file provides:
 
 <h2>How to Use It</h2>
 
-1. Clone this repository.  This code should build on Linux, MacOS, and Cygwin with a C++14 compiler.</li>
+0. Clone this repository.  This code should build on Linux, MacOS, and Cygwin with a C++14 compiler.</li>
 
 ```
 git clone https://github.com/balfieri/layout
+```
+
+1. Include Layout.h in your C++ program.
+
+```
+#include "Layout.h"
 ```
 
 2. Quickly read in the single binary layout file using:
