@@ -46,8 +46,7 @@ layout->write_material_info( "new_chip.amat" );  // writes out material informat
 <h2>Example Programs</h2>
 
 <p>
-There are a couple example programs in this directory:
-<ul>
-<li>count.cpp - parses a .gds file but doesn't store; prints out number of records found; runs fast on large .gds files; doit.count builds and runs it</li>
-<li>test.cpp - can read in a .gds, .aedt, or .layout file, then writes out .layout, .gds, and .aedt files; doit.test builds and runs it</li>
-</ul>
+There are some example programs in this directory:
+
+- count.cpp - parses a .gds file but doesn't build a tree; instead, prints out the number of records found; runs fast on large .gds files; doit.count builds and runs it
+- test.cpp - can read in a .gds, .aedt, or .layout file, then writes out .layout, .gds, and .aedt files; doit.test builds and runs it
