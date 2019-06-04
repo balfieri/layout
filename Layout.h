@@ -69,6 +69,9 @@ public:
     // write out layer info used by viewer programs (file extension determines format)
     bool write_layer_info( std::string file_path );
 
+    // write out material info used by viewer programs (file extension determines format)
+    bool write_material_info( std::string file_path );
+
     // current layout dimensions
     real width( void ) const;
     real length( void ) const;
@@ -521,7 +524,7 @@ private:
     void aedt_write_expr( std::ofstream& out, uint node_i, std::string indent_str );
 
     bool gds3d_write_layer_info( std::string file );
-    bool vbs_write_layer_info( std::string file );
+    bool hfss_write_layer_info( std::string file );
 
     bool cmd( std::string c );
     bool open_and_read( std::string file_name, uint8_t *& start, uint8_t *& end );
@@ -548,7 +551,10 @@ private:
 
     // reallocate array if we are about to exceed its current size
     template<typename T>
-    inline void perhaps_realloc( T *& array, const uint  & hdr_cnt, uint  & max_cnt, uint   add_cnt );
+    void perhaps_realloc( T *& array, const uint  & hdr_cnt, uint  & max_cnt, uint   add_cnt );
+
+    // printf-style formatting for ostream output
+    static std::string putf( const char * fmt, ... );
 };
 
 #ifdef LAYOUT_DEBUG
@@ -858,8 +864,8 @@ bool Layout::write_layer_info( std::string file_path )
     dissect_path( file_path, dir_name, base_name, ext_name );
     if ( ext_name == std::string( ".gds3d" ) ) {
         return gds3d_write_layer_info( file_path );
-    } else if ( ext_name == std::string( ".vbs" ) ) {
-        return vbs_write_layer_info( file_path );
+    } else if ( ext_name == std::string( ".tech" ) || ext_name == std::string( ".hfss" ) ) {
+        return hfss_write_layer_info( file_path );
     } else {
         lassert( false, "write_layer_info: unknown file ext_name: " + ext_name );
         return false;
@@ -1186,6 +1192,16 @@ uint Layout::layer_get( std::string name )
     }
 
     return NULL_I;
+}
+
+inline std::string Layout::putf( const char * fmt, ... ) 
+{
+    char buff[1024];
+    va_list args;
+    va_start( args, fmt );
+    vsnprintf( buff, sizeof(buff), fmt, args );
+    va_end( args );
+    return buff;
 }
 
 inline std::ostream& operator << ( std::ostream& os, const Layout::real4& v ) 
@@ -3634,9 +3650,26 @@ bool Layout::gds3d_write_layer_info( std::string file )
     return true;
 }
 
-bool Layout::vbs_write_layer_info( std::string file )
+bool Layout::hfss_write_layer_info( std::string file )
 {
-    return false;
+    std::ofstream out( file, std::ofstream::out );
+
+    out << "UNITS um\n";
+    out << "#Layer  Name                    Color             Height      Thickness\n";
+    out << "#----------------------------------------------------------------------\n";
+    real height = 0.0;
+    for( uint i = 0; i < hdr->layer_cnt; i++ )
+    {
+        const Layer& layer = layers[i];
+        real thickness = layer.thickness;
+        
+        out << putf( "%-4d    %-20s    0x%08x   %10.3f   %10.3f\n", i, &strings[layer.name_i], layer.material_rgba, height, thickness );
+
+        if ( i != (hdr->layer_cnt-1) && !layers[i+1].same_zoffset_as_prev ) height += thickness;
+    }
+
+    out.close();
+    return true;
 }
 
 void Layout::dissect_path( std::string path, std::string& dir_name, std::string& base_name, std::string& ext_name ) 
