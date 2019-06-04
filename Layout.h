@@ -846,7 +846,7 @@ bool Layout::write( std::string top_file )
         //------------------------------------------------------------
         return layout_write( top_file );
     } else {
-        if ( ext_name == std::string( ".aedt" ) ) {
+        if ( ext_name == std::string( ".aedt" ) || ext_name == std::string( ".raw" ) ) {
             return aedt_write( top_file );
         } else if ( ext_name == std::string( ".gds" ) ) {
             return gdsii_write( top_file );
