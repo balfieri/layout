@@ -25,6 +25,7 @@ git clone https://github.com/balfieri/layout
 
 ```
 Layout * layout = new Layout( "my_chip.layout" );  
+layout->write( "my_chip.layout" );               // writes out our self-contained binary .layout format
 ```
 
 3. You can also write out (export) other types of files:
@@ -34,6 +35,7 @@ layout->write( "new_chip.aedt" );                // writes out an .aedt file for
 layout->write( "new_chip.fastcap" );             // writes out files for FastCap2, FFTCap 
 layout->write( "new_chip.fasthenry" );           // writes out FastHenry2 files
 layout->write( "new_chip.obj" );                 // writes out Alias/Wavefront 3D .obj/.mtl files 
+(those last 4 are not fully implemented yet)
 
 layout->write_layer_info( "new_chip.gds3d" );    // writes out layer mapping info used by GDS3D viewer app
 layout->write_layer_info( "new_chip.tech" );     // writes out layer mapping info used by HFSS
