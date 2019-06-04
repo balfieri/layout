@@ -15,7 +15,7 @@ Single Layout.h file provides:
 
 <h2>How to Use It</h2>
 <pre>
-    0) Clone this repository.  This code should build on Linux, MacOS, and Cygwin with a C++14 compiler.
+  0) Clone this repository.  This code should build on Linux, MacOS, and Cygwin with a C++14 compiler.
 
     1) #include "Layout.h"
 
