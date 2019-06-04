@@ -2283,7 +2283,6 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             //-----------------------------------------------------
                             // Array dimensions
                             //-----------------------------------------------------
-                            strans = child.u.u;
                             lassert( src_node.kind == NODE_KIND::AREF, "COLROW not allowed for an SREF" );
                             uint gchild = child.u.child_first_i;
                             lassert( gchild != NULL_I, "COLROW has no COL value" );
@@ -2291,7 +2290,7 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             col_cnt = src_nodes[gchild].u.i;
                             lassert( col_cnt > 0, "COLROW COL must be non-zero" );
 
-                            gchild = child.sibling_i;
+                            gchild = src_nodes[gchild].sibling_i;
                             lassert( gchild != NULL_I, "COLROW has no ROW value" );
                             lassert( src_nodes[gchild].kind == NODE_KIND::INT, "COLROW ROW is not an INT" );
                             row_cnt = src_nodes[gchild].u.i;
@@ -2368,15 +2367,23 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
 
                         //-----------------------------------------------------
                         // Copy the structure's children with new transformations.
+                        // But first skip the timestamp which we do not need.
                         //-----------------------------------------------------
-                        for( uint src_child_i = src_nodes[struct_i].u.child_first_i; src_child_i != NULL_I; src_child_i = src_nodes[src_child_i].sibling_i )
+                        uint src_child_i = src_nodes[struct_i].u.child_first_i;
+                        for( uint j = 0; j < 12; j++ )
+                        {
+                            lassert( src_child_i != NULL_I && src_nodes[src_child_i].kind == NODE_KIND::INT, 
+                                     "structure " + std::string(&src_layout->strings[sname_i]) + " timestamp ended prematurely" );
+                            src_child_i = src_nodes[src_child_i].sibling_i;
+                        }
+                        for( ; src_child_i != NULL_I; src_child_i = src_nodes[src_child_i].sibling_i )
                         {
                             uint dst_child_i = node_copy( parent_i, last_i, src_layout, src_child_i, kind, inst_M, true );
                             if ( dst_child_i != NULL_I ) last_i = dst_child_i;
                         }
                     }
                 }
-                return NULL_I;
+                return last_i;
             }
 
             default:
@@ -3244,7 +3251,7 @@ void Layout::gdsii_write_record( uint ni, std::string indent_str )
         }
 
     } else {
-        lassert( false, "ignoring node kind " + str(node.kind) );
+        lassert( false, "gdsii_write_record: unexpected node kind " + str(node.kind) );
     }
 }
 
