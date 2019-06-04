@@ -527,6 +527,8 @@ private:
     bool gds3d_write_layer_info( std::string file );
     bool hfss_write_layer_info( std::string file );
 
+    bool hfss_write_material_info( std::string file );
+
     bool cmd( std::string c );
     bool open_and_read( std::string file_name, uint8_t *& start, uint8_t *& end );
 
@@ -869,6 +871,22 @@ bool Layout::write_layer_info( std::string file_path )
         return hfss_write_layer_info( file_path );
     } else {
         lassert( false, "write_layer_info: unknown file ext_name: " + ext_name );
+        return false;
+    }
+}
+
+bool Layout::write_material_info( std::string file_path )
+{
+    //------------------------------------------------------------
+    // Write depends on file ext_name
+    //------------------------------------------------------------
+    std::string dir_name;
+    std::string base_name;
+    dissect_path( file_path, dir_name, base_name, ext_name );
+    if ( ext_name == std::string( ".amat" ) || ext_name == std::string( ".hfss" ) ) {
+        return hfss_write_material_info( file_path );
+    } else {
+        lassert( false, "write_material_info: unknown file ext_name: " + ext_name );
         return false;
     }
 }
@@ -3703,6 +3721,34 @@ bool Layout::hfss_write_layer_info( std::string file )
     }
 
     out.close();
+    return true;
+}
+
+bool Layout::hfss_write_material_info( std::string file )
+{
+    std::ofstream out( file, std::ofstream::out );
+
+    for( uint i = 0; i < hdr->material_cnt; i++ )
+    {
+        const Material& material = materials[i];
+        const char * name = &strings[material.name_i];
+        out << "$begin '" << name << "'\n";
+        out << "\t$begin 'MaterialDef'\n";
+        out << "\t\t$begin '" << name << "'\n";
+        out << "\t\t\tCoordinateSystemType='Cartesian'\n";
+	out << "\t\t\t$begin 'AttachedData'\n";
+	out << "\t\t\t$end 'AttachedData'\n";
+	out << "\t\t\t$begin 'ModifierData'\n";
+	out << "\t\t\t$end 'ModifierData'\n";
+        out << "\t\t\tpermittivity='" << material.relative_permittivity << "'\n";
+        out << "\t\t\tpermeability='" << material.permeability << "'\n";
+        out << "\t\t\tthermal_conductivity='" << material.thermal_conductivity << "'\n";
+        out << "\t\t\tmass_density='" << material.mass_density << "'\n";
+        out << "\t\t\tspecific_heat='" << material.specific_heat << "'\n";
+        out << "\t\t$end '" << name << "'\n";
+        out << "\t$end 'MaterialDef'\n";
+        out << "$end '" << name << "'\n\n";
+    }
     return true;
 }
 
