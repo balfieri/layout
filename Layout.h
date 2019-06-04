@@ -276,6 +276,7 @@ public:
 
     static uint color( real r, real g, real b, real a=1.0 );
     static uint color( std::string name, real a=1.0 );
+    static std::string color_name( uint color );                // returns closest name for color
 
     // these return index in layers[] array or NULL_I when failure or not found
     // set() will override layer properties if name already exists
@@ -897,7 +898,7 @@ public:
 static const ColorInfo color_info[] = 
 {
     { "maroon", 		0x800000 },
-    { "dark red", 		0x8B0000 },
+    { "dark_red", 		0x8B0000 },
     { "brown", 			0xA52A2A },
     { "firebrick", 		0xB22222 },
     { "crimson", 		0xDC143C },
@@ -905,83 +906,83 @@ static const ColorInfo color_info[] =
     { "r", 			0xFF0000 },
     { "tomato", 		0xFF6347 },
     { "coral", 			0xFF7F50 },
-    { "indian red", 		0xCD5C5C },
-    { "light coral", 		0xF08080 },
-    { "dark salmon", 		0xE9967A },
+    { "indian_red", 		0xCD5C5C },
+    { "light_coral", 		0xF08080 },
+    { "dark_salmon", 		0xE9967A },
     { "salmon", 		0xFA8072 },
-    { "light salmon", 		0xFFA07A },
-    { "orange red", 		0xFF4500 },
-    { "dark orange", 		0xFF8C00 },
+    { "light_salmon", 		0xFFA07A },
+    { "orange_red", 		0xFF4500 },
+    { "dark_orange", 		0xFF8C00 },
     { "orange", 		0xFFA500 },
     { "o", 		        0xFFA500 },
     { "gold", 			0xFFD700 },
-    { "dark golden rod", 	0xB8860B },
-    { "golden rod", 		0xDAA520 },
-    { "pale golden rod", 	0xEEE8AA },
-    { "dark khaki", 		0xBDB76B },
+    { "dark_golden_rod", 	0xB8860B },
+    { "golden_rod", 		0xDAA520 },
+    { "pale_golden_rod", 	0xEEE8AA },
+    { "dark_khaki", 		0xBDB76B },
     { "khaki", 			0xF0E68C },
     { "olive", 			0x808000 },
     { "yellow", 		0xFFFF00 },
     { "y", 		        0xFFFF00 },
-    { "yellow green", 		0x9ACD32 },
-    { "dark olive green",	0x556B2F },
-    { "olive drab", 		0x6B8E23 },
-    { "lawn green", 		0x7CFC00 },
-    { "chart reuse", 		0x7FFF00 },
-    { "green yellow", 		0xADFF2F },
-    { "dark green", 		0x006400 },
+    { "yellow_green", 		0x9ACD32 },
+    { "dark_olive_green",	0x556B2F },
+    { "olive_drab", 		0x6B8E23 },
+    { "lawn_green", 		0x7CFC00 },
+    { "chartreuse", 		0x7FFF00 },
+    { "green_yellow", 		0xADFF2F },
+    { "dark_green", 		0x006400 },
     { "green", 			0x00FF00 },
     { "g", 			0x00FF00 },
-    { "forest green", 		0x228B22 },
+    { "forest_green", 		0x228B22 },
     { "lime", 			0x00FF00 },
-    { "lime green", 		0x32CD32 },
-    { "light green", 		0x90EE90 },
-    { "pale green", 		0x98FB98 },
-    { "dark sea green", 	0x8FBC8F },
-    { "medium spring green", 	0x00FA9A },
-    { "spring green", 		0x00FF7F },
-    { "sea green", 		0x2E8B57 },
-    { "medium aqua marine", 	0x66CDAA },
-    { "medium sea green", 	0x3CB371 },
-    { "light sea green", 	0x20B2AA },
-    { "dark slate gray", 	0x2F4F4F },
+    { "lime_green", 		0x32CD32 },
+    { "light_green", 		0x90EE90 },
+    { "pale_green", 		0x98FB98 },
+    { "dark_sea_green", 	0x8FBC8F },
+    { "medium_spring_green", 	0x00FA9A },
+    { "spring_green", 		0x00FF7F },
+    { "sea_green", 		0x2E8B57 },
+    { "medium_aqua_marine", 	0x66CDAA },
+    { "medium_sea_green", 	0x3CB371 },
+    { "light_sea_green", 	0x20B2AA },
+    { "dark_slate_gray", 	0x2F4F4F },
     { "teal", 			0x008080 },
-    { "dark cyan", 		0x008B8B },
-    { "aqua", 			0x00FFFF },
+    { "dark_cyan", 		0x008B8B },
     { "cyan", 			0x00FFFF },
     { "c", 			0x00FFFF },
-    { "light cyan", 		0xE0FFFF },
-    { "dark turquoise", 	0x00CED1 },
+    { "aqua", 			0x00FFFF },
+    { "light_cyan", 		0xE0FFFF },
+    { "dark_turquoise", 	0x00CED1 },
     { "turquoise", 		0x40E0D0 },
-    { "medium turquoise", 	0x48D1CC },
-    { "pale turquoise", 	0xAFEEEE },
-    { "aqua marine", 		0x7FFFD4 },
-    { "powder blue", 		0xB0E0E6 },
-    { "cadet blue", 		0x5F9EA0 },
-    { "steel blue", 		0x4682B4 },
-    { "corn flower blue", 	0x6495ED },
-    { "deep sky blue", 		0x00BFFF },
-    { "dodger blue", 		0x1E90FF },
-    { "light blue", 		0xADD8E6 },
-    { "sky blue", 		0x87CEEB },
-    { "light sky blue", 	0x87CEFA },
-    { "midnight blue", 		0x191970 },
+    { "medium_turquoise", 	0x48D1CC },
+    { "pale_turquoise", 	0xAFEEEE },
+    { "aqua_marine", 		0x7FFFD4 },
+    { "powder_blue", 		0xB0E0E6 },
+    { "cadet_blue", 		0x5F9EA0 },
+    { "steel_blue", 		0x4682B4 },
+    { "corn_flowerNblue", 	0x6495ED },
+    { "deep_sky_blue", 		0x00BFFF },
+    { "dodger_blue", 		0x1E90FF },
+    { "light_blue", 		0xADD8E6 },
+    { "sky_blue", 		0x87CEEB },
+    { "light_sky_blue", 	0x87CEFA },
+    { "midnight_blue", 		0x191970 },
     { "navy", 			0x000080 },
-    { "dark blue", 		0x00008B },
-    { "medium blue", 		0x0000CD },
+    { "dark_blue", 		0x00008B },
+    { "medium_blue", 		0x0000CD },
     { "blue", 			0x0000FF },
     { "b", 			0x0000FF },
-    { "royal blue", 		0x4169E1 },
-    { "blue violet", 		0x8A2BE2 },
+    { "royal_blue", 		0x4169E1 },
+    { "blue_violet", 		0x8A2BE2 },
     { "indigo", 		0x4B0082 },
-    { "dark slate blue", 	0x483D8B },
-    { "slate blue", 		0x6A5ACD },
-    { "medium slate blue", 	0x7B68EE },
-    { "medium purple", 		0x9370DB },
-    { "dark magenta", 		0x8B008B },
-    { "dark violet", 		0x9400D3 },
-    { "dark orchid", 		0x9932CC },
-    { "medium orchid", 		0xBA55D3 },
+    { "dark_slate_blue", 	0x483D8B },
+    { "slate_blue", 		0x6A5ACD },
+    { "medium_slate_blue", 	0x7B68EE },
+    { "medium_purple", 		0x9370DB },
+    { "dark_magenta", 		0x8B008B },
+    { "dark_violet", 		0x9400D3 },
+    { "dark_orchid", 		0x9932CC },
+    { "medium_orchid", 		0xBA55D3 },
     { "purple", 		0x800080 },
     { "p", 		        0x800080 },
     { "thistle", 		0xD8BFD8 },
@@ -991,61 +992,61 @@ static const ColorInfo color_info[] =
     { "m",                      0xFF00FF },
     { "fuchsia", 	        0xFF00FF },
     { "orchid", 		0xDA70D6 },
-    { "medium violet red", 	0xC71585 },
-    { "pale violet red", 	0xDB7093 },
-    { "deep pink", 		0xFF1493 },
-    { "hot pink", 		0xFF69B4 },
-    { "light pink", 		0xFFB6C1 },
+    { "medium_violet_red", 	0xC71585 },
+    { "pale_violetNred", 	0xDB7093 },
+    { "deep_pink", 		0xFF1493 },
+    { "hot_pink", 		0xFF69B4 },
+    { "light_pink", 		0xFFB6C1 },
     { "pink", 			0xFFC0CB },
-    { "antique white", 		0xFAEBD7 },
+    { "antique_white", 		0xFAEBD7 },
     { "beige", 			0xF5F5DC },
     { "bisque", 		0xFFE4C4 },
-    { "blanched almond", 	0xFFEBCD },
+    { "blanched_almond", 	0xFFEBCD },
     { "wheat", 			0xF5DEB3 },
-    { "corn silk", 		0xFFF8DC },
-    { "lemon chiffon", 		0xFFFACD },
-    { "light golden rod yellow",0xFAFAD2 },
-    { "light yellow", 		0xFFFFE0 },
-    { "saddle brown", 		0x8B4513 },
+    { "corn_silk", 		0xFFF8DC },
+    { "lemon_chiffon", 		0xFFFACD },
+    { "light_golden_rod_yellow",0xFAFAD2 },
+    { "light_yellow", 		0xFFFFE0 },
+    { "saddle_brown", 		0x8B4513 },
     { "sienna", 		0xA0522D },
     { "chocolate", 		0xD2691E },
     { "peru", 			0xCD853F },
-    { "sandy brown", 		0xF4A460 },
-    { "burly wood", 		0xDEB887 },
+    { "sandy_brown", 		0xF4A460 },
+    { "burly_wood", 		0xDEB887 },
     { "tan", 			0xD2B48C },
-    { "rosy brown", 		0xBC8F8F },
+    { "rosy_brown", 		0xBC8F8F },
     { "moccasin", 		0xFFE4B5 },
-    { "navajo white", 		0xFFDEAD },
-    { "peach puff", 		0xFFDAB9 },
-    { "misty rose", 		0xFFE4E1 },
-    { "lavender blush",		0xFFF0F5 },
+    { "navajo_white", 		0xFFDEAD },
+    { "peach_puff", 		0xFFDAB9 },
+    { "misty_rose", 		0xFFE4E1 },
+    { "lavender_blush",		0xFFF0F5 },
     { "linen", 			0xFAF0E6 },
-    { "old lace", 		0xFDF5E6 },
-    { "papaya whip", 		0xFFEFD5 },
-    { "sea shell", 		0xFFF5EE },
-    { "mint cream", 		0xF5FFFA },
-    { "slate gray", 		0x708090 },
-    { "light slate gray", 	0x778899 },
-    { "light steel blue", 	0xB0C4DE },
+    { "old_lace", 		0xFDF5E6 },
+    { "papaya_whip", 		0xFFEFD5 },
+    { "seashell", 		0xFFF5EE },
+    { "mint_cream", 		0xF5FFFA },
+    { "slate_gray", 		0x708090 },
+    { "light_slate_gray", 	0x778899 },
+    { "light_steel_blue", 	0xB0C4DE },
     { "lavender", 		0xE6E6FA },
-    { "floral white", 		0xFFFAF0 },
-    { "alice blue", 		0xF0F8FF },
-    { "ghost white", 		0xF8F8FF },
+    { "floral_white", 		0xFFFAF0 },
+    { "alice_blue", 		0xF0F8FF },
+    { "ghost_white", 		0xF8F8FF },
     { "honeydew", 		0xF0FFF0 },
     { "ivory", 			0xFFFFF0 },
     { "azure", 			0xF0FFFF },
     { "snow", 			0xFFFAFA },
     { "black", 			0x000000 },
-    { "dim gray",               0x696969 },
+    { "dim_gray",               0x696969 },
     { "gray", 		        0x808080 },
-    { "dark gray", 	        0xA9A9A9 },
+    { "dark_gray", 	        0xA9A9A9 },
     { "silver", 		0xC0C0C0 },
-    { "light gray", 	        0xD3D3D3 },
+    { "light_gray", 	        0xD3D3D3 },
     { "gainsboro", 		0xDCDCDC },
-    { "white smoke", 		0xF5F5F5 },
+    { "white_smoke", 		0xF5F5F5 },
     { "white", 			0xFFFFFF },
     { "copper",                 0xB87333 },
-    { "nvidia green",           (118 << 16) | (185 << 8) | (0 << 0) },
+    { "nvidia_green",           (118 << 16) | (185 << 8) | (0 << 0) },
 };
 
 static constexpr size_t color_info_cnt = sizeof( color_info ) / sizeof( color_info[0] );
@@ -1061,6 +1062,38 @@ uint Layout::color( std::string name, real a )
     }
     lassert( false, "unknown color: " + name );
     return 0;
+}
+
+std::string Layout::color_name( uint color )
+{
+    // return closest color's name
+    _int rdiff_best = 1000000;
+    _int gdiff_best = 1000000;
+    _int bdiff_best = 1000000;
+
+    _int r = (color >> 24) & 0xff;
+    _int g = (color >> 16) & 0xff;
+    _int b = (color >>  8) & 0xff;
+
+    size_t best_i = 0;
+    for( size_t i = 0; i < color_info_cnt; i++ )
+    {
+        uint rgb = color_info[i].rgb;
+        _int rr = (rgb >> 16) & 0xff;
+        _int gg = (rgb >>  8) & 0xff;
+        _int bb = (rgb >>  0) & 0xff;
+
+        _int rdiff = std::abs(r - rr);
+        _int gdiff = std::abs(g - gg);
+        _int bdiff = std::abs(b - bb);
+
+        if ( (rdiff+gdiff+bdiff) < (rdiff_best+gdiff_best+bdiff_best) ) {
+            best_i = i;        
+            if ( (rdiff+gdiff+bdiff) == 0 ) break;
+        }
+    }
+
+    return color_info[best_i].name;
 }
 
 void Layout::materials_init( void )
@@ -3655,15 +3688,16 @@ bool Layout::hfss_write_layer_info( std::string file )
     std::ofstream out( file, std::ofstream::out );
 
     out << "UNITS um\n";
-    out << "#Layer  Name                    Color             Height      Thickness\n";
-    out << "#----------------------------------------------------------------------\n";
+    out << "# L#    Name                    Color             Elevation    Thickness\n";
+    out << "#-----------------------------------------------------------------------\n";
     real height = 0.0;
     for( uint i = 0; i < hdr->layer_cnt; i++ )
     {
         const Layer& layer = layers[i];
         real thickness = layer.thickness;
+        std::string color = color_name( layer.material_rgba );
         
-        out << putf( "%-4d    %-20s    0x%08x   %10.3f   %10.3f\n", i, &strings[layer.name_i], layer.material_rgba, height, thickness );
+        out << putf( "%-4d    %-20s    %-10s   %10.3f   %10.3f\n", i, &strings[layer.name_i], color.c_str(), height, thickness );
 
         if ( i != (hdr->layer_cnt-1) && !layers[i+1].same_zoffset_as_prev ) height += thickness;
     }

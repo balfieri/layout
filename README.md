@@ -36,7 +36,7 @@ How to use it:
        layout->write( "new_chip.obj" );         // writes out Alias/Wavefront 3D .obj/.mtl files 
 
        layout->write_layer_info( "new_chip.gds3d" );    // writes out layer mapping info used by GDS3D viewer app
-       layout->write_layer_info( "new_chip.tech" );     // writes out layer mapping info used by HFSS 
+       layout->write_layer_info( "new_chip.tech" );     // writes out layer mapping info used by HFSS
 
        layout->write_material_info( "new_chip.amat" );  // writes out material information used by HFSS
 </pre>
