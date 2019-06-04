@@ -27,17 +27,18 @@ git clone https://github.com/balfieri/layout
 #include "Layout.h"
 ```
 
-2. Import some .gds file and optionally write out our .layout binary format.  By the way, you may read in multiple .gds files at the same time.
+2. Import some .gds file and optionally write out our binary Layout binary which requires no translation.  
+By the way, you may read in multiple .gds files at the same time.
 
 ```
-Layout * layout = new Layout( "my_chip.gds" );   // creates a new layout with .gds sucked into Layout's format
-layout->write( "my_chip.layout" );               // writes out Layout-format file
+Layout * layout = new Layout( "my_chip.gds" );   // creates a new layout with .gds imported into Layout's internal format
+layout->write( "my_chip.layout" );               // optional: writes out Layout-format file (useful for large layouts)
 ```
 
-3. Later, you can quickly read in the Layout-format file.  This is useful only for very large layouts.
+3. Later, you can quickly read in the Layout-format file.  It essentially mmap's the file into memory with no translation required.
 
 ```
-Layout * layout = new Layout( "my_chip.layout" );  
+Layout * layout = new Layout( "my_chip.layout" ); // optional: useful only for large layouts
 ```
 
 4. You can also export other types of files:
