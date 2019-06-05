@@ -1199,6 +1199,17 @@ void Layout::materials_init( void )
                               120000000000,     // youngs_modulus
                               0.38,             // poissons_ratio
                               1.77e-05 };       // thermal_expansion_coefficient
+    mi = hdr->material_cnt++;
+    materials[mi] = Material{ str_get( "port" ),// fake material representing a source/sink point in a simulation
+                              1.0,              // relative_permittivity
+                              1.0,              // permeability
+                              0.0,              // conductivity
+                              0.0,              // thermal_conductivity
+                              0.0,              // mass_density
+                              0.0,              // specific_heat
+                              0.0,              // youngs_modulus
+                              0.0,              // poissons_ratio
+                              0.0 };            // thermal_expansion_coefficient
 }
 
 uint Layout::material_set( std::string name, const Material& material )
