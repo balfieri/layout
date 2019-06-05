@@ -3749,6 +3749,7 @@ bool Layout::gds3d_write_layer_info( std::string file )
         if ( layer.gdsii_datatype != NULL_I ) out << "Datatype:   " << layer.gdsii_datatype << "\n";
         out << "Height:     " << height << "\n";
         real thickness = layer.thickness / gdsii_units_user;
+        if ( thickness == 0 ) thickness = gdsii_units_user;
         out << "Thickness:  " << thickness << "\n";
         out << "Red:        " << (real((layer.material_rgba >> 24) & 0xff) / 255.0) << "\n";
         out << "Green:      " << (real((layer.material_rgba >> 16) & 0xff) / 255.0) << "\n";
