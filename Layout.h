@@ -521,8 +521,8 @@ private:
     
     bool aedt_read( std::string file );                 // .aedt
     bool aedt_read_expr( uint& node_i );
-    bool aedt_write( std::string file );
-    void aedt_write_expr( std::ofstream& out, uint node_i, std::string indent_str );
+    bool aedt_write( std::string file, bool for_raw );
+    void aedt_write_expr( std::ofstream& out, uint node_i, std::string indent_str, bool for_raw );
 
     bool gds3d_write_layer_info( std::string file );
     bool hfss_write_layer_info( std::string file );
@@ -846,8 +846,10 @@ bool Layout::write( std::string top_file )
         //------------------------------------------------------------
         return layout_write( top_file );
     } else {
-        if ( ext_name == std::string( ".aedt" ) || ext_name == std::string( ".raw" ) ) {
-            return aedt_write( top_file );
+        if ( ext_name == std::string( ".aedt" ) ) {
+            return aedt_write( top_file, false );
+        } else if ( ext_name == std::string( ".raw" ) ) {
+            return aedt_write( top_file, true );
         } else if ( ext_name == std::string( ".gds" ) ) {
             return gdsii_write( top_file );
         } else {
@@ -3496,15 +3498,15 @@ bool Layout::aedt_read_expr( uint& ni )
     return true;
 }
 
-bool Layout::aedt_write( std::string file )
+bool Layout::aedt_write( std::string file, bool for_raw )
 {
     std::ofstream out( file, std::ofstream::out );
-    aedt_write_expr( out, hdr->root_i, "\n" );
+    aedt_write_expr( out, hdr->root_i, "\n", for_raw );
     out.close();
     return true;
 }
 
-void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_str )
+void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_str, bool for_raw )
 {
     lassert( ni != NULL_I, "aedt_write_expr: bad node index" );
     const Node& node = nodes[ni];
@@ -3538,25 +3540,27 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
         case NODE_KIND::ASSIGN:
         {
             uint child_i = node.u.child_first_i;
-            aedt_write_expr( out, child_i, "" );
+            aedt_write_expr( out, child_i, "", for_raw );
             out << "=";
             child_i = nodes[child_i].sibling_i;
-            aedt_write_expr( out, child_i, "" );
+            aedt_write_expr( out, child_i, "", for_raw );
             break;
         }
 
         case NODE_KIND::CALL:
         {
             uint child_i = node.u.child_first_i;
-            aedt_write_expr( out, child_i, "" );
+            aedt_write_expr( out, child_i, "", for_raw );
             out << "(";
             bool have_one = false;
             for( child_i = nodes[child_i].sibling_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
             {
+                if ( !have_one ) out << " ";
                 if ( have_one ) out << ", ";
-                aedt_write_expr( out, child_i, "" );
+                aedt_write_expr( out, child_i, "", for_raw );
                 have_one = true;
             }
+            if ( have_one ) out << " ";
             out << ")";
             break;
         }
@@ -3564,17 +3568,17 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
         case NODE_KIND::SLICE:
         {
             uint child_i = node.u.child_first_i;
-            aedt_write_expr( out, child_i, "" );
+            aedt_write_expr( out, child_i, "", for_raw );
             out << "[";
             child_i = nodes[child_i].sibling_i;
             if ( child_i != NULL_I ) {
-                aedt_write_expr( out, child_i, "" );
+                aedt_write_expr( out, child_i, "", for_raw );
                 out << ":";
                 bool have_one = false;
                 for( child_i = nodes[child_i].sibling_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
                 {
                     out << (have_one ? ", " : " ");
-                    aedt_write_expr( out, child_i, "" );
+                    aedt_write_expr( out, child_i, "", for_raw );
                     have_one = true;
                 }
             }
@@ -3587,22 +3591,38 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
             uint id_i = node.u.child_first_i;
             uint child_i;
             if ( id_i != NULL_I && nodes[id_i].kind == NODE_KIND::STR ) {
-                out << "$begin '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
+                if ( for_raw ) {
+                    out << "BGNSTR" << std::string(&strings[nodes[id_i].u.s_i]);
+                } else {
+                    out << "$begin '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
+                }
                 child_i = nodes[id_i].sibling_i;
             } else {
-                out << "$begin 'FILE'";
+                if ( for_raw ) {
+                    out << "BGNFILE";
+                } else {
+                    out << "$begin 'FILE'";
+                }
                 child_i = id_i;
                 id_i = NULL_I;
             }
             for( ; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
             {
-                aedt_write_expr( out, child_i, indent_str + "\t" );
+                aedt_write_expr( out, child_i, indent_str + (for_raw ? "    " : "\t"), for_raw );
             }
             out << indent_str;
             if ( id_i != NULL_I ) {
-                out << "$end '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
+                if ( for_raw ) {
+                    out << "ENDHIER " << std::string(&strings[nodes[id_i].u.s_i]); 
+                } else {
+                    out << "$end '" << std::string(&strings[nodes[id_i].u.s_i]) << "'";
+                }
             } else {
-                out << "$end 'FILE'\n";
+                if ( for_raw ) {
+                    out << "ENDFILE\n";
+                } else {
+                    out << "$end 'FILE'\n";
+                }
             }
             break;
         }
@@ -3612,7 +3632,11 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
             if ( node_is_gdsii( node ) ) {
                 GDSII_DATATYPE datatype = kind_to_datatype( node.kind );
                 if ( node_is_hier( node ) ) {
-                    out << "$begin '" << node.kind << "'";
+                    if ( for_raw ) {
+                        out << str(node.kind);
+                    } else {
+                        out << "$begin '" << node.kind << "'";
+                    }
                 }
                 uint child_i = NULL_I;
                 switch( datatype )
@@ -3624,12 +3648,12 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
 
                     case GDSII_DATATYPE::BITARRAY:
                     {
-                        out << node.kind << "(" << node.u.u << ")";
+                        out << node.kind << "( " << node.u.u << " )";
                         break;
                     }
 
                     case GDSII_DATATYPE::STRING: {
-                        out << node.kind << "('" << std::string(&strings[node.u.s_i]) << "')";
+                        out << node.kind << "( '" << std::string(&strings[node.u.s_i]) << "' )";
                         break;
                     }
 
@@ -3646,9 +3670,21 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
                             vals += (nodes[child_i].kind == NODE_KIND::INT) ? std::to_string(nodes[child_i].u.i) : std::to_string(nodes[child_i].u.r);
                         }
                         if ( node_is_hier( node ) ) {
-                            out << indent_str << "\tARGS(" << vals << ")";
+                            std::string this_indent_str = indent_str;
+                            if ( for_raw ) {
+                                if ( node.kind == NODE_KIND::BGNLIB || node.kind == NODE_KIND::BGNSTR ) {
+                                    this_indent_str = "";
+                                } else {
+                                    this_indent_str = "    ";
+                                }
+                            }
+                            out << this_indent_str << (for_raw ? "" : "ARGS") << ((vals != "") ? "( ": "(") << vals << ((vals != "") ? " )" : ")");
                         } else {
-                            out << node.kind << "(" << vals << ")";
+                            if ( vals != "" ) {
+                                out << node.kind << "( " << vals << " )";
+                            } else {
+                                out << node.kind << "()";
+                            }
                         }
                         break;
                     }
@@ -3664,10 +3700,18 @@ void Layout::aedt_write_expr( std::ofstream& out, uint ni, std::string indent_st
                     if ( child_i == NULL_I ) child_i = node.u.child_first_i;
                     for( ; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
                     {
-                        aedt_write_expr( out, child_i, indent_str + "\t" );
+                        aedt_write_expr( out, child_i, indent_str + (for_raw ? "    " : "\t"), for_raw );
                     }
                     out << indent_str;
-                    out << "$end '" << node.kind << "'";
+                    if ( for_raw ) {
+                        if ( node.kind != NODE_KIND::HIER ) {
+                            out << hier_end_kind(node.kind);
+                        } else {
+                            out << "END" << node.kind;
+                        }
+                    } else {
+                        out << "$end '" << node.kind << "'";
+                    }
                     break;
                 }
             } else {
