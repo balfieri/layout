@@ -1064,6 +1064,7 @@ static const ColorInfo color_info[] =
     { "light_gray", 	        0xD3D3D3 },
     { "gainsboro", 		0xDCDCDC },
     { "white_smoke", 		0xF5F5F5 },
+    { "w", 			0xFFFFFF },
     { "white", 			0xFFFFFF },
     { "copper",                 0xB87333 },
     { "nvidia_green",           (118 << 16) | (185 << 8) | (0 << 0) },
@@ -2550,7 +2551,7 @@ uint Layout::inst_layout( uint parent_i, uint last_i, const Layout * src_layout,
 {
     Matrix M;
     M.translate( real3( x, y, 0 ) );
-    return inst_layout( parent_i, last_i, src_layout, src_struct_name, M, 0, hdr->layer_cnt-1, name );
+    return inst_layout( parent_i, last_i, src_layout, src_struct_name, M, dst_layer_first, dst_layer_last, name );
 }
 
 uint Layout::inst_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, 
