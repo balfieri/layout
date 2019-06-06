@@ -75,17 +75,18 @@ There are some example programs in this directory:
 doit.count some.gds
 ```
 
-- ```test.cpp``` - can read in a .gds, .aedt, or .layout file, then writes out .layout, .gds, and .aedt files; ```doit.test``` builds and runs it:
+- ```test.cpp``` - can read in a .gds, .aedt, or .layout file, then writes out .layout, .gds, and .aedt files:
 ```
 doit.test some.gds
 doit.test some.aedt
 doit.test some.layout
 ```
 
-- ```flatten.cpp``` - reads in a .gds/.aedt/.layout file, flattens it, then writes out a .flat.<ext> output; ```doit.flatten``` builds and runs it:
+- ```flatten.cpp``` - reads in a .gds/.aedt/.layout file, flattens it, then writes out a .flat.<ext> output:
 ```
-doit.flatten some.gds                           # writes out some.flat.gds
-doit.flatten some.gds flattened.gds             # flattened output written instead to flattened.gds
+doit.flatten some.gds                           # flattened layout written to some.flat.gds
+doit.flatten some.gds flattened.gds             # flattened layout written instead to flattened.gds
+doit.flatten some.gds flattened.layout          # flattened layout written instead to flattened.layout
 ```
 
 I need to add an editing test case that is not proprietary.
