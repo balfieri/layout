@@ -1,4 +1,6 @@
-Single Layout.h file provides:
+<h2>Overview</h2>
+
+This repo contains a single Layout.h file that provides the following VLSI layout operations:
 
 <ul>
 <li>reading and writing .gds files (GDSII industry standard layout format)</li>
