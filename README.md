@@ -82,9 +82,10 @@ doit.test some.aedt
 doit.test some.layout
 ```
 
-- ```flatten.cpp``` - reads in a .gds/.aedt/.layout file, flattens it, then writes out the flattened output; ```doit.flatten``` builds and runs it:
+- ```flatten.cpp``` - reads in a .gds/.aedt/.layout file, flattens it, then writes out a .flat.<ext> output; ```doit.flatten``` builds and runs it:
 ```
-doit.flatten some.gds flattened.gds
+doit.flatten some.gds                           # writes out some.flat.gds
+doit.flatten some.gds flattened.gds             # flattened output written instead to flattened.gds
 ```
 
 I need to add an editing test case that is not proprietary.
