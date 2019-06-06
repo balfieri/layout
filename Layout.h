@@ -2290,7 +2290,7 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             //
                             // Convert from degrees to radians.
                             //-----------------------------------------------------
-                            sangle = child.u.r / 180.0;
+                            sangle = child.u.r * real(M_PI) / 180.0;
                             break;
                         }
 
@@ -2361,24 +2361,25 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                         // Apply transformations to previous ones.
                         //-----------------------------------------------------
                         Matrix inst_M = M;
-                        if ( smag != 1.0 ) {
-                            inst_M.scale( real3(smag, smag, 1) );
-                        }
 
-                        if ( src_node.kind == NODE_KIND::SREF ) {
-                            inst_M.translate( real3(xy[0][0], xy[0][1], 0) );
-                        } else {
-                            real x_disp = real(c)*dxy[0][0] + real(r)*dxy[1][0];
-                            real y_disp = real(c)*dxy[0][1] + real(r)*dxy[1][1];
-                            inst_M.translate( real3(xy[0][0] + x_disp, xy[0][1] + y_disp, 0 ) );
+                        if ( sreflection ) {
+                            inst_M.scale( real3(1, -1, 1) );
                         }
 
                         if ( sangle != 0.0 ) {
                             inst_M.rotate_xy( -sangle );
                         }
 
-                        if ( sreflection ) {
-                            inst_M.scale( real3(1, -1, 1) );
+                        if ( src_node.kind == NODE_KIND::SREF ) {
+                            inst_M.translate( real3(xy[0][0], xy[0][1], 0) );
+                        } else {
+                            real x_translate = xy[0][0] + real(c)*dxy[0][0] + real(r)*dxy[1][0];
+                            real y_translate = xy[0][1] + real(c)*dxy[0][1] + real(r)*dxy[1][1];
+                            inst_M.translate( real3(x_translate, y_translate, 0) );
+                        }
+
+                        if ( smag != 1.0 ) {
+                            inst_M.scale( real3(smag, smag, 1) );
                         }
 
                         //-----------------------------------------------------
