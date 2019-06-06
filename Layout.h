@@ -2349,6 +2349,11 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                 //-----------------------------------------------------
                 // Now the fun part.
                 //-----------------------------------------------------
+                if ( src_node.kind == NODE_KIND::AREF ) {
+                    smag = 1.0;
+                    sangle = 0.0;
+                    sreflection = false;
+                }
                 lassert( struct_i != NULL_I, "SREF/AREF has no SNAME" );
                 real   dxy[2][2] = { { (xy[1][0] - xy[0][0]) / real(col_cnt), (xy[1][1] - xy[0][1]) / real(col_cnt) },
                                      { (xy[2][0] - xy[0][0]) / real(row_cnt), (xy[2][1] - xy[0][1]) / real(row_cnt) } };
@@ -2362,24 +2367,20 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                         //-----------------------------------------------------
                         Matrix inst_M = M;
 
-                        if ( sreflection ) {
-                            inst_M.scale( real3(1, -1, 1) );
+                        if ( smag != 1.0 ) {
+                            inst_M.scale( real3(smag, sreflection ? -smag : smag, 1) );
                         }
 
                         if ( sangle != 0.0 ) {
-                            inst_M.rotate_xy( -sangle );
+                            inst_M.rotate_xy( sangle );
                         }
 
                         if ( src_node.kind == NODE_KIND::SREF ) {
                             inst_M.translate( real3(xy[0][0], xy[0][1], 0) );
                         } else {
-                            real x_translate = xy[0][0] + real(c)*dxy[0][0] + real(r)*dxy[1][0];
-                            real y_translate = xy[0][1] + real(c)*dxy[0][1] + real(r)*dxy[1][1];
+                            real x_translate = xy[0][0] + real(col_cnt)*dxy[0][0] + real(row_cnt)*dxy[1][0];
+                            real y_translate = xy[0][1] + real(col_cnt)*dxy[0][1] + real(row_cnt)*dxy[1][1];
                             inst_M.translate( real3(x_translate, y_translate, 0) );
-                        }
-
-                        if ( smag != 1.0 ) {
-                            inst_M.scale( real3(smag, smag, 1) );
                         }
 
                         //-----------------------------------------------------
