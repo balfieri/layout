@@ -74,21 +74,21 @@ There are some example programs in this directory:
 
 - ```count.cpp``` - parses a .gds file but doesn't build a tree; instead, prints out the number of records found; runs fast on large .gds files; ```doit.count``` builds and runs it:
 ```
-doit.count some.gds
+doit.count example1.gds
 ```
 
 - ```test.cpp``` - can read in a .gds, .aedt, or .layout file, then writes out .layout, .gds, and .aedt files:
 ```
-doit.test some.gds
-doit.test some.aedt
-doit.test some.layout
+doit.test example1.gds
+doit.test example1.aedt
+doit.test example1.layout
 ```
 
 - ```flatten.cpp``` - reads in a .gds/.aedt/.layout file, flattens it, then writes out a .flat.<ext> output:
 ```
-doit.flatten some.gds                           # flattened layout written to some.flat.gds
-doit.flatten some.gds flattened.gds             # flattened layout written instead to flattened.gds
-doit.flatten some.gds flattened.layout          # flattened layout written instead to flattened.layout
+doit.flatten example1.gds                       # flattened layout written to example1.flat.gds
+doit.flatten example1.gds flattened.gds         # flattened layout written instead to flattened.gds
+doit.flatten example1.gds flattened.layout      # flattened layout written instead to flattened.layout
 ```
 
 I need to add an editing test case that is not proprietary.
