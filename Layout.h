@@ -2287,8 +2287,10 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             // For an AREF, the ANGLE rotates the entire array lattice (with the individual 
                             // array elements rigidly attached) about the array reference point. 
                             // If this record is omitted, an angle of zero degrees is as- sumed.
+                            //
+                            // Convert from degrees to radians.
                             //-----------------------------------------------------
-                            sangle = child.u.r;
+                            sangle = child.u.r / 180.0;
                             break;
                         }
 
