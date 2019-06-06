@@ -13,7 +13,7 @@ Single Layout.h file provides:
 <li>writing out a single file with resultant edits</li>
 </ul>
 
-<h2>How to Use It</h2>
+<h2>Basics</h2>
 
 0. Clone this repository.  This code should build on Linux, MacOS, and Cygwin with a C++14 compiler.</li>
 
@@ -57,16 +57,37 @@ layout->write_layer_info( "new_chip.tech" );     // writes out layer mapping inf
 layout->write_material_info( "new_chip.amat" );  // writes out material information used by HFSS
 ```
 
+<h2>Instantiating Layouts</h2>
+
+TBD 
+
+<h2>Advanced Layout Editing</h2>
+
+TBD
+
 <h2>Example Programs</h2>
 
 <p>
 There are some example programs in this directory:
 
-- ```count.cpp``` - parses a .gds file but doesn't build a tree; instead, prints out the number of records found; runs fast on large .gds files; ```doit.count``` builds and runs it
+- ```count.cpp``` - parses a .gds file but doesn't build a tree; instead, prints out the number of records found; runs fast on large .gds files; ```doit.count``` builds and runs it:
+```
+doit.count some.gds
+```
 
-- ```test.cpp``` - can read in a .gds, .aedt, or .layout file, then writes out .layout, .gds, and .aedt files; ```doit.test``` builds and runs it
+- ```test.cpp``` - can read in a .gds, .aedt, or .layout file, then writes out .layout, .gds, and .aedt files; ```doit.test``` builds and runs it:
+```
+doit.test some.gds
+doit.test some.aedt
+doit.test some.layout
+```
 
-I need to add a more interesting test case that is not proprietary.
+- ```flatten.cpp``` - reads in a .gds/.aedt/.layout file, flattens it, then writes out the flattened output; ```doit.flatten``` builds and runs it:
+```
+doit.flatten some.gds flattened.gds
+```
+
+I need to add an editing test case that is not proprietary.
 
 
 Bob Alfieri<br>
