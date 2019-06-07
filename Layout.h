@@ -2283,7 +2283,9 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
 
                         case NODE_KIND::MAG:
                         {
-                            smag = child.u.r;
+                            uint gchild_i = child.u.child_first_i;
+                            lassert( src_nodes[gchild_i].kind == NODE_KIND::REAL, "MAG node does not have a child that is a REAL" );
+                            smag = src_nodes[gchild_i].u.r;
                             break;
                         }
 
@@ -2296,8 +2298,10 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             //
                             // Convert from degrees to radians.
                             //-----------------------------------------------------
-                            ldout << "raw angle=" << child.u.r << "\n";
-                            sangle = child.u.r * real(M_PI) / 180.0;
+                            uint gchild_i = child.u.child_first_i;
+                            lassert( src_nodes[gchild_i].kind == NODE_KIND::REAL, "ANGLE node does not have a child that is a REAL" );
+                            ldout << "raw angle=" << src_nodes[gchild_i].u.r << "\n";
+                            sangle = src_nodes[gchild_i].u.r * real(M_PI) / 180.0;
                             break;
                         }
 
@@ -2307,16 +2311,16 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             // Array dimensions
                             //-----------------------------------------------------
                             lassert( src_node.kind == NODE_KIND::AREF, "COLROW not allowed for an SREF" );
-                            uint gchild = child.u.child_first_i;
-                            lassert( gchild != NULL_I, "COLROW has no COL value" );
-                            lassert( src_nodes[gchild].kind == NODE_KIND::INT, "COLROW COL is not an INT" );
-                            col_cnt = src_nodes[gchild].u.i;
+                            uint gchild_i = child.u.child_first_i;
+                            lassert( gchild_i != NULL_I, "COLROW has no COL value" );
+                            lassert( src_nodes[gchild_i].kind == NODE_KIND::INT, "COLROW COL is not an INT" );
+                            col_cnt = src_nodes[gchild_i].u.i;
                             lassert( col_cnt > 0, "COLROW COL must be non-zero" );
 
-                            gchild = src_nodes[gchild].sibling_i;
-                            lassert( gchild != NULL_I, "COLROW has no ROW value" );
-                            lassert( src_nodes[gchild].kind == NODE_KIND::INT, "COLROW ROW is not an INT" );
-                            row_cnt = src_nodes[gchild].u.i;
+                            gchild_i = src_nodes[gchild_i].sibling_i;
+                            lassert( gchild_i != NULL_I, "COLROW has no ROW value" );
+                            lassert( src_nodes[gchild_i].kind == NODE_KIND::INT, "COLROW ROW is not an INT" );
+                            row_cnt = src_nodes[gchild_i].u.i;
                             lassert( row_cnt > 0, "COLROW ROW must be non-zero" );
                             break;
                         }
@@ -2338,7 +2342,7 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             {
                                 lassert( i < 2 || src_node.kind == NODE_KIND::AREF, "SREF may not have more than 2 XY coords" );
                                 lassert( i < 6, "AREF may not have more than 6 XY coords" );
-                                xy[i>>1][i&1] = real(src_nodes[gchild_i].u.i) / src_layout->gdsii_units_user;
+                                xy[i>>1][i&1] = real(src_nodes[gchild_i].u.i) * src_layout->gdsii_units_user;
                                 i++;
                             }
                             lassert( i == 2 || i == 6, "wrong number of XY coords for " + str(src_node.kind) );
@@ -2478,7 +2482,7 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
         uint prev_i = uint(-1);
         for( uint child_i = nodes[dst_i].u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
         {
-            v.c[i&1] = real(nodes[child_i].u.i);
+            v.c[i&1] = real(nodes[child_i].u.i) * gdsii_units_user;
             if ( i&1 ) {
                 real3 r;
                 M.transform( v, r, true ); // divide by w
@@ -2487,8 +2491,8 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                     ldout << "v=" << v << "\n";
                     ldout << "r=" << r << "\n";
                 }
-                nodes[prev_i].u.i  = v.c[0];  // new X
-                nodes[child_i].u.i = v.c[1];  // new Y
+                nodes[prev_i].u.i  = v.c[0] / gdsii_units_user + 0.5;  // new X
+                nodes[child_i].u.i = v.c[1] / gdsii_units_user + 0.5;  // new Y
             }
             i++;
             prev_i = child_i;
