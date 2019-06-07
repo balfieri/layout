@@ -2491,8 +2491,8 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                     ldout << "v=" << v << "\n";
                     ldout << "r=" << r << "\n";
                 }
-                nodes[prev_i].u.i  = v.c[0] / gdsii_units_user + 0.5;  // new X
-                nodes[child_i].u.i = v.c[1] / gdsii_units_user + 0.5;  // new Y
+                nodes[prev_i].u.i  = r.c[0] / gdsii_units_user + 0.5;  // new X
+                nodes[child_i].u.i = r.c[1] / gdsii_units_user + 0.5;  // new Y
             }
             i++;
             prev_i = child_i;
