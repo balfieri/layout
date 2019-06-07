@@ -2296,6 +2296,7 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             //
                             // Convert from degrees to radians.
                             //-----------------------------------------------------
+                            ldout << "raw angle=" << child.u.r << "\n";
                             sangle = child.u.r * real(M_PI) / 180.0;
                             break;
                         }
@@ -2337,7 +2338,7 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             {
                                 lassert( i < 2 || src_node.kind == NODE_KIND::AREF, "SREF may not have more than 2 XY coords" );
                                 lassert( i < 6, "AREF may not have more than 6 XY coords" );
-                                xy[i>>1][i&1] = real(src_nodes[gchild_i].u.i) / src_layout->gdsii_units_user + 0.5; 
+                                xy[i>>1][i&1] = real(src_nodes[gchild_i].u.i) / src_layout->gdsii_units_user;
                                 i++;
                             }
                             lassert( i == 2 || i == 6, "wrong number of XY coords for " + str(src_node.kind) );
@@ -2374,19 +2375,26 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                         Matrix inst_M = M;
 
                         if ( smag != 1.0 ) {
-                            inst_M.scale( real3(smag, sreflection ? -smag : smag, 1) );
+                            real3 sv{ smag, sreflection ? -smag : smag, 1 };
+                            inst_M.scale( sv );
+                            ldout << "scale mag=" << smag << " vec=" << sv << " new M=\n" << inst_M << "\n";
                         }
 
                         if ( sangle != 0.0 ) {
                             inst_M.rotate_xy( sangle );
+                            ldout << "rotate angle=" << sangle << " new M=\n" << inst_M << "\n";
                         }
 
                         if ( src_node.kind == NODE_KIND::SREF ) {
-                            inst_M.translate( real3(xy[0][0], xy[0][1], 0) );
+                            real3 tv{ xy[0][0], xy[0][1], 0 };
+                            inst_M.translate( tv );
+                            ldout << "sref translate vec=" << tv << " M=\n" << inst_M << "\n";
                         } else {
                             real x_translate = xy[0][0] + real(col_cnt)*dxy[0][0] + real(row_cnt)*dxy[1][0];
                             real y_translate = xy[0][1] + real(col_cnt)*dxy[0][1] + real(row_cnt)*dxy[1][1];
+                            real3 tv{ x_translate, y_translate, 0 };
                             inst_M.translate( real3(x_translate, y_translate, 0) );
+                            ldout << "aref translate vec=" << tv << " M=" << inst_M << "\n";
                         }
 
                         //-----------------------------------------------------
@@ -2447,6 +2455,9 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
         }
     }
     
+    //-----------------------------------------------------
+    // Connect the new node.
+    //-----------------------------------------------------
     if ( last_i != NULL_I ) {
         lassert( nodes[last_i].sibling_i == NULL_I, "node_copy: nodes[last_i] sibling_i is already set" ); 
         lassert( parent_i == NULL_I || nodes[parent_i].u.child_first_i != NULL_I, "node_copy: nodes[parent_i] is not set but last_i is set" );
@@ -2454,6 +2465,34 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
     } else if ( parent_i != NULL_I ) {
         lassert( nodes[parent_i].u.child_first_i == NULL_I, "node_copy: nodes[parent_i] child_first_i is already set but last_i is NULL_I" ); 
         nodes[parent_i].u.child_first_i = dst_i;
+    }
+
+    if ( nodes[dst_i].kind == NODE_KIND::XY ) {
+        //-----------------------------------------------------
+        // Transform each X,Y pair by M.
+        //-----------------------------------------------------
+        bool is_y = false;
+        real3 v;
+        v.c[2] = 1.0;
+        uint i = 0;
+        uint prev_i = uint(-1);
+        for( uint child_i = nodes[dst_i].u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+        {
+            v.c[i&1] = real(nodes[child_i].u.i);
+            if ( i&1 ) {
+                real3 r;
+                M.transform( v, r, true ); // divide by w
+                if ( kind == COPY_KIND::FLATTEN ) {
+                    ldout << "M=\n" << M << "\n";
+                    ldout << "v=" << v << "\n";
+                    ldout << "r=" << r << "\n";
+                }
+                nodes[prev_i].u.i  = v.c[0];  // new X
+                nodes[child_i].u.i = v.c[1];  // new Y
+            }
+            i++;
+            prev_i = child_i;
+        }
     }
     return dst_i;
 }
@@ -3088,18 +3127,19 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
                     ldout << "    " << vi << "\n";
                 } else {
                     real sign = (uuu[0] & 0x80) ? -1.0 : 1.0;
-                    real exp  = (uuu[0] & 0x7f);
-                    int64_t ifrac = 0.0;
+                    real exp  = (uuu[0] & 0x7f) - 64;
+                    real mantissa = 0;
                     for( uint j = 0; j < datum_byte_cnt; j++ )
                     {
                         ldout << "bytes[" << j << "]=" << int(uuu[j]) << "\n";
-                        if ( j != 0 ) ifrac = (ifrac << 8) | uuu[j];
+                        if ( j != 0 ) mantissa = mantissa*256.0 + real(uuu[j]);
                     }
+
                     if ( !count_only ) {
                         nodes[child_i].kind = NODE_KIND::REAL;
-                        real rexp = 4.0*(exp-64) - 8*(datum_byte_cnt-1);
-                        nodes[child_i].u.r = sign * double(ifrac) * std::pow( 2.0, rexp );
-                        ldout << "sign=" << ((sign < 0.0) ? "1" : "0") << " exp=" << exp << " rexp=" << rexp << " ifrac=" << ifrac << " r=" << nodes[child_i].u.r << "\n";
+                        real rexp = 4.0*exp - 8*(datum_byte_cnt-1);
+                        nodes[child_i].u.r = sign * mantissa * std::pow( 2.0, rexp );
+                        ldout << "sign=" << ((sign < 0.0) ? "1" : "0") << " exp=" << exp << " rexp=" << rexp << " mantissa=" << mantissa << " r=" << nodes[child_i].u.r << "\n";
                         if ( kind == NODE_KIND::UNITS ) {
                             if ( i == 0 ) gdsii_units_user   = nodes[child_i].u.r;
                             if ( i == 1 ) gdsii_units_meters = nodes[child_i].u.r;
