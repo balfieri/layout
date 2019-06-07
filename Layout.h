@@ -184,10 +184,10 @@ public:
 
         real4  row( uint r ) const;                     // returns row r as a vector
         real4  column( uint c ) const;                  // returns column c as a vector
-        void   transform( const real4& v, real4& r ) const; // multiply this matrix (lhs) by vector, returning vector r without div by w
-        void   transform( const real3& v, real3& r, bool div_by_w=false ) const; // multiply this matrix (lhs) by vector, returning vector r
-        void   transform( const Matrix& m, Matrix& r ) const; // multiply this matrix (lhs) by matrix m, returning matrix r
-        void   transpose( Matrix& mt ) const;           // return the transpose this matrix 
+        void   transform( const real4& v, real4& r ) const; // r = *this * v
+        void   transform( const real3& v, real3& r, bool div_by_w=false ) const; // r = *this * v (and optional divide by w)
+        void   transform( const Matrix& M2, Matrix& M3 ) const; // M3 = *this * M2
+        void   transpose( Matrix& mt ) const;           // return the transpose of this matrix 
     };
 
     // instancing of other layouts
@@ -1727,14 +1727,15 @@ void Layout::Matrix::rotate_xy( double radians )
     if ( radians == 0.0 ) return;
     double c = cos( radians );
     double s = sin( radians );
-    Matrix mr;
-    mr.identity();
-    mr.m[0][0] = c;
-    mr.m[0][1] = s;
-    mr.m[1][0] = -s;
-    mr.m[1][1] = c;
-    Matrix r = *this;
-    mr.transform( r, *this );
+    Matrix M2;
+    M2.m[0][0] = c;
+    M2.m[0][1] = s;
+    M2.m[1][0] = -s;
+    M2.m[1][1] = c;
+
+    // order: *this = *this * M2  
+    Matrix M1 = *this;
+    M1.transform( M2, *this );
 }
 
 void Layout::Matrix::rotate_xz( double radians )
@@ -1742,14 +1743,15 @@ void Layout::Matrix::rotate_xz( double radians )
     if ( radians == 0.0 ) return;
     double c = cos( radians );
     double s = sin( radians );
-    Matrix mr;
-    mr.identity();
-    mr.m[0][0] = c;
-    mr.m[0][2] = s;
-    mr.m[2][0] = -s;
-    mr.m[2][2] = c;
-    Matrix r = *this;
-    mr.transform( r, *this );
+    Matrix M2;
+    M2.m[0][0] = c;
+    M2.m[0][2] = s;
+    M2.m[2][0] = -s;
+    M2.m[2][2] = c;
+
+    // order: *this = *this * M2  
+    Matrix M1 = *this;
+    M1.transform( M2, *this );
 }
 
 void Layout::Matrix::rotate_yz( double radians )
@@ -1757,14 +1759,15 @@ void Layout::Matrix::rotate_yz( double radians )
     if ( radians == 0.0 ) return;
     double c = cos( radians );
     double s = sin( radians );
-    Matrix mr;
-    mr.identity();
-    mr.m[1][1] = c;
-    mr.m[1][2] = -s;
-    mr.m[2][1] = s;
-    mr.m[2][2] = c;
-    Matrix r = *this;
-    mr.transform( r, *this );
+    Matrix M2;
+    M2.m[1][1] = c;
+    M2.m[1][2] = -s;
+    M2.m[2][1] = s;
+    M2.m[2][2] = c;
+
+    // order: *this = *this * M2  
+    Matrix M1 = *this;
+    M1.transform( M2, *this );
 }
 
 inline Layout::Matrix Layout::Matrix::operator + ( const Matrix& m ) const
@@ -1816,8 +1819,29 @@ inline void Layout::Matrix::multiply( double s )
     }
 }
 
+Layout::real4 Layout::Matrix::row( uint r ) const
+{
+    real4 v;
+    for( uint32_t c = 0; c < 4; c++ ) 
+    {
+        v.c[c] = m[r][c];
+    }
+    return v;
+}
+
+Layout::real4 Layout::Matrix::column( uint c ) const
+{
+    real4 v;
+    for( uint32_t r = 0; r < 4; r++ ) 
+    {
+        v.c[r] = m[r][c];
+    }
+    return v;
+}
+
 void Layout::Matrix::transform( const real4& v, real4& r ) const
 {
+    // order: r = *this * v
     for( uint i = 0; i < 4; i++ )
     {
         double sum = 0.0;               // use higher-precision here
@@ -1833,6 +1857,7 @@ void Layout::Matrix::transform( const real4& v, real4& r ) const
 
 void Layout::Matrix::transform( const real3& v, real3& r, bool div_by_w ) const
 {
+    // order: r = *this * v
     if ( div_by_w ) {
         real4 v4 = real4( v.c[0], v.c[1], v.c[2], 1.0 );
         real4 r4;
@@ -1856,28 +1881,9 @@ void Layout::Matrix::transform( const real3& v, real3& r, bool div_by_w ) const
     }
 }
 
-Layout::real4 Layout::Matrix::row( uint r ) const
-{
-    real4 v;
-    for( uint32_t c = 0; c < 4; c++ ) 
-    {
-        v.c[c] = m[r][c];
-    }
-    return v;
-}
-
-Layout::real4 Layout::Matrix::column( uint c ) const
-{
-    real4 v;
-    for( uint32_t r = 0; r < 4; r++ ) 
-    {
-        v.c[r] = m[r][c];
-    }
-    return v;
-}
-
 void Layout::Matrix::transform( const Matrix& M2, Matrix& M3 ) const
 {
+    // order: M3 = *this * M2
     for( uint r = 0; r < 4; r++ )
     {
         for( uint c = 0; c < 4; c++ )
