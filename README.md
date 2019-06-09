@@ -7,7 +7,7 @@ Table of Contents
       * [Advanced Layout Editing](#advanced-layout-editing)
       * [Example Programs](#example-programs)
 
-<h2 a="overview">Overview</h2>
+# Overview
 
 This repo contains a single Layout.h file that provides the following VLSI layout operations:
 
