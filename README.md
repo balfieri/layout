@@ -1,12 +1,3 @@
-Table of Contents
-=================
-
-      * [Overview](#overview)
-      * [Basics](#basics)
-      * [Instantiating Layouts](#instantiating-layouts)
-      * [Advanced Layout Editing](#advanced-layout-editing)
-      * [Example Programs](#example-programs)
-
 # Overview
 
 This repo contains a single Layout.h file that provides the following VLSI layout operations:
@@ -24,7 +15,7 @@ This repo contains a single Layout.h file that provides the following VLSI layou
 <li>writing out a single file with resultant edits</li>
 </ul>
 
-<h2>Basics</h2>
+# Basics
 
 0. Clone this repository.  This code should build on Linux, MacOS, and Cygwin with a C++14 compiler.</li>
 
@@ -68,15 +59,15 @@ layout->write_layer_info( "new_chip.tech" );     // writes out layer mapping inf
 layout->write_material_info( "new_chip.amat" );  // writes out material information used by HFSS
 ```
 
-<h2>Instantiating Layouts</h2>
+# Instantiating Layouts
 
 TBD 
 
-<h2>Advanced Layout Editing</h2>
+# Advanced Layout Editing
 
 TBD
 
-<h2>Example Programs</h2>
+# Example Programs
 
 <p>
 There are some example programs in this directory:
