@@ -1,3 +1,12 @@
+Table of Contents
+=================
+
+      * [Overview](#overview)
+      * [Basics](#basics)
+      * [Instantiating Layouts](#instantiating-layouts)
+      * [Advanced Layout Editing](#advanced-layout-editing)
+      * [Example Programs](#example-programs)
+
 <h2>Overview</h2>
 
 This repo contains a single Layout.h file that provides the following VLSI layout operations:
