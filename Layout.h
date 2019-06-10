@@ -3075,16 +3075,8 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
         {
             lassert( !is_hier, "BITARRAY not allowed for hier nodes" );
             lassert( byte_cnt == 2, "BITARRAY gdsii datatype should have 2-byte payload" );
-            if ( !count_only ) {
-                uint raw = (nnn[0] << 8) | nnn[1];
-                uint bits = 0;
-                for( uint i = 0; i < 16; i++ )
-                {
-                    uint bit = (raw >> (15-i)) & 1;
-                    bits |= bit << i;
-                }
-                nodes[ni].u.u = bits;
-            }
+
+            if ( !count_only ) nodes[ni].u.u = *reinterpret_cast<uint16_t *>( nnn );
             break;
         }
 
