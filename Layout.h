@@ -2275,9 +2275,10 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             // Bit 15 (the rightmost bit) and all remaining bits are reserved for future use and must be cleared. 
                             //-----------------------------------------------------
                             strans = child.u.u;
-                            sreflection = (strans >> 0)  & 1;
-                            abs_smag    = (strans >> 13) & 1;
-                            abs_sangle  = (strans >> 14) & 1;
+                            sreflection  = (strans >> 0)  & 1;
+                            sreflection |= (strans >> 7)  & 1;  // hack
+                            abs_smag     = (strans >> 13) & 1;
+                            abs_sangle   = (strans >> 14) & 1;
                             ldout << "strans=" << strans << " sreflection=" << sreflection << 
                                      " abs_smag=" << abs_smag << " abs_sangle=" << abs_sangle << "\n";
                             break;
@@ -2368,8 +2369,6 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                     sreflection = false;
                 }
                 lassert( struct_i != NULL_I, "SREF/AREF has no SNAME" );
-                real   dxy[2][2] = { { (xy[1][0] - xy[0][0]) / real(col_cnt), (xy[1][1] - xy[0][1]) / real(col_cnt) },
-                                     { (xy[2][0] - xy[0][0]) / real(row_cnt), (xy[2][1] - xy[0][1]) / real(row_cnt) } };
 
                 for( uint r = 0; r < row_cnt; r++ )
                 {
@@ -2396,8 +2395,12 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             inst_M.translate( tv );
                             ldout << "sref translate vec=" << tv << " M=\n" << inst_M << "\n";
                         } else {
-                            real x_translate = xy[0][0] + real(col_cnt)*dxy[0][0] + real(row_cnt)*dxy[1][0];
-                            real y_translate = xy[0][1] + real(col_cnt)*dxy[0][1] + real(row_cnt)*dxy[1][1];
+                            real dxy[2][2] = { { (xy[1][0] - xy[0][0]) / real(col_cnt), (xy[1][1] - xy[0][1]) / real(col_cnt) },
+                                               { (xy[2][0] - xy[0][0]) / real(row_cnt), (xy[2][1] - xy[0][1]) / real(row_cnt) } };
+                            real rr = r;
+                            real cc = c;
+                            real x_translate = xy[0][0] + cc*dxy[0][0] + rr*dxy[1][0];
+                            real y_translate = xy[0][1] + rr*dxy[1][1] + cc*dxy[0][1];
                             real3 tv{ x_translate, y_translate, 0 };
                             inst_M.translate( real3(x_translate, y_translate, 0) );
                             ldout << "aref translate vec=" << tv << " M=" << inst_M << "\n";
