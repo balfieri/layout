@@ -2278,6 +2278,8 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             sreflection = (strans >> 0)  & 1;
                             abs_smag    = (strans >> 13) & 1;
                             abs_sangle  = (strans >> 14) & 1;
+                            ldout << "strans=" << strans << " sreflection=" << sreflection << 
+                                     " abs_smag=" << abs_smag << " abs_sangle=" << abs_sangle << "\n";
                             break;
                         }
 
@@ -2378,10 +2380,10 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                         //-----------------------------------------------------
                         Matrix inst_M = M;
 
-                        if ( smag != 1.0 ) {
+                        if ( smag != 1.0 || sreflection ) {
                             real3 sv{ smag, sreflection ? -smag : smag, 1 };
                             inst_M.scale( sv );
-                            ldout << "scale mag=" << smag << " vec=" << sv << " new M=\n" << inst_M << "\n";
+                            ldout << "scale mag=" << smag << " sreflection=" << sreflection << " vec=" << sv << " new M=\n" << inst_M << "\n";
                         }
 
                         if ( sangle != 0.0 ) {
@@ -3073,7 +3075,16 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
         {
             lassert( !is_hier, "BITARRAY not allowed for hier nodes" );
             lassert( byte_cnt == 2, "BITARRAY gdsii datatype should have 2-byte payload" );
-            if ( !count_only ) nodes[ni].u.u = (nnn[1] << 8) | nnn[0];
+            if ( !count_only ) {
+                uint raw = (nnn[0] << 8) | nnn[1];
+                uint bits = 0;
+                for( uint i = 0; i < 16; i++ )
+                {
+                    uint bit = (raw >> (15-i)) & 1;
+                    bits |= bit << i;
+                }
+                nodes[ni].u.u = bits;
+            }
             break;
         }
 
