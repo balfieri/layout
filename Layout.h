@@ -439,7 +439,6 @@ public:
         void expand( const AABR& other );
         void expand( const real2& p );
         bool encloses( const AABR& other ) const;
-        bool hit( const real2& origin, const real2& direction, const real2& direction_inv, real tmin, real tmax ) const; 
     };
 
     // Bounding Area Hierarchy
@@ -447,7 +446,7 @@ public:
     enum class BAH_NODE_KIND                // for children
     {
         BAH_NODE,                           // BAH_Node
-        ELEMENT,                            // GDSII Element
+        LEAF_NODE,                          // leaf node        
     };
 
     class BAH_Node
@@ -479,7 +478,7 @@ public:
     Material *          materials;
     Layer *             layers;
     Node *              nodes;
-
+    
 
 
 
@@ -2885,20 +2884,69 @@ inline bool Layout::BAH_Node::bounding_rect( const Layout * layout, Layout::AABR
 uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name )
 {
     //------------------------------------------------------------
+    // Copy the layers from the source layout.
+    //------------------------------------------------------------
+    lassert( hdr->layer_cnt == 0, "deduplicate_layer(): should not have already copied all the layers" );
+    perhaps_realloc( layers, hdr->layer_cnt, max->layer_cnt, src_layout->hdr->layer_cnt );
+    hdr->layer_cnt = src_layout->hdr->layer_cnt;
+    memcpy( layers, src_layout->layers, hdr->layer_cnt * sizeof(layers[0]) );
+
+    //------------------------------------------------------------
     // Locate the the src struct.
+    // Copy it.
     //------------------------------------------------------------
     uint src_struct_name_i = src_layout->str_find( src_struct_name );
     auto it = src_layout->name_i_to_struct_i.find( src_struct_name_i );
     lassert( it != src_layout->name_i_to_struct_i.end(), "no src struct with the name " + src_struct_name + ", available structures:\n    " + src_layout->all_struct_names() );
     uint src_struct_i = it->second;
+    uint dst_struct_i = node_copy( uint(-1), uint(-1), src_layout, src_struct_i, COPY_KIND::ONE );
 
     //------------------------------------------------------------
-    // 
+    // Separate the elements into per-layer lists. 
+    // The elements should all be flattened before this routine is called.
     //------------------------------------------------------------
+    std::vector<uint> * leaf_nodes = new std::vector<uint>[hdr->layer_cnt];     
+    for( uint src_i = src_layout->nodes[src_struct_i].u.child_first_i; src_i != uint(-1); src_i = src_layout->nodes[src_i].sibling_i )
+    {
+        const Node& src_node = src_layout->nodes[src_i];
+        switch( src_node.kind ) 
+        {
+            case NODE_KIND::INT:
+            case NODE_KIND::STRNAME:
+            {
+                //------------------------------------------------------------
+                // Copy this scalar
+                //------------------------------------------------------------
+                break;
+            }
+
+            case NODE_KIND::BOUNDARY:
+            case NODE_KIND::PATH:
+            case NODE_KIND::TEXT:
+            case NODE_KIND::NODE:
+            {
+                //------------------------------------------------------------
+                // Copy this element.
+                // Add it to its layer's list of leaf nodes.
+                //------------------------------------------------------------
+                break;
+            }
+
+            default:
+            {
+                lassert( false, "deduplicate_layout() must be called with a flattened src_layout; found an unexpected " + str(src_node.kind) + " node" );
+                break;
+            }
+        }
+    }
 
     //------------------------------------------------------------
-    // 
+    // Recursively space-divide each layer's list, 
+    // deduplicating along the way.
     //------------------------------------------------------------
+    for( uint i = 0; i < hdr->layer_cnt; i++ )
+    {
+    }
     return uint(-1);
 }
 
