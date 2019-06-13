@@ -539,6 +539,7 @@ private:
     // struct info
     std::map< uint, uint >                      name_i_to_struct_i;
     std::vector<std::vector<Leaf_Node>>         layer_leaf_nodes;
+    std::vector<BAH_Node *>                     layer_bah_root;
 
     void init( bool alloc_arrays );
 
@@ -553,6 +554,8 @@ private:
                            uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
 
     void node_timestamp( Node& node );                  // adds timestamp fields
+
+    BAH_Node * bah_build( uint layer, uint first, uint n, uint axis );
 
     bool gdsii_read( std::string file_path, bool count_only ); // .gds
     bool gdsii_read_record( uint& node_i, uint curr_struct_i, bool count_only );
@@ -2986,10 +2989,77 @@ uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_
     // Recursively space-divide each layer's list, 
     // deduplicating along the way.
     //------------------------------------------------------------
+    layer_bah_root.clear();
+    layer_bah_root.resize( hdr->layer_cnt );
     for( uint i = 0; i < hdr->layer_cnt; i++ )
     {
+        if ( layer_leaf_nodes[i].size() != 0 ) {
+            layer_bah_root[i] = bah_build( i, 0, layer_leaf_nodes.size(), 0 );
+        } else {
+            layer_bah_root[i] = nullptr;
+        }
     }
     return NULL_I;
+}
+
+inline uint Layout::bah_qsplit( uint layer, uint first, uint n, real pivot, uint axis )
+{
+    const std::vector<Leaf_Node>& leaf_nodes = layer_leaf_nodes[layer];
+    uint m = first;
+
+    for( uint i = first; i < (first+n); i++ )
+    {
+        const AABR& rect = leaf_nodes[i].rect;
+        real centroid = (rect.min.c[axis] + rect.max.c[axis]) * 0.5;
+        if ( centroid < pivot ) {
+            Leaf_Node temp = leaf_nodes[i];
+            leaf_nodes[i]  = leaf_nodes[m];
+            leaf_nodes[m]  = temp;
+            m++;
+        }
+     }
+
+     assert( m >= first && m <= (first+n)  );
+     if ( m == first || m == (first +n) ) m = first + n/2;
+     return m;
+}
+
+Layout::BAH_Node * Layout::bah_build( uint layer, uint first, uint n, uint axis )
+{
+    const std::vector<Leaf_Node>& leaf_nodes = layer_leaf_nodes[layer];
+
+    BAH_Node * node = new BAH_Node;
+    for( uint i = 1; i < n; i++ )
+    {
+        node->rect.expand( leaf_nodes[i].rect );
+    }
+
+    if ( n == 1 || n == 2 ) {
+        node->left_i = first;
+        node->left_kind  = Model::BAH_CHILD_KIND::LEAF;
+        node->right_kind = Model::BAH_CHILD_KIND::LEAF;
+        assert( node->rect.encloses( leaf_nodes[first+0].rect ) );
+        if ( n == 2 ) {
+            assert( node->rect.encloses( leaf_nodes[first+1].rect ) );
+            node->right_i = first + 1;
+        } else {
+            node->right_i = first;
+        }
+
+    } else {
+        node->left_kind  = Model::BAH_CHILD_KIND::BAH;
+        node->right_kind = Model::BAH_CHILD_KIND::BAH;
+        real pivot = (node->rect.min.c[axis] + node->rect.max.c[axis]) * 0.5;
+        uint m = bah_qsplit( layer, first, n, pivot, axis );
+        uint nm = m - first;
+        uint left_i  = bah_build( layer, first, nm,   (axis + 1) % 2 );
+        uint right_i = bah_build( layer, m,     n-nm, (axis + 1) % 2 );
+        node->left_i  = left_i;
+        node->right_i = right_i;
+        assert( node->rect.encloses( bah_nodes[left_i].rect ) && node->rect.encloses( bah_nodes[right_i].rect ) );
+    }
+
+    return bah_i;
 }
 
 void Layout::fill_dielectrics( void )
