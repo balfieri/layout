@@ -198,9 +198,8 @@ public:
                       uint dst_layer_first, uint dst_layer_last, std::string name );
     void finalize_top_struct( uint parent_i, uint last_i, std::string top_name );              // use to create top-level struct of all insts
     bool layout_is_flattened( void ) const;
-    uint flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name="",
-                         const Matrix& M = Matrix() );  // straight copy with flattening
-    uint deduplicate_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name="" );
+    uint flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string struct_name, const Matrix& M = Matrix() );  // straight copy with flattening
+    uint deduplicate_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string struct_name );
      
      
     // fill of dielectrics or arbitrary material
@@ -1337,6 +1336,12 @@ inline std::ostream& operator << ( std::ostream& os, const Layout::Matrix& m )
           "  [" << m.m[1][0] << "," << m.m[1][1] << "," << m.m[1][2] << "," << m.m[1][3] << "],\n" << 
           "  [" << m.m[2][0] << "," << m.m[2][1] << "," << m.m[2][2] << "," << m.m[2][3] << "],\n" << 
           "  [" << m.m[3][0] << "," << m.m[3][1] << "," << m.m[3][2] << "," << m.m[3][3] << "] ]\n";
+    return os;
+}
+
+inline std::ostream& operator << ( std::ostream& os, const Layout::AABR r )
+{
+    os << r.min << " .. " << r.max;
     return os;
 }
 
@@ -2528,8 +2533,8 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
         real3 v;
         v.c[2] = 1.0;
         uint i = 0;
-        uint prev_i = uint(-1);
-        for( uint child_i = nodes[dst_i].u.child_first_i; child_i != uint(-1); child_i = nodes[child_i].sibling_i )
+        uint prev_i = NULL_I;
+        for( uint child_i = nodes[dst_i].u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
         {
             v.c[i&1] = real(nodes[child_i].u.i) * gdsii_units_user;
             if ( i&1 ) {
@@ -2611,6 +2616,71 @@ inline Layout::real Layout::length( void ) const
 inline Layout::real Layout::height( void ) const
 {
     return 0;
+}
+
+inline Layout::AABR::AABR( const Layout::real2& p )
+{
+    min = p;
+    max = p;
+}  
+
+inline Layout::AABR::AABR( const Layout * layout, const Layout::Node& element )
+{
+    uint xy_i = layout->node_xy_i( element );
+    lassert( xy_i != NULL_I, "element node " + str(element.kind) + " has no XY child node" );
+    bool have_x = false;
+    real2 xy;
+    for( uint child_i = layout->nodes[xy_i].u.child_first_i; child_i != NULL_I; child_i = layout->nodes[child_i].sibling_i )
+    {
+        const Node& child = layout->nodes[child_i];
+        lassert( child.kind == NODE_KIND::INT, "XY child should have been an INT" );
+        if ( !have_x ) {
+            xy.c[0] = child.u.i;
+        } else {
+            xy.c[1] = child.u.i;
+            expand( xy );
+        }
+        have_x = !have_x;
+    }
+    // TODO: pad PATH by WIDTH
+}
+
+inline void Layout::AABR::pad( Layout::real p ) 
+{
+    min -= real2( p, p );
+    max += real2( p, p );
+}
+
+inline void Layout::AABR::expand( const Layout::AABR& other )
+{
+    for( uint i = 0; i < 2; i++ )
+    {
+        if ( other.min.c[i] < min.c[i] ) min.c[i] = other.min.c[i];
+        if ( other.max.c[i] > max.c[i] ) max.c[i] = other.max.c[i];
+    }
+}
+
+inline void Layout::AABR::expand( const Layout::real2& p ) 
+{
+    if ( p.c[0] < min.c[0] ) min.c[0] = p.c[0];
+    if ( p.c[1] < min.c[1] ) min.c[1] = p.c[1];
+    if ( p.c[0] > max.c[0] ) max.c[0] = p.c[0];
+    if ( p.c[1] > max.c[1] ) max.c[1] = p.c[1];
+}
+
+inline bool Layout::AABR::encloses( const AABR& other ) const
+{
+    return min.c[0] <= other.min.c[0] &&
+           min.c[1] <= other.min.c[1] &&
+           max.c[0] >= other.max.c[0] &&
+           max.c[1] >= other.max.c[1];
+}
+
+inline bool Layout::BAH_Node::bounding_rect( const Layout * layout, Layout::AABR& r ) const
+{
+    (void)layout;
+    r = rect;
+    return true;
 }
 
 uint Layout::start_library( std::string libname, real units_user, real units_meters )
@@ -2825,89 +2895,30 @@ bool Layout::layout_is_flattened( void ) const
     return name_i_to_struct_i.size() <= 1;
 }
 
-uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name, 
-                             const Matrix& M )
+uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string struct_name, const Matrix& M )
 {
     //------------------------------------------------------------
     // Locate the the src struct.
     //------------------------------------------------------------
-    uint src_struct_name_i = src_layout->str_find( src_struct_name );
+    uint src_struct_name_i = src_layout->str_find( struct_name );
     auto it = src_layout->name_i_to_struct_i.find( src_struct_name_i );
-    lassert( it != src_layout->name_i_to_struct_i.end(), "no src struct with the name " + src_struct_name + ", available structures:\n    " + src_layout->all_struct_names() );
+    lassert( it != src_layout->name_i_to_struct_i.end(), "no src struct with the name " + struct_name + ", available structures:\n    " + src_layout->all_struct_names() );
     uint src_struct_i = it->second;
 
     //------------------------------------------------------------
     // Recursively copy the src_struct.
     //------------------------------------------------------------
-    return node_copy( parent_i, last_i, src_layout, src_struct_i, COPY_KIND::FLATTEN, M );
+    uint dst_struct_i = node_copy( parent_i, last_i, src_layout, src_struct_i, COPY_KIND::FLATTEN, M );
+    lassert( nodes[dst_struct_i].kind == NODE_KIND::BGNSTR, "should have gotten back a BGNSTR node after flatten-copy" );
+
+    uint dst_name_i = str_get( struct_name );
+    lassert( name_i_to_struct_i.find( dst_name_i ) == name_i_to_struct_i.end(), "struct name " + struct_name + " should not exist yet in flattened layout" );
+    name_i_to_struct_i[dst_name_i] = dst_struct_i;
+
+    return dst_struct_i;
 }
 
-inline Layout::AABR::AABR( const Layout::real2& p )
-{
-    min = p;
-    max = p;
-}  
-
-inline Layout::AABR::AABR( const Layout * layout, const Layout::Node& element )
-{
-    uint xy_i = layout->node_xy_i( element );
-    lassert( xy_i != uint(-1), "element node " + str(element.kind) + " has no XY child node" );
-    bool have_x = false;
-    real2 xy;
-    for( uint child_i = layout->nodes[xy_i].u.child_first_i; child_i != uint(-1); child_i = layout->nodes[child_i].sibling_i )
-    {
-        const Node& child = layout->nodes[child_i];
-        lassert( child.kind == NODE_KIND::INT, "XY child should have been an INT" );
-        if ( !have_x ) {
-            xy.c[0] = child.u.i;
-        } else {
-            xy.c[1] = child.u.i;
-            expand( xy );
-        }
-        have_x = !have_x;
-    }
-    // TODO: pad PATH by WIDTH
-}
-
-inline void Layout::AABR::pad( Layout::real p ) 
-{
-    min -= real2( p, p );
-    max += real2( p, p );
-}
-
-inline void Layout::AABR::expand( const Layout::AABR& other )
-{
-    for( uint i = 0; i < 2; i++ )
-    {
-        if ( other.min.c[i] < min.c[i] ) min.c[i] = other.min.c[i];
-        if ( other.max.c[i] > max.c[i] ) max.c[i] = other.max.c[i];
-    }
-}
-
-inline void Layout::AABR::expand( const Layout::real2& p ) 
-{
-    if ( p.c[0] < min.c[0] ) min.c[0] = p.c[0];
-    if ( p.c[1] < min.c[1] ) min.c[1] = p.c[1];
-    if ( p.c[0] > max.c[0] ) max.c[0] = p.c[0];
-    if ( p.c[1] > max.c[1] ) max.c[1] = p.c[1];
-}
-
-inline bool Layout::AABR::encloses( const AABR& other ) const
-{
-    return min.c[0] <= other.min.c[0] &&
-           min.c[1] <= other.min.c[1] &&
-           max.c[0] >= other.max.c[0] &&
-           max.c[1] >= other.max.c[1];
-}
-
-inline bool Layout::BAH_Node::bounding_rect( const Layout * layout, Layout::AABR& r ) const
-{
-    (void)layout;
-    r = rect;
-    return true;
-}
-
-uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name )
+uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name )
 {
     //------------------------------------------------------------
     // Locate the src struct.
@@ -2917,7 +2928,7 @@ uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_
     auto it = src_layout->name_i_to_struct_i.find( src_struct_name_i );
     lassert( it != src_layout->name_i_to_struct_i.end(), "no src struct with the name " + src_struct_name + ", available structures:\n    " + src_layout->all_struct_names() );
     uint src_struct_i = it->second;
-    uint dst_struct_i = node_copy( uint(-1), uint(-1), src_layout, src_struct_i, COPY_KIND::ONE );
+    uint dst_struct_i = node_copy( NULL_I, NULL_I, src_layout, src_struct_i, COPY_KIND::ONE );
     lassert( nodes[dst_struct_i].kind == NODE_KIND::BGNSTR, "deduplicate_layout() should have a BGNSTR node at this point" );
 
     //------------------------------------------------------------
@@ -2927,8 +2938,8 @@ uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_
     layer_leaf_nodes.clear();
     layer_leaf_nodes.resize( hdr->layer_cnt );
     bool seen_element = false;
-    uint dst_last_i = uint(-1);
-    for( uint src_i = src_layout->nodes[src_struct_i].u.child_first_i; src_i != uint(-1); src_i = src_layout->nodes[src_i].sibling_i )
+    uint dst_last_i = NULL_I;
+    for( uint src_i = src_layout->nodes[src_struct_i].u.child_first_i; src_i != NULL_I; src_i = src_layout->nodes[src_i].sibling_i )
     {
         const Node& src_node = src_layout->nodes[src_i];
         switch( src_node.kind ) 
@@ -2978,7 +2989,7 @@ uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_
     for( uint i = 0; i < hdr->layer_cnt; i++ )
     {
     }
-    return uint(-1);
+    return NULL_I;
 }
 
 void Layout::fill_dielectrics( void )
