@@ -425,6 +425,12 @@ public:
     uint        node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND kind, 
                            const Matrix& M = Matrix(), bool in_flatten=false );
 
+    struct TopInstInfo
+    {
+        uint            struct_i;
+        Matrix          M;
+    };
+
     // Axis-Aligned Bounding Rectangle
     //
     struct AABR
@@ -433,7 +439,8 @@ public:
         real2   max;
 
         AABR( void ) {}
-        AABR( const real2& p );             // init with one point
+        AABR( const real2& p );                                 // init with one point
+        AABR( const Layout * layout, const Node& element );     // init using all points in element
 
         void pad( real p );
         void expand( const AABR& other );
@@ -443,18 +450,23 @@ public:
 
     // Bounding Area Hierarchy
     //
-    enum class BAH_NODE_KIND                // for children
+    enum class BAH_CHILD_KIND               // for children
     {
-        BAH_NODE,                           // BAH_Node
-        LEAF_NODE,                          // leaf node        
+        LEAF,                               // Leaf_Node
+        BAH,                                // BAH_Node
     };
 
-    class BAH_Node
+    struct Leaf_Node
     {
-    public:
         AABR            rect;               // bounding rectangle
-        BAH_NODE_KIND   left_kind;          // see kinds above
-        BAH_NODE_KIND   right_kind;         // see kinds above
+        uint            node_i;             // in nodes[] array
+    };
+
+    struct BAH_Node
+    {
+        AABR            rect;               // bounding rectangle
+        BAH_CHILD_KIND  left_kind;          // BAH_Node or Leaf_Node
+        BAH_CHILD_KIND  right_kind;         // BAH_Node or Leaf_Node
         uint            left_i;             // index into appropriate kind array for left subtree 
         uint            right_i;            // index into appropriate kind array for right subtree 
 
@@ -478,8 +490,7 @@ public:
     Material *          materials;
     Layer *             layers;
     Node *              nodes;
-    
-
+    TopInstInfo *       top_insts;
 
 
 //------------------------------------------------------------------------------
@@ -528,20 +539,14 @@ private:
 
     // struct info
     std::map< uint, uint >                      name_i_to_struct_i;
-    std::map< uint, std::map<uint, bool> * > *  struct_i_to_has_layer;
-    std::string all_struct_names( std::string delim = "\n    " ) const;
+    std::vector<std::vector<Leaf_Node>>         layer_leaf_nodes;
 
     void init( bool alloc_arrays );
 
+    std::string all_struct_names( std::string delim = "\n    " ) const;
+
     bool layout_read( std::string file_path );          // .layout
     bool layout_write( std::string file_path );         
-
-    struct TopInstInfo
-    {
-        uint            struct_i;
-        Matrix          M;
-    };
-    TopInstInfo *       top_insts;
 
     using has_layer_cache_t = std::map< uint, std::map<uint, bool>* >;
     bool node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache, std::string indent_str ) const;
@@ -2843,6 +2848,27 @@ inline Layout::AABR::AABR( const Layout::real2& p )
     max = p;
 }  
 
+inline Layout::AABR::AABR( const Layout * layout, const Layout::Node& element )
+{
+    uint xy_i = layout->node_xy_i( element );
+    lassert( xy_i != uint(-1), "element node " + str(element.kind) + " has no XY child node" );
+    bool have_x = false;
+    real2 xy;
+    for( uint child_i = layout->nodes[xy_i].u.child_first_i; child_i != uint(-1); child_i = layout->nodes[child_i].sibling_i )
+    {
+        const Node& child = layout->nodes[child_i];
+        lassert( child.kind == NODE_KIND::INT, "XY child should have been an INT" );
+        if ( !have_x ) {
+            xy.c[0] = child.u.i;
+        } else {
+            xy.c[1] = child.u.i;
+            expand( xy );
+        }
+        have_x = !have_x;
+    }
+    // TODO: pad PATH by WIDTH
+}
+
 inline void Layout::AABR::pad( Layout::real p ) 
 {
     min -= real2( p, p );
@@ -2884,15 +2910,7 @@ inline bool Layout::BAH_Node::bounding_rect( const Layout * layout, Layout::AABR
 uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, std::string dst_struct_name )
 {
     //------------------------------------------------------------
-    // Copy the layers from the source layout.
-    //------------------------------------------------------------
-    lassert( hdr->layer_cnt == 0, "deduplicate_layer(): should not have already copied all the layers" );
-    perhaps_realloc( layers, hdr->layer_cnt, max->layer_cnt, src_layout->hdr->layer_cnt );
-    hdr->layer_cnt = src_layout->hdr->layer_cnt;
-    memcpy( layers, src_layout->layers, hdr->layer_cnt * sizeof(layers[0]) );
-
-    //------------------------------------------------------------
-    // Locate the the src struct.
+    // Locate the src struct.
     // Copy it.
     //------------------------------------------------------------
     uint src_struct_name_i = src_layout->str_find( src_struct_name );
@@ -2900,12 +2918,16 @@ uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_
     lassert( it != src_layout->name_i_to_struct_i.end(), "no src struct with the name " + src_struct_name + ", available structures:\n    " + src_layout->all_struct_names() );
     uint src_struct_i = it->second;
     uint dst_struct_i = node_copy( uint(-1), uint(-1), src_layout, src_struct_i, COPY_KIND::ONE );
+    lassert( nodes[dst_struct_i].kind == NODE_KIND::BGNSTR, "deduplicate_layout() should have a BGNSTR node at this point" );
 
     //------------------------------------------------------------
     // Separate the elements into per-layer lists. 
     // The elements should all be flattened before this routine is called.
     //------------------------------------------------------------
-    std::vector<uint> * leaf_nodes = new std::vector<uint>[hdr->layer_cnt];     
+    layer_leaf_nodes.clear();
+    layer_leaf_nodes.resize( hdr->layer_cnt );
+    bool seen_element = false;
+    uint dst_last_i = uint(-1);
     for( uint src_i = src_layout->nodes[src_struct_i].u.child_first_i; src_i != uint(-1); src_i = src_layout->nodes[src_i].sibling_i )
     {
         const Node& src_node = src_layout->nodes[src_i];
@@ -2917,6 +2939,8 @@ uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_
                 //------------------------------------------------------------
                 // Copy this scalar
                 //------------------------------------------------------------
+                lassert( !seen_element, "BGNSTR scalar occurs after an element - not expected" );
+                dst_last_i = node_copy( dst_struct_i, dst_last_i, src_layout, src_i, COPY_KIND::ONE );
                 break;
             }
 
@@ -2929,6 +2953,13 @@ uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_
                 // Copy this element.
                 // Add it to its layer's list of leaf nodes.
                 //------------------------------------------------------------
+                dst_last_i = node_copy( dst_struct_i, dst_last_i, src_layout, src_i, COPY_KIND::DEEP );
+                Leaf_Node leaf;
+                leaf.rect = AABR( this, nodes[dst_last_i] );
+                leaf.node_i = dst_last_i;
+                uint layer = node_layer( nodes[dst_last_i] );
+                lassert( layer < hdr->layer_cnt, "unexpected layer number in element" );
+                layer_leaf_nodes[layer].push_back( leaf );
                 break;
             }
 
