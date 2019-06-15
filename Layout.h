@@ -190,6 +190,14 @@ public:
         void   transpose( Matrix& mt ) const;           // return the transpose of this matrix 
     };
 
+    enum class CONFLICT_POLICY
+    {
+        MERGE_NONE_KEEP_ALL,                            // keep any conflict w/o merging
+        MERGE_NONE_ALLOW_NONE,                          // abort if any conflict is encountered
+        MERGE_EXACT_ONLY,                               // merge exact overlaps only; abort partial overlaps
+        MERGE_ALL,                                      // merge any conflict, including partial overlaps (not implemented yet)
+    };
+
     // instancing of other layouts
     uint inst_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, std::string name );
     uint inst_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, real x, real y, 
@@ -198,8 +206,7 @@ public:
                       uint dst_layer_first, uint dst_layer_last, std::string name );
     void finalize_top_struct( uint parent_i, uint last_i, std::string top_name );              // use to create top-level struct of all insts
     bool layout_is_flattened( void ) const;
-    uint flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string struct_name, const Matrix& M = Matrix() );  // straight copy with flattening
-    uint deduplicate_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string struct_name );
+    uint flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string struct_name, CONFLICT_POLICY policy, const Matrix& M = Matrix() );  
      
      
     // fill of dielectrics or arbitrary material
@@ -449,27 +456,16 @@ public:
 
     // Bounding Area Hierarchy
     //
-    enum class BAH_CHILD_KIND               // for children
-    {
-        LEAF,                               // Leaf_Node
-        BAH,                                // BAH_Node
-    };
-
     struct Leaf_Node
     {
-        AABR            rect;               // bounding rectangle
         uint            node_i;             // in nodes[] array
+        AABR            brect;              // bounding rectangle
     };
 
-    struct BAH_Node
+    struct BAH_Node                         // quadtree node, bounding rect is implicit based on position in tree
     {
-        AABR            rect;               // bounding rectangle
-        BAH_CHILD_KIND  left_kind;          // BAH_Node or Leaf_Node
-        BAH_CHILD_KIND  right_kind;         // BAH_Node or Leaf_Node
-        uint            left_i;             // index into appropriate kind array for left subtree 
-        uint            right_i;            // index into appropriate kind array for right subtree 
-
-        bool bounding_rect( const Layout * layout, AABR& r ) const;
+        uint            child[2][2];        // bah_nodes[] or leaf_nodes[] index for quad space
+        bool            child_is_leaf[2][2];// true=Leaf_Node, false=is BAH_Node
     };
 
     static GDSII_DATATYPE kind_to_datatype( NODE_KIND kind );
@@ -2679,13 +2675,6 @@ inline bool Layout::AABR::encloses( const AABR& other ) const
            max.c[1] >= other.max.c[1];
 }
 
-inline bool Layout::BAH_Node::bounding_rect( const Layout * layout, Layout::AABR& r ) const
-{
-    (void)layout;
-    r = rect;
-    return true;
-}
-
 uint Layout::start_library( std::string libname, real units_user, real units_meters )
 {
     lassert( hdr->root_i == NULL_I, "starting a library when layout is not empty" );
@@ -2898,7 +2887,7 @@ bool Layout::layout_is_flattened( void ) const
     return name_i_to_struct_i.size() <= 1;
 }
 
-uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string struct_name, const Matrix& M )
+uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string struct_name, CONFLICT_POLICY policy, const Matrix& M )
 {
     //------------------------------------------------------------
     // Locate the the src struct.
@@ -2921,6 +2910,7 @@ uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layo
     return dst_struct_i;
 }
 
+#if 0
 uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name )
 {
     //------------------------------------------------------------
@@ -2969,7 +2959,7 @@ uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_
                 //------------------------------------------------------------
                 dst_last_i = node_copy( dst_struct_i, dst_last_i, src_layout, src_i, COPY_KIND::DEEP );
                 Leaf_Node leaf;
-                leaf.rect = AABR( this, nodes[dst_last_i] );
+                leaf.brect = AABR( this, nodes[dst_last_i] );
                 leaf.node_i = dst_last_i;
                 uint layer = node_layer( nodes[dst_last_i] );
                 lassert( layer < hdr->layer_cnt, "unexpected layer number in element" );
@@ -3002,28 +2992,6 @@ uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_
     return NULL_I;
 }
 
-inline uint Layout::bah_qsplit( uint layer, uint first, uint n, real pivot, uint axis )
-{
-    const std::vector<Leaf_Node>& leaf_nodes = layer_leaf_nodes[layer];
-    uint m = first;
-
-    for( uint i = first; i < (first+n); i++ )
-    {
-        const AABR& rect = leaf_nodes[i].rect;
-        real centroid = (rect.min.c[axis] + rect.max.c[axis]) * 0.5;
-        if ( centroid < pivot ) {
-            Leaf_Node temp = leaf_nodes[i];
-            leaf_nodes[i]  = leaf_nodes[m];
-            leaf_nodes[m]  = temp;
-            m++;
-        }
-     }
-
-     assert( m >= first && m <= (first+n)  );
-     if ( m == first || m == (first +n) ) m = first + n/2;
-     return m;
-}
-
 Layout::BAH_Node * Layout::bah_build( uint layer, uint first, uint n, uint axis )
 {
     const std::vector<Leaf_Node>& leaf_nodes = layer_leaf_nodes[layer];
@@ -3031,16 +2999,16 @@ Layout::BAH_Node * Layout::bah_build( uint layer, uint first, uint n, uint axis 
     BAH_Node * node = new BAH_Node;
     for( uint i = 1; i < n; i++ )
     {
-        node->rect.expand( leaf_nodes[i].rect );
+        node->brect.expand( leaf_nodes[i].brect );
     }
 
     if ( n == 1 || n == 2 ) {
         node->left_i = first;
         node->left_kind  = Model::BAH_CHILD_KIND::LEAF;
         node->right_kind = Model::BAH_CHILD_KIND::LEAF;
-        assert( node->rect.encloses( leaf_nodes[first+0].rect ) );
+        assert( node->brect.encloses( leaf_nodes[first+0].brect ) );
         if ( n == 2 ) {
-            assert( node->rect.encloses( leaf_nodes[first+1].rect ) );
+            assert( node->brect.encloses( leaf_nodes[first+1].brect ) );
             node->right_i = first + 1;
         } else {
             node->right_i = first;
@@ -3049,18 +3017,19 @@ Layout::BAH_Node * Layout::bah_build( uint layer, uint first, uint n, uint axis 
     } else {
         node->left_kind  = Model::BAH_CHILD_KIND::BAH;
         node->right_kind = Model::BAH_CHILD_KIND::BAH;
-        real pivot = (node->rect.min.c[axis] + node->rect.max.c[axis]) * 0.5;
+        real pivot = (node->brect.min.c[axis] + node->brect.max.c[axis]) * 0.5;
         uint m = bah_qsplit( layer, first, n, pivot, axis );
         uint nm = m - first;
         uint left_i  = bah_build( layer, first, nm,   (axis + 1) % 2 );
         uint right_i = bah_build( layer, m,     n-nm, (axis + 1) % 2 );
         node->left_i  = left_i;
         node->right_i = right_i;
-        assert( node->rect.encloses( bah_nodes[left_i].rect ) && node->rect.encloses( bah_nodes[right_i].rect ) );
+        assert( node->brect.encloses( bah_nodes[left_i].brect ) && node->brect.encloses( bah_nodes[right_i].brect ) );
     }
 
     return bah_i;
 }
+#endif
 
 void Layout::fill_dielectrics( void )
 {
