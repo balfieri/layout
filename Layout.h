@@ -427,9 +427,11 @@ public:
         DEEP,                               // copy all children and descendents
         FLATTEN,                            // copy all children but flatten all REFs
     };
+
     uint        node_alloc( NODE_KIND kind );                   // allocate a node of the given kind
     uint        node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND kind, 
                            const Matrix& M = Matrix(), bool in_flatten=false );
+    void        node_timestamp( Node& node );                   // adds timestamp fields to node
 
     struct TopInstInfo
     {
@@ -507,17 +509,24 @@ public:
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
 private:
-    // maps of strings to array indexes
-    std::map<std::string, uint>         str_to_str_i;           // maps std::string to unique location in strings[]
+    void init( bool alloc_arrays );
 
-    // state used during reading of files
-    std::string ext_name;
-    uint8_t * nnn_start;
-    uint8_t * nnn_end;
-    uint8_t * nnn;
-    uint      line_num;
+    // STRUCTS
+    std::map<std::string, uint>                 str_to_str_i;           // maps std::string to unique location in strings[]
+    std::map< uint, uint >                      name_i_to_struct_i;
+    std::string all_struct_names( std::string delim = "\n    " ) const;
 
-    // state used during reading and and writing of GDSII files
+    // INSTANCING
+    using has_layer_cache_t = std::map< uint, std::map<uint, bool>* >;
+    bool node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache, std::string indent_str ) const;
+    uint inst_layout_node( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, 
+                           uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
+
+    // LAYOUT I/O
+    bool layout_read( std::string file_path );          // .layout
+    bool layout_write( std::string file_path );         
+
+    // GDSII I/O
     uint        gdsii_rec_cnt;
     NODE_KIND   gdsii_last_kind;
     int         gdsii_fd;
@@ -525,33 +534,6 @@ private:
     uint        gdsii_buff_byte_cnt;
     real        gdsii_units_user;
     real        gdsii_units_meters;
-
-    // state used during reading and and writing of AEDT files
-    uint aedt_begin_str_i;              // these are to make it easier to compare
-    uint aedt_end_str_i;
-    uint true_str_i;
-    uint false_str_i;
-
-    // struct info
-    std::map< uint, uint >                      name_i_to_struct_i;
-    std::vector<std::vector<Leaf_Node>>         layer_leaf_nodes;
-    std::vector<BAH_Node *>                     layer_bah_root;
-
-    void init( bool alloc_arrays );
-
-    std::string all_struct_names( std::string delim = "\n    " ) const;
-
-    bool layout_read( std::string file_path );          // .layout
-    bool layout_write( std::string file_path );         
-
-    using has_layer_cache_t = std::map< uint, std::map<uint, bool>* >;
-    bool node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache, std::string indent_str ) const;
-    uint inst_layout_node( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, 
-                           uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
-
-    void node_timestamp( Node& node );                  // adds timestamp fields
-
-    BAH_Node * bah_build( uint layer, uint first, uint n, uint axis );
 
     bool gdsii_read( std::string file_path, bool count_only ); // .gds
     bool gdsii_read_record( uint& node_i, uint curr_struct_i, bool count_only );
@@ -561,6 +543,12 @@ private:
     void gdsii_write_bytes( const uint8_t * bytes, uint byte_cnt );
     void gdsii_flush( bool for_end_of_file=false );
     
+    // AEDT I/O
+    uint aedt_begin_str_i;              // these are to make it easier to compare
+    uint aedt_end_str_i;
+    uint true_str_i;
+    uint false_str_i;
+
     bool aedt_read( std::string file );                 // .aedt
     bool aedt_read_expr( uint& node_i );
     bool aedt_write( std::string file, bool for_raw );
@@ -571,9 +559,14 @@ private:
 
     bool hfss_write_material_info( std::string file );
 
-    bool cmd( std::string c );
-    bool open_and_read( std::string file_name, uint8_t *& start, uint8_t *& end );
+    // PARSING
+    std::string ext_name;
+    uint8_t * nnn_start;
+    uint8_t * nnn_end;
+    uint8_t * nnn;
+    uint      line_num;
 
+    bool open_and_read( std::string file_name, uint8_t *& start, uint8_t *& end );
     void skip_whitespace_to_eol( uint8_t *& xxx, uint8_t *& xxx_end );  // on this line only
     void skip_whitespace( uint8_t *& xxx, uint8_t *& xxx_end );
     void skip_to_eol( uint8_t *& xxx, uint8_t *& xxx_end );
@@ -589,6 +582,9 @@ private:
     bool parse_uint( uint& u, uint8_t *& xxx, uint8_t *& xxx_end );
     bool parse_bool( bool& b, uint8_t *& xxx, uint8_t *& xxx_end );
     std::string surrounding_lines( uint8_t *& xxx, uint8_t *& xxx_end );
+
+    // SYSTEM 
+    bool cmd( std::string c );
 
     // allocates an array of T on a page boundary
     template<typename T>
@@ -2247,313 +2243,6 @@ inline uint Layout::node_xy_i( const Node& node ) const
     return NULL_I;
 }
 
-inline uint Layout::node_alloc( NODE_KIND kind )
-{
-    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
-    uint ni = hdr->node_cnt++;
-    nodes[ni].kind = kind;
-    nodes[ni].sibling_i = NULL_I;
-    nodes[ni].u.child_first_i = NULL_I;
-    return ni;
-}
-
-inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND kind, const Matrix& M, bool in_flatten )
-{
-    const Node& src_node = src_layout->nodes[src_i];
-    if ( kind == COPY_KIND::FLATTEN ) {
-        //-----------------------------------------------------
-        // Flattening handles certain nodes differently than hier copies.
-        //-----------------------------------------------------
-        switch( src_node.kind )
-        {
-            case NODE_KIND::STRNAME:
-            {
-                //-----------------------------------------------------
-                // Blow off this node if we're in a struct that's
-                // being flattened.
-                //-----------------------------------------------------
-                if ( in_flatten ) return NULL_I;
-                break;
-            }
-
-            case NODE_KIND::SREF:
-            case NODE_KIND::AREF:
-            {
-                //-----------------------------------------------------
-                // First extract the instancing params.
-                //-----------------------------------------------------
-                const Node * src_nodes = src_layout->nodes;
-                uint sname_i = NULL_I;
-                uint struct_i = NULL_I;
-                uint strans = 0;
-                real smag = 1.0;
-                real sangle = 0.0;
-                bool abs_smag = false;
-                bool abs_sangle = false;
-                bool sreflection = false;
-                uint col_cnt = 1;
-                uint row_cnt = 1;
-                real xy[3][2] = { {0, 0}, {0, 0}, {0, 0} };
-                for( uint src_i = src_node.u.child_first_i; src_i != NULL_I; src_i = src_nodes[src_i].sibling_i )
-                {
-                    const Node& child = src_nodes[src_i];
-                    switch( child.kind )
-                    {
-                        case NODE_KIND::SNAME:
-                        {
-                            lassert( sname_i == NULL_I, "SREF/AREF has duplicate SNAME child" );
-                            sname_i = child.u.s_i;
-                            auto it = src_layout->name_i_to_struct_i.find( sname_i );
-                            lassert( it != src_layout->name_i_to_struct_i.end(), "SREF/AREF SNAME " + std::string(&src_layout->strings[sname_i]) + 
-                                                                                 " does not denote a known struct; available structs are:\n" + all_struct_names() );
-                            struct_i = it->second;
-                            break;
-                        }
-
-                        case NODE_KIND::STRANS:
-                        {
-                            //-----------------------------------------------------
-                            // Bit 0 (the leftmost bit) specifies reflection. If it is set, then reflection 
-                            // about the X-axis is applied before angular rotation. For AREFs, the entire array lattice is reflected, 
-                            // with the individual array elements rigidly attached. 
-                            // 
-                            // Bit 13 flags absolute magnification. 
-                            // Bit 14 flags absolute angle. 
-                            //
-                            // Bit 15 (the rightmost bit) and all remaining bits are reserved for future use and must be cleared. 
-                            //-----------------------------------------------------
-                            strans = child.u.u;
-                            sreflection  = (strans >> 0)  & 1;
-                            sreflection |= (strans >> 7)  & 1;  // hack
-                            abs_smag     = (strans >> 13) & 1;
-                            abs_sangle   = (strans >> 14) & 1;
-                            ldout << "strans=" << strans << " sreflection=" << sreflection << 
-                                     " abs_smag=" << abs_smag << " abs_sangle=" << abs_sangle << "\n";
-                            break;
-                        }
-
-                        case NODE_KIND::MAG:
-                        {
-                            uint gchild_i = child.u.child_first_i;
-                            lassert( src_nodes[gchild_i].kind == NODE_KIND::REAL, "MAG node does not have a child that is a REAL" );
-                            smag = src_nodes[gchild_i].u.r;
-                            break;
-                        }
-
-                        case NODE_KIND::ANGLE:
-                        {
-                            //-----------------------------------------------------
-                            // For an AREF, the ANGLE rotates the entire array lattice (with the individual 
-                            // array elements rigidly attached) about the array reference point. 
-                            // If this record is omitted, an angle of zero degrees is as- sumed.
-                            //
-                            // Convert from degrees to radians.
-                            //-----------------------------------------------------
-                            uint gchild_i = child.u.child_first_i;
-                            lassert( src_nodes[gchild_i].kind == NODE_KIND::REAL, "ANGLE node does not have a child that is a REAL" );
-                            ldout << "raw angle=" << src_nodes[gchild_i].u.r << "\n";
-                            sangle = src_nodes[gchild_i].u.r * real(M_PI) / 180.0;
-                            break;
-                        }
-
-                        case NODE_KIND::COLROW:
-                        {
-                            //-----------------------------------------------------
-                            // Array dimensions
-                            //-----------------------------------------------------
-                            lassert( src_node.kind == NODE_KIND::AREF, "COLROW not allowed for an SREF" );
-                            uint gchild_i = child.u.child_first_i;
-                            lassert( gchild_i != NULL_I, "COLROW has no COL value" );
-                            lassert( src_nodes[gchild_i].kind == NODE_KIND::INT, "COLROW COL is not an INT" );
-                            col_cnt = src_nodes[gchild_i].u.i;
-                            lassert( col_cnt > 0, "COLROW COL must be non-zero" );
-
-                            gchild_i = src_nodes[gchild_i].sibling_i;
-                            lassert( gchild_i != NULL_I, "COLROW has no ROW value" );
-                            lassert( src_nodes[gchild_i].kind == NODE_KIND::INT, "COLROW ROW is not an INT" );
-                            row_cnt = src_nodes[gchild_i].u.i;
-                            lassert( row_cnt > 0, "COLROW ROW must be non-zero" );
-                            break;
-                        }
-                             
-                        case NODE_KIND::XY:
-                        {
-                            //-----------------------------------------------------
-                            // A text or SREF element must have only one pair of coordinates.
-                            //
-                            // An AREF has exactly three pairs of coordinates, which specify the orthogonal array lattice. 
-                            // In an AREF the first point is the array reference point. 
-                            // The second point locates a position which is dis- placed from the reference point by 
-                            // the inter-column spacing times the number of columns. 
-                            // The third point locates a position which is displaced from the reference 
-                            // point by the inter-row spacing times the number of rows.
-                            //-----------------------------------------------------
-                            uint i = 0;
-                            for( uint gchild_i = child.u.child_first_i; gchild_i != NULL_I; gchild_i = src_nodes[gchild_i].sibling_i )
-                            {
-                                lassert( i < 2 || src_node.kind == NODE_KIND::AREF, "SREF may not have more than 2 XY coords" );
-                                lassert( i < 6, "AREF may not have more than 6 XY coords" );
-                                xy[i>>1][i&1] = real(src_nodes[gchild_i].u.i) * src_layout->gdsii_units_user;
-                                i++;
-                            }
-                            lassert( i == 2 || i == 6, "wrong number of XY coords for " + str(src_node.kind) );
-                            break;
-                        }
-
-                        default:
-                        {
-                            lassert( false, "unexpected SREF/AREF child node: " + str(child.kind) );
-                            break;
-                        }
-                    }
-                }
-
-                //-----------------------------------------------------
-                // Now the fun part.
-                //-----------------------------------------------------
-                if ( src_node.kind == NODE_KIND::AREF ) {
-                    smag = 1.0;
-                    sangle = 0.0;
-                    sreflection = false;
-                }
-                lassert( struct_i != NULL_I, "SREF/AREF has no SNAME" );
-
-                for( uint r = 0; r < row_cnt; r++ )
-                {
-                    for( uint c = 0; c < col_cnt; c++ )
-                    {
-                        //-----------------------------------------------------
-                        // Apply transformations to previous ones.
-                        //-----------------------------------------------------
-                        Matrix inst_M = M;
-
-                        if ( smag != 1.0 || sreflection ) {
-                            real3 sv{ smag, sreflection ? -smag : smag, 1 };
-                            inst_M.scale( sv );
-                            ldout << "scale mag=" << smag << " sreflection=" << sreflection << " vec=" << sv << " new M=\n" << inst_M << "\n";
-                        }
-
-                        if ( sangle != 0.0 ) {
-                            inst_M.rotate_xy( sangle );
-                            ldout << "rotate angle=" << sangle << " new M=\n" << inst_M << "\n";
-                        }
-
-                        if ( src_node.kind == NODE_KIND::SREF ) {
-                            real3 tv{ xy[0][0], xy[0][1], 0 };
-                            inst_M.translate( tv );
-                            ldout << "sref translate vec=" << tv << " M=\n" << inst_M << "\n";
-                        } else {
-                            real dxy[2][2] = { { (xy[1][0] - xy[0][0]) / real(col_cnt), (xy[1][1] - xy[0][1]) / real(col_cnt) },
-                                               { (xy[2][0] - xy[0][0]) / real(row_cnt), (xy[2][1] - xy[0][1]) / real(row_cnt) } };
-                            real rr = r;
-                            real cc = c;
-                            real x_translate = xy[0][0] + cc*dxy[0][0] + rr*dxy[1][0];
-                            real y_translate = xy[0][1] + rr*dxy[1][1] + cc*dxy[0][1];
-                            real3 tv{ x_translate, y_translate, 0 };
-                            inst_M.translate( real3(x_translate, y_translate, 0) );
-                            ldout << "aref translate vec=" << tv << " M=" << inst_M << "\n";
-                        }
-
-                        //-----------------------------------------------------
-                        // Copy the structure's children with new transformations.
-                        // But first skip the timestamp which we do not need.
-                        //-----------------------------------------------------
-                        uint src_child_i = src_nodes[struct_i].u.child_first_i;
-                        for( uint j = 0; j < 12; j++ )
-                        {
-                            lassert( src_child_i != NULL_I && src_nodes[src_child_i].kind == NODE_KIND::INT, 
-                                     "structure " + std::string(&src_layout->strings[sname_i]) + " timestamp ended prematurely" );
-                            src_child_i = src_nodes[src_child_i].sibling_i;
-                        }
-                        for( ; src_child_i != NULL_I; src_child_i = src_nodes[src_child_i].sibling_i )
-                        {
-                            uint dst_child_i = node_copy( parent_i, last_i, src_layout, src_child_i, kind, inst_M, true );
-                            if ( dst_child_i != NULL_I ) last_i = dst_child_i;
-                        }
-                    }
-                }
-                return last_i;
-            }
-
-            default:
-            {
-                //-----------------------------------------------------
-                // We can copy this node.
-                //-----------------------------------------------------
-                break;
-            }
-        }
-    }
-
-    //-----------------------------------------------------
-    // Copy the main node.
-    //-----------------------------------------------------
-    uint dst_i = node_alloc( src_node.kind );
-    bool src_is_parent = src_layout->node_is_parent( src_node );
-    if ( src_is_parent ) {
-        nodes[dst_i].u.child_first_i = NULL_I;
-        if ( kind != COPY_KIND::ONE ) {
-            //-----------------------------------------------------
-            // Copy children.
-            //-----------------------------------------------------
-            uint dst_prev_i = NULL_I;
-            for( src_i = src_node.u.child_first_i; src_i != NULL_I; src_i = src_layout->nodes[src_i].sibling_i )
-            {
-                if ( kind != COPY_KIND::DEEP && kind != COPY_KIND::FLATTEN && !node_is_scalar( src_layout->nodes[src_i] ) ) break;
-
-                dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, kind, M );
-            }
-        }
-    } else {
-        if ( node_is_string( src_node ) ) {
-            nodes[dst_i].u.s_i = str_get( &src_layout->strings[src_node.u.s_i] );
-        } else {
-            nodes[dst_i].u = src_node.u;
-        }
-    }
-    
-    //-----------------------------------------------------
-    // Connect the new node.
-    //-----------------------------------------------------
-    if ( last_i != NULL_I ) {
-        lassert( nodes[last_i].sibling_i == NULL_I, "node_copy: nodes[last_i] sibling_i is already set" ); 
-        lassert( parent_i == NULL_I || nodes[parent_i].u.child_first_i != NULL_I, "node_copy: nodes[parent_i] is not set but last_i is set" );
-        nodes[last_i].sibling_i = dst_i;
-    } else if ( parent_i != NULL_I ) {
-        lassert( nodes[parent_i].u.child_first_i == NULL_I, "node_copy: nodes[parent_i] child_first_i is already set but last_i is NULL_I" ); 
-        nodes[parent_i].u.child_first_i = dst_i;
-    }
-
-    if ( nodes[dst_i].kind == NODE_KIND::XY ) {
-        //-----------------------------------------------------
-        // Transform each X,Y pair by M.
-        //-----------------------------------------------------
-        bool is_y = false;
-        real3 v;
-        v.c[2] = 1.0;
-        uint i = 0;
-        uint prev_i = NULL_I;
-        for( uint child_i = nodes[dst_i].u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
-        {
-            v.c[i&1] = real(nodes[child_i].u.i) * gdsii_units_user;
-            if ( i&1 ) {
-                real3 r;
-                M.transform( v, r, true ); // divide by w
-                if ( kind == COPY_KIND::FLATTEN ) {
-                    ldout << "M=\n" << M << "\n";
-                    ldout << "v=" << v << "\n";
-                    ldout << "r=" << r << "\n";
-                }
-                nodes[prev_i].u.i  = r.c[0] / gdsii_units_user + 0.5;  // new X
-                nodes[child_i].u.i = r.c[1] / gdsii_units_user + 0.5;  // new Y
-            }
-            i++;
-            prev_i = child_i;
-        }
-    }
-    return dst_i;
-}
-
 void Layout::node_timestamp( Node& node )
 {
     lassert( node.kind == NODE_KIND::BGNLIB || node.kind == NODE_KIND::BGNSTR, "node_timestamp: node must be BGNLIB or BGNSTR" );
@@ -2910,127 +2599,6 @@ uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layo
     return dst_struct_i;
 }
 
-#if 0
-uint Layout::deduplicate_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name )
-{
-    //------------------------------------------------------------
-    // Locate the src struct.
-    // Copy it.
-    //------------------------------------------------------------
-    uint src_struct_name_i = src_layout->str_find( src_struct_name );
-    auto it = src_layout->name_i_to_struct_i.find( src_struct_name_i );
-    lassert( it != src_layout->name_i_to_struct_i.end(), "no src struct with the name " + src_struct_name + ", available structures:\n    " + src_layout->all_struct_names() );
-    uint src_struct_i = it->second;
-    uint dst_struct_i = node_copy( NULL_I, NULL_I, src_layout, src_struct_i, COPY_KIND::ONE );
-    lassert( nodes[dst_struct_i].kind == NODE_KIND::BGNSTR, "deduplicate_layout() should have a BGNSTR node at this point" );
-
-    //------------------------------------------------------------
-    // Separate the elements into per-layer lists. 
-    // The elements should all be flattened before this routine is called.
-    //------------------------------------------------------------
-    layer_leaf_nodes.clear();
-    layer_leaf_nodes.resize( hdr->layer_cnt );
-    bool seen_element = false;
-    uint dst_last_i = NULL_I;
-    for( uint src_i = src_layout->nodes[src_struct_i].u.child_first_i; src_i != NULL_I; src_i = src_layout->nodes[src_i].sibling_i )
-    {
-        const Node& src_node = src_layout->nodes[src_i];
-        switch( src_node.kind ) 
-        {
-            case NODE_KIND::INT:
-            case NODE_KIND::STRNAME:
-            {
-                //------------------------------------------------------------
-                // Copy this scalar
-                //------------------------------------------------------------
-                lassert( !seen_element, "BGNSTR scalar occurs after an element - not expected" );
-                dst_last_i = node_copy( dst_struct_i, dst_last_i, src_layout, src_i, COPY_KIND::ONE );
-                break;
-            }
-
-            case NODE_KIND::BOUNDARY:
-            case NODE_KIND::PATH:
-            case NODE_KIND::TEXT:
-            case NODE_KIND::NODE:
-            {
-                //------------------------------------------------------------
-                // Copy this element.
-                // Add it to its layer's list of leaf nodes.
-                //------------------------------------------------------------
-                dst_last_i = node_copy( dst_struct_i, dst_last_i, src_layout, src_i, COPY_KIND::DEEP );
-                Leaf_Node leaf;
-                leaf.brect = AABR( this, nodes[dst_last_i] );
-                leaf.node_i = dst_last_i;
-                uint layer = node_layer( nodes[dst_last_i] );
-                lassert( layer < hdr->layer_cnt, "unexpected layer number in element" );
-                layer_leaf_nodes[layer].push_back( leaf );
-                break;
-            }
-
-            default:
-            {
-                lassert( false, "deduplicate_layout() must be called with a flattened src_layout; found an unexpected " + str(src_node.kind) + " node" );
-                break;
-            }
-        }
-    }
-
-    //------------------------------------------------------------
-    // Recursively space-divide each layer's list, 
-    // deduplicating along the way.
-    //------------------------------------------------------------
-    layer_bah_root.clear();
-    layer_bah_root.resize( hdr->layer_cnt );
-    for( uint i = 0; i < hdr->layer_cnt; i++ )
-    {
-        if ( layer_leaf_nodes[i].size() != 0 ) {
-            layer_bah_root[i] = bah_build( i, 0, layer_leaf_nodes.size(), 0 );
-        } else {
-            layer_bah_root[i] = nullptr;
-        }
-    }
-    return NULL_I;
-}
-
-Layout::BAH_Node * Layout::bah_build( uint layer, uint first, uint n, uint axis )
-{
-    const std::vector<Leaf_Node>& leaf_nodes = layer_leaf_nodes[layer];
-
-    BAH_Node * node = new BAH_Node;
-    for( uint i = 1; i < n; i++ )
-    {
-        node->brect.expand( leaf_nodes[i].brect );
-    }
-
-    if ( n == 1 || n == 2 ) {
-        node->left_i = first;
-        node->left_kind  = Model::BAH_CHILD_KIND::LEAF;
-        node->right_kind = Model::BAH_CHILD_KIND::LEAF;
-        assert( node->brect.encloses( leaf_nodes[first+0].brect ) );
-        if ( n == 2 ) {
-            assert( node->brect.encloses( leaf_nodes[first+1].brect ) );
-            node->right_i = first + 1;
-        } else {
-            node->right_i = first;
-        }
-
-    } else {
-        node->left_kind  = Model::BAH_CHILD_KIND::BAH;
-        node->right_kind = Model::BAH_CHILD_KIND::BAH;
-        real pivot = (node->brect.min.c[axis] + node->brect.max.c[axis]) * 0.5;
-        uint m = bah_qsplit( layer, first, n, pivot, axis );
-        uint nm = m - first;
-        uint left_i  = bah_build( layer, first, nm,   (axis + 1) % 2 );
-        uint right_i = bah_build( layer, m,     n-nm, (axis + 1) % 2 );
-        node->left_i  = left_i;
-        node->right_i = right_i;
-        assert( node->brect.encloses( bah_nodes[left_i].brect ) && node->brect.encloses( bah_nodes[right_i].brect ) );
-    }
-
-    return bah_i;
-}
-#endif
-
 void Layout::fill_dielectrics( void )
 {
     //-----------------------------------------------------
@@ -3062,6 +2630,313 @@ void Layout::fill_material( uint material_i, real x, real y, real z, real w, rea
     // material at origin [x,y,z] and dimensions [w,l,h].
     // Simple.
     //-----------------------------------------------------
+}
+
+inline uint Layout::node_alloc( NODE_KIND kind )
+{
+    perhaps_realloc( nodes, hdr->node_cnt, max->node_cnt, 1 );
+    uint ni = hdr->node_cnt++;
+    nodes[ni].kind = kind;
+    nodes[ni].sibling_i = NULL_I;
+    nodes[ni].u.child_first_i = NULL_I;
+    return ni;
+}
+
+inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND kind, const Matrix& M, bool in_flatten )
+{
+    const Node& src_node = src_layout->nodes[src_i];
+    if ( kind == COPY_KIND::FLATTEN ) {
+        //-----------------------------------------------------
+        // Flattening handles certain nodes differently than hier copies.
+        //-----------------------------------------------------
+        switch( src_node.kind )
+        {
+            case NODE_KIND::STRNAME:
+            {
+                //-----------------------------------------------------
+                // Blow off this node if we're in a struct that's
+                // being flattened.
+                //-----------------------------------------------------
+                if ( in_flatten ) return NULL_I;
+                break;
+            }
+
+            case NODE_KIND::SREF:
+            case NODE_KIND::AREF:
+            {
+                //-----------------------------------------------------
+                // First extract the instancing params.
+                //-----------------------------------------------------
+                const Node * src_nodes = src_layout->nodes;
+                uint sname_i = NULL_I;
+                uint struct_i = NULL_I;
+                uint strans = 0;
+                real smag = 1.0;
+                real sangle = 0.0;
+                bool abs_smag = false;
+                bool abs_sangle = false;
+                bool sreflection = false;
+                uint col_cnt = 1;
+                uint row_cnt = 1;
+                real xy[3][2] = { {0, 0}, {0, 0}, {0, 0} };
+                for( uint src_i = src_node.u.child_first_i; src_i != NULL_I; src_i = src_nodes[src_i].sibling_i )
+                {
+                    const Node& child = src_nodes[src_i];
+                    switch( child.kind )
+                    {
+                        case NODE_KIND::SNAME:
+                        {
+                            lassert( sname_i == NULL_I, "SREF/AREF has duplicate SNAME child" );
+                            sname_i = child.u.s_i;
+                            auto it = src_layout->name_i_to_struct_i.find( sname_i );
+                            lassert( it != src_layout->name_i_to_struct_i.end(), "SREF/AREF SNAME " + std::string(&src_layout->strings[sname_i]) + 
+                                                                                 " does not denote a known struct; available structs are:\n" + all_struct_names() );
+                            struct_i = it->second;
+                            break;
+                        }
+
+                        case NODE_KIND::STRANS:
+                        {
+                            //-----------------------------------------------------
+                            // Bit 0 (the leftmost bit) specifies reflection. If it is set, then reflection 
+                            // about the X-axis is applied before angular rotation. For AREFs, the entire array lattice is reflected, 
+                            // with the individual array elements rigidly attached. 
+                            // 
+                            // Bit 13 flags absolute magnification. 
+                            // Bit 14 flags absolute angle. 
+                            //
+                            // Bit 15 (the rightmost bit) and all remaining bits are reserved for future use and must be cleared. 
+                            //-----------------------------------------------------
+                            strans = child.u.u;
+                            sreflection  = (strans >> 0)  & 1;
+                            sreflection |= (strans >> 7)  & 1;  // hack
+                            abs_smag     = (strans >> 13) & 1;
+                            abs_sangle   = (strans >> 14) & 1;
+                            ldout << "strans=" << strans << " sreflection=" << sreflection << 
+                                     " abs_smag=" << abs_smag << " abs_sangle=" << abs_sangle << "\n";
+                            break;
+                        }
+
+                        case NODE_KIND::MAG:
+                        {
+                            uint gchild_i = child.u.child_first_i;
+                            lassert( src_nodes[gchild_i].kind == NODE_KIND::REAL, "MAG node does not have a child that is a REAL" );
+                            smag = src_nodes[gchild_i].u.r;
+                            break;
+                        }
+
+                        case NODE_KIND::ANGLE:
+                        {
+                            //-----------------------------------------------------
+                            // For an AREF, the ANGLE rotates the entire array lattice (with the individual 
+                            // array elements rigidly attached) about the array reference point. 
+                            // If this record is omitted, an angle of zero degrees is as- sumed.
+                            //
+                            // Convert from degrees to radians.
+                            //-----------------------------------------------------
+                            uint gchild_i = child.u.child_first_i;
+                            lassert( src_nodes[gchild_i].kind == NODE_KIND::REAL, "ANGLE node does not have a child that is a REAL" );
+                            ldout << "raw angle=" << src_nodes[gchild_i].u.r << "\n";
+                            sangle = src_nodes[gchild_i].u.r * real(M_PI) / 180.0;
+                            break;
+                        }
+
+                        case NODE_KIND::COLROW:
+                        {
+                            //-----------------------------------------------------
+                            // Array dimensions
+                            //-----------------------------------------------------
+                            lassert( src_node.kind == NODE_KIND::AREF, "COLROW not allowed for an SREF" );
+                            uint gchild_i = child.u.child_first_i;
+                            lassert( gchild_i != NULL_I, "COLROW has no COL value" );
+                            lassert( src_nodes[gchild_i].kind == NODE_KIND::INT, "COLROW COL is not an INT" );
+                            col_cnt = src_nodes[gchild_i].u.i;
+                            lassert( col_cnt > 0, "COLROW COL must be non-zero" );
+
+                            gchild_i = src_nodes[gchild_i].sibling_i;
+                            lassert( gchild_i != NULL_I, "COLROW has no ROW value" );
+                            lassert( src_nodes[gchild_i].kind == NODE_KIND::INT, "COLROW ROW is not an INT" );
+                            row_cnt = src_nodes[gchild_i].u.i;
+                            lassert( row_cnt > 0, "COLROW ROW must be non-zero" );
+                            break;
+                        }
+                             
+                        case NODE_KIND::XY:
+                        {
+                            //-----------------------------------------------------
+                            // A text or SREF element must have only one pair of coordinates.
+                            //
+                            // An AREF has exactly three pairs of coordinates, which specify the orthogonal array lattice. 
+                            // In an AREF the first point is the array reference point. 
+                            // The second point locates a position which is dis- placed from the reference point by 
+                            // the inter-column spacing times the number of columns. 
+                            // The third point locates a position which is displaced from the reference 
+                            // point by the inter-row spacing times the number of rows.
+                            //-----------------------------------------------------
+                            uint i = 0;
+                            for( uint gchild_i = child.u.child_first_i; gchild_i != NULL_I; gchild_i = src_nodes[gchild_i].sibling_i )
+                            {
+                                lassert( i < 2 || src_node.kind == NODE_KIND::AREF, "SREF may not have more than 2 XY coords" );
+                                lassert( i < 6, "AREF may not have more than 6 XY coords" );
+                                xy[i>>1][i&1] = real(src_nodes[gchild_i].u.i) * src_layout->gdsii_units_user;
+                                i++;
+                            }
+                            lassert( i == 2 || i == 6, "wrong number of XY coords for " + str(src_node.kind) );
+                            break;
+                        }
+
+                        default:
+                        {
+                            lassert( false, "unexpected SREF/AREF child node: " + str(child.kind) );
+                            break;
+                        }
+                    }
+                }
+
+                //-----------------------------------------------------
+                // Now the fun part.
+                //-----------------------------------------------------
+                if ( src_node.kind == NODE_KIND::AREF ) {
+                    smag = 1.0;
+                    sangle = 0.0;
+                    sreflection = false;
+                }
+                lassert( struct_i != NULL_I, "SREF/AREF has no SNAME" );
+
+                for( uint r = 0; r < row_cnt; r++ )
+                {
+                    for( uint c = 0; c < col_cnt; c++ )
+                    {
+                        //-----------------------------------------------------
+                        // Apply transformations to previous ones.
+                        //-----------------------------------------------------
+                        Matrix inst_M = M;
+
+                        if ( smag != 1.0 || sreflection ) {
+                            real3 sv{ smag, sreflection ? -smag : smag, 1 };
+                            inst_M.scale( sv );
+                            ldout << "scale mag=" << smag << " sreflection=" << sreflection << " vec=" << sv << " new M=\n" << inst_M << "\n";
+                        }
+
+                        if ( sangle != 0.0 ) {
+                            inst_M.rotate_xy( sangle );
+                            ldout << "rotate angle=" << sangle << " new M=\n" << inst_M << "\n";
+                        }
+
+                        if ( src_node.kind == NODE_KIND::SREF ) {
+                            real3 tv{ xy[0][0], xy[0][1], 0 };
+                            inst_M.translate( tv );
+                            ldout << "sref translate vec=" << tv << " M=\n" << inst_M << "\n";
+                        } else {
+                            real dxy[2][2] = { { (xy[1][0] - xy[0][0]) / real(col_cnt), (xy[1][1] - xy[0][1]) / real(col_cnt) },
+                                               { (xy[2][0] - xy[0][0]) / real(row_cnt), (xy[2][1] - xy[0][1]) / real(row_cnt) } };
+                            real rr = r;
+                            real cc = c;
+                            real x_translate = xy[0][0] + cc*dxy[0][0] + rr*dxy[1][0];
+                            real y_translate = xy[0][1] + rr*dxy[1][1] + cc*dxy[0][1];
+                            real3 tv{ x_translate, y_translate, 0 };
+                            inst_M.translate( real3(x_translate, y_translate, 0) );
+                            ldout << "aref translate vec=" << tv << " M=" << inst_M << "\n";
+                        }
+
+                        //-----------------------------------------------------
+                        // Copy the structure's children with new transformations.
+                        // But first skip the timestamp which we do not need.
+                        //-----------------------------------------------------
+                        uint src_child_i = src_nodes[struct_i].u.child_first_i;
+                        for( uint j = 0; j < 12; j++ )
+                        {
+                            lassert( src_child_i != NULL_I && src_nodes[src_child_i].kind == NODE_KIND::INT, 
+                                     "structure " + std::string(&src_layout->strings[sname_i]) + " timestamp ended prematurely" );
+                            src_child_i = src_nodes[src_child_i].sibling_i;
+                        }
+                        for( ; src_child_i != NULL_I; src_child_i = src_nodes[src_child_i].sibling_i )
+                        {
+                            uint dst_child_i = node_copy( parent_i, last_i, src_layout, src_child_i, kind, inst_M, true );
+                            if ( dst_child_i != NULL_I ) last_i = dst_child_i;
+                        }
+                    }
+                }
+                return last_i;
+            }
+
+            default:
+            {
+                //-----------------------------------------------------
+                // We can copy this node.
+                //-----------------------------------------------------
+                break;
+            }
+        }
+    }
+
+    //-----------------------------------------------------
+    // Copy the main node.
+    //-----------------------------------------------------
+    uint dst_i = node_alloc( src_node.kind );
+    bool src_is_parent = src_layout->node_is_parent( src_node );
+    if ( src_is_parent ) {
+        nodes[dst_i].u.child_first_i = NULL_I;
+        if ( kind != COPY_KIND::ONE ) {
+            //-----------------------------------------------------
+            // Copy children.
+            //-----------------------------------------------------
+            uint dst_prev_i = NULL_I;
+            for( src_i = src_node.u.child_first_i; src_i != NULL_I; src_i = src_layout->nodes[src_i].sibling_i )
+            {
+                if ( kind != COPY_KIND::DEEP && kind != COPY_KIND::FLATTEN && !node_is_scalar( src_layout->nodes[src_i] ) ) break;
+
+                dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, kind, M );
+            }
+        }
+    } else {
+        if ( node_is_string( src_node ) ) {
+            nodes[dst_i].u.s_i = str_get( &src_layout->strings[src_node.u.s_i] );
+        } else {
+            nodes[dst_i].u = src_node.u;
+        }
+    }
+    
+    //-----------------------------------------------------
+    // Connect the new node.
+    //-----------------------------------------------------
+    if ( last_i != NULL_I ) {
+        lassert( nodes[last_i].sibling_i == NULL_I, "node_copy: nodes[last_i] sibling_i is already set" ); 
+        lassert( parent_i == NULL_I || nodes[parent_i].u.child_first_i != NULL_I, "node_copy: nodes[parent_i] is not set but last_i is set" );
+        nodes[last_i].sibling_i = dst_i;
+    } else if ( parent_i != NULL_I ) {
+        lassert( nodes[parent_i].u.child_first_i == NULL_I, "node_copy: nodes[parent_i] child_first_i is already set but last_i is NULL_I" ); 
+        nodes[parent_i].u.child_first_i = dst_i;
+    }
+
+    if ( nodes[dst_i].kind == NODE_KIND::XY ) {
+        //-----------------------------------------------------
+        // Transform each X,Y pair by M.
+        //-----------------------------------------------------
+        bool is_y = false;
+        real3 v;
+        v.c[2] = 1.0;
+        uint i = 0;
+        uint prev_i = NULL_I;
+        for( uint child_i = nodes[dst_i].u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
+        {
+            v.c[i&1] = real(nodes[child_i].u.i) * gdsii_units_user;
+            if ( i&1 ) {
+                real3 r;
+                M.transform( v, r, true ); // divide by w
+                if ( kind == COPY_KIND::FLATTEN ) {
+                    ldout << "M=\n" << M << "\n";
+                    ldout << "v=" << v << "\n";
+                    ldout << "r=" << r << "\n";
+                }
+                nodes[prev_i].u.i  = r.c[0] / gdsii_units_user + 0.5;  // new X
+                nodes[child_i].u.i = r.c[1] / gdsii_units_user + 0.5;  // new Y
+            }
+            i++;
+            prev_i = child_i;
+        }
+    }
+    return dst_i;
 }
 
 void Layout::finalize_top_struct( uint parent_i, uint last_i, std::string top_name )
