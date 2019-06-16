@@ -175,6 +175,7 @@ public:
         void pad( real p );
         void expand( const AABR& other );
         void expand( const real2& p );
+        void intersect( const AABR& other );
         bool encloses( const AABR& other ) const;
         bool intersects( const AABR& other ) const;
     };
@@ -471,7 +472,7 @@ public:
 
     struct BAH_Node                         // quadtree node, bounding rect is implicit based on position in tree
     {
-        uint            child[2][2];        // bah_nodes[] or leaf_nodes[] index for quad space
+        uint            child_i[2][2];      // bah_nodes[] or leaf_nodes[] index for quad space
         bool            child_is_leaf[2][2];// true=Leaf_Node, false=is BAH_Node
     };
 
@@ -487,7 +488,7 @@ public:
     Header *            hdr;
     Header *            max;                // holds max lengths of currently allocated arrays 
 
-    // arrays
+    // arrays                               // these are relocatable and will all get written out to .layout file
     char *              strings;
     Material *          materials;
     Layer *             layers;
@@ -2363,6 +2364,15 @@ inline bool Layout::AABR::encloses( const AABR& other ) const
            max.c[1] >= other.max.c[1];
 }
 
+inline void Layout::AABR::intersect( const Layout::AABR& other )
+{
+    for( uint i = 0; i < 2; i++ )
+    {
+        if ( other.min.c[i] > min.c[i] ) min.c[i] = other.min.c[i];
+        if ( other.max.c[i] < max.c[i] ) max.c[i] = other.max.c[i];
+    }
+}
+
 inline bool Layout::AABR::intersects( const AABR& other ) const
 {
     return !( min.c[0] > other.max.c[0] ||
@@ -3039,7 +3049,7 @@ void Layout::bah_add( uint leaf_i, CONFLICT_POLICY conflict_policy )
         {
             for( uint j = 0; j < 2; j++ )
             {
-                bah_node.child[i][j]         = (i == 0 && j == 0) ? leaf_i : NULL_I;
+                bah_node.child_i[i][j]       = (i == 0 && j == 0) ? leaf_i : NULL_I;
                 bah_node.child_is_leaf[i][j] = true;
             }
         }
@@ -3049,7 +3059,9 @@ void Layout::bah_add( uint leaf_i, CONFLICT_POLICY conflict_policy )
         {
             //------------------------------------------------------------
             // The entire BAH needs to be expanded because it won't contain
-            // the new leaf node.  Create a new BAH_Node above the current root.
+            // the new leaf node.  Create a new BAH_Node above the current root
+            // and put the current root in the quadrant that allows for expansion 
+            // in the right direction.
             //------------------------------------------------------------
         }
 
@@ -3066,11 +3078,47 @@ void Layout::bah_insert( uint bah_i, const AABR& bah_brect, uint leaf_i, CONFLIC
     // Insert into each quadrant that intersects with the new leaf.
     //------------------------------------------------------------
     const Leaf_Node& leaf = leaf_nodes[leaf_i];
+          BAH_Node&  bah  = bah_nodes[bah_i];
     for( uint i = 0; i < 2; i++ )
     {
         for( uint j = 0; j < 2; j++ )
         {
             if ( bah_brect.intersects( leaf.brect ) ) {
+                if ( bah.child_i[i][j] == NULL_I ) {
+                    //------------------------------------------------------------
+                    // No child.  Make this leaf the child.
+                    //------------------------------------------------------------
+                    bah.child_i[i][j] = leaf_i;
+                    bah.child_is_leaf[i][j] = true;
+
+                } else if ( !bah.child_is_leaf[i][j] ) {
+                    //------------------------------------------------------------
+                    // Call this recursively on the child BAH node.
+                    // But first calculate the child's bounding rectangle based on i,j.
+                    //------------------------------------------------------------
+                    AABR child_brect = bah_brect;
+                    real2 half;
+                    half.c[0] = (child_brect.max.c[0] - child_brect.min.c[0]) / 2.0;
+                    half.c[1] = (child_brect.max.c[1] - child_brect.min.c[1]) / 2.0;
+                    if ( j == 0 ) {
+                        child_brect.max.c[0] -= half.c[0];
+                    } else {
+                        child_brect.min.c[0] += half.c[0];
+                    }
+                    if ( i == 0 ) {
+                        child_brect.max.c[1] -= half.c[1];
+                    } else {
+                        child_brect.min.c[1] += half.c[1];
+                    }
+                    bah_insert( bah.child_i[i][j], child_brect, leaf_i, conflict_policy );
+
+                } else {
+                    //------------------------------------------------------------
+                    // Child is a leaf.  
+                    // First, check for overlap with the leaf that is already there.
+                    // TODO
+                    //------------------------------------------------------------
+                }
             }
         }
     }
