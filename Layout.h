@@ -162,6 +162,22 @@ public:
         real2& operator /= ( const real s );
     };
 
+    // Axis-Aligned Bounding Rectangle (2D)
+    //
+    struct AABR
+    {
+        real2   min;
+        real2   max;
+
+        AABR( void ) {}
+        AABR( const real2& p );                                 // init with one point
+
+        void pad( real p );
+        void expand( const AABR& other );
+        void expand( const real2& p );
+        bool encloses( const AABR& other ) const;
+    };
+
     class Matrix                                        // used for instancing to transform
     {
     public:
@@ -239,6 +255,7 @@ public:
         uint        bah_node_cnt;           // in bah_nodes array
         uint        root_i;                 // index of root node in nodes array
         uint        bah_root_i;             // index of root node in bah_nodes array
+        AABR        bah_brect;              // bounding rectangle of entire BAH
     };
 
     // returns index into strings[] for s;
@@ -443,23 +460,6 @@ public:
         Matrix          M;
     };
 
-    // Axis-Aligned Bounding Rectangle
-    //
-    struct AABR
-    {
-        real2   min;
-        real2   max;
-
-        AABR( void ) {}
-        AABR( const real2& p );                                 // init with one point
-        AABR( const Layout * layout, const Node& element );     // init using all points in element
-
-        void pad( real p );
-        void expand( const AABR& other );
-        void expand( const real2& p );
-        bool encloses( const AABR& other ) const;
-    };
-
     // Bounding Area Hierarchy
     //
     struct Leaf_Node
@@ -529,6 +529,7 @@ private:
                            uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
 
     // BAH 
+    void bah_add( uint leaf_i, CONFLICT_POLICY conflict_policy );
     void bah_insert( uint bah_i, uint leaf_i, CONFLICT_POLICY conflict_policy );
 
     // LAYOUT I/O
@@ -2330,27 +2331,6 @@ inline Layout::AABR::AABR( const Layout::real2& p )
     max = p;
 }  
 
-inline Layout::AABR::AABR( const Layout * layout, const Layout::Node& element )
-{
-    uint xy_i = layout->node_xy_i( element );
-    lassert( xy_i != NULL_I, "element node " + str(element.kind) + " has no XY child node" );
-    bool have_x = false;
-    real2 xy;
-    for( uint child_i = layout->nodes[xy_i].u.child_first_i; child_i != NULL_I; child_i = layout->nodes[child_i].sibling_i )
-    {
-        const Node& child = layout->nodes[child_i];
-        lassert( child.kind == NODE_KIND::INT, "XY child should have been an INT" );
-        if ( !have_x ) {
-            xy.c[0] = child.u.i;
-        } else {
-            xy.c[1] = child.u.i;
-            expand( xy );
-        }
-        have_x = !have_x;
-    }
-    // TODO: pad PATH by WIDTH
-}
-
 inline void Layout::AABR::pad( Layout::real p ) 
 {
     min -= real2( p, p );
@@ -3028,10 +3008,47 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
             uint leaf_i = hdr->leaf_node_cnt++;
             leaf_nodes[leaf_i].node_i = parent_i;
             leaf_nodes[leaf_i].brect  = brect;
-            bah_insert( hdr->bah_root_i, leaf_i, conflict_policy );
+            bah_add( leaf_i, conflict_policy );
         }
     }
     return dst_i;
+}
+
+void Layout::bah_add( uint leaf_i, CONFLICT_POLICY conflict_policy )
+{
+    if ( hdr->bah_root_i == NULL_I ) {
+        //------------------------------------------------------------
+        // This is the first leaf node.
+        // Create the first BAH node with it at child[0,0].
+        // Thus the overall bounding rectangle will be 2x the leaf node dimensions.
+        //------------------------------------------------------------
+        hdr->bah_brect = leaf_nodes[leaf_i].brect;
+        perhaps_realloc( bah_nodes, hdr->bah_node_cnt, max->bah_node_cnt, 1 );
+        hdr->bah_root_i = hdr->bah_node_cnt++;
+        BAH_Node& bah_node = bah_nodes[hdr->bah_root_i];
+        for( uint i = 0; i < 2; i++ )
+        {
+            for( uint j = 0; j < 2; j++ )
+            {
+                bah_node.child[i][j]         = (i == 0 && j == 0) ? leaf_i : NULL_I;
+                bah_node.child_is_leaf[i][j] = true;
+            }
+        }
+
+    } else {
+        while( false && !hdr->bah_brect.encloses( leaf_nodes[leaf_i].brect ) )
+        {
+            //------------------------------------------------------------
+            // The entire BAH needs to be expanded because it won't contain
+            // the new leaf node.  Create a new BAH_Node above the current root.
+            //------------------------------------------------------------
+        }
+
+        //------------------------------------------------------------
+        // Insert recursively.
+        //------------------------------------------------------------
+        bah_insert( hdr->bah_root_i, leaf_i, conflict_policy );
+    }
 }
 
 void Layout::bah_insert( uint bah_i, uint leaf_i, CONFLICT_POLICY conflict_policy )
