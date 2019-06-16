@@ -206,7 +206,8 @@ public:
                       uint dst_layer_first, uint dst_layer_last, std::string name );
     void finalize_top_struct( uint parent_i, uint last_i, std::string top_name );              // use to create top-level struct of all insts
     bool layout_is_flattened( void ) const;
-    uint flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string struct_name, CONFLICT_POLICY policy, const Matrix& M = Matrix() );  
+    uint flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string struct_name, 
+                         CONFLICT_POLICY conflict_policy, const Matrix& M = Matrix() );  
      
      
     // fill of dielectrics or arbitrary material
@@ -429,8 +430,8 @@ public:
     };
 
     uint        node_alloc( NODE_KIND kind );                   // allocate a node of the given kind
-    uint        node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND kind, 
-                           const Matrix& M = Matrix(), bool in_flatten=false );
+    uint        node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND copy_kind, 
+                           CONFLICT_POLICY conflict_policy=CONFLICT_POLICY::MERGE_NONE_KEEP_ALL, const Matrix& M = Matrix(), bool in_flatten=false );
     void        node_timestamp( Node& node );                   // adds timestamp fields to node
 
     struct TopInstInfo
@@ -2576,7 +2577,8 @@ bool Layout::layout_is_flattened( void ) const
     return name_i_to_struct_i.size() <= 1;
 }
 
-uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string struct_name, CONFLICT_POLICY policy, const Matrix& M )
+uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string struct_name, 
+                             CONFLICT_POLICY conflict_policy, const Matrix& M )
 {
     //------------------------------------------------------------
     // Locate the the src struct.
@@ -2589,7 +2591,7 @@ uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layo
     //------------------------------------------------------------
     // Recursively copy the src_struct.
     //------------------------------------------------------------
-    uint dst_struct_i = node_copy( parent_i, last_i, src_layout, src_struct_i, COPY_KIND::FLATTEN, M );
+    uint dst_struct_i = node_copy( parent_i, last_i, src_layout, src_struct_i, COPY_KIND::FLATTEN, conflict_policy, M );
     lassert( nodes[dst_struct_i].kind == NODE_KIND::BGNSTR, "should have gotten back a BGNSTR node after flatten-copy" );
 
     uint dst_name_i = str_get( struct_name );
@@ -2642,10 +2644,11 @@ inline uint Layout::node_alloc( NODE_KIND kind )
     return ni;
 }
 
-inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND kind, const Matrix& M, bool in_flatten )
+inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND copy_kind, 
+                               CONFLICT_POLICY conflict_policy, const Matrix& M, bool in_flatten )
 {
     const Node& src_node = src_layout->nodes[src_i];
-    if ( kind == COPY_KIND::FLATTEN ) {
+    if ( copy_kind == COPY_KIND::FLATTEN ) {
         //-----------------------------------------------------
         // Flattening handles certain nodes differently than hier copies.
         //-----------------------------------------------------
@@ -2852,7 +2855,7 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                         }
                         for( ; src_child_i != NULL_I; src_child_i = src_nodes[src_child_i].sibling_i )
                         {
-                            uint dst_child_i = node_copy( parent_i, last_i, src_layout, src_child_i, kind, inst_M, true );
+                            uint dst_child_i = node_copy( parent_i, last_i, src_layout, src_child_i, copy_kind, conflict_policy, inst_M, true );
                             if ( dst_child_i != NULL_I ) last_i = dst_child_i;
                         }
                     }
@@ -2877,16 +2880,16 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
     bool src_is_parent = src_layout->node_is_parent( src_node );
     if ( src_is_parent ) {
         nodes[dst_i].u.child_first_i = NULL_I;
-        if ( kind != COPY_KIND::ONE ) {
+        if ( copy_kind != COPY_KIND::ONE ) {
             //-----------------------------------------------------
             // Copy children.
             //-----------------------------------------------------
             uint dst_prev_i = NULL_I;
             for( src_i = src_node.u.child_first_i; src_i != NULL_I; src_i = src_layout->nodes[src_i].sibling_i )
             {
-                if ( kind != COPY_KIND::DEEP && kind != COPY_KIND::FLATTEN && !node_is_scalar( src_layout->nodes[src_i] ) ) break;
+                if ( copy_kind != COPY_KIND::DEEP && copy_kind != COPY_KIND::FLATTEN && !node_is_scalar( src_layout->nodes[src_i] ) ) break;
 
-                dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, kind, M );
+                dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, copy_kind, conflict_policy, M );
             }
         }
     } else {
@@ -2924,7 +2927,7 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
             if ( i&1 ) {
                 real3 r;
                 M.transform( v, r, true ); // divide by w
-                if ( kind == COPY_KIND::FLATTEN ) {
+                if ( copy_kind == COPY_KIND::FLATTEN ) {
                     ldout << "M=\n" << M << "\n";
                     ldout << "v=" << v << "\n";
                     ldout << "r=" << r << "\n";
