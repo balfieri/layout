@@ -2572,6 +2572,53 @@ uint Layout::inst_layout_node( uint parent_i, uint last_i, const Layout * src_la
     return last_i;
 }
 
+void Layout::finalize_top_struct( uint parent_i, uint last_i, std::string top_name )
+{
+    //-----------------------------------------------------
+    // Create one final struct that instantiates all top_insts.
+    //-----------------------------------------------------
+    lassert( parent_i == NULL_I, "finalize parent_i must be NULL_I for now" );
+    uint bgnstr_i = node_alloc( NODE_KIND::BGNSTR );
+    nodes[last_i].sibling_i = bgnstr_i;
+    node_timestamp( nodes[bgnstr_i] );
+    uint prev_i = node_last_scalar_i( nodes[bgnstr_i] );
+
+    uint strname_i = node_alloc( NODE_KIND::STRNAME );
+    nodes[prev_i].sibling_i = strname_i;
+    nodes[strname_i].u.s_i = str_get( top_name );
+    prev_i = strname_i;
+
+    name_i_to_struct_i[nodes[strname_i].u.s_i] = bgnstr_i;
+
+    for( size_t i = 0; i < hdr->top_inst_cnt; i++ )
+    {
+        uint sref_i = node_alloc( NODE_KIND::SREF );
+        nodes[prev_i].sibling_i = sref_i;
+        prev_i = sref_i;
+
+        const TopInstInfo& info = top_insts[i];
+
+        uint sname_i = node_alloc( NODE_KIND::SNAME );
+        nodes[sname_i].u.s_i = node_name_i( nodes[info.struct_i] );
+        nodes[sref_i].u.child_first_i = sname_i;
+
+        uint xy_i = node_alloc( NODE_KIND::XY );
+        nodes[sname_i].sibling_i = xy_i;
+
+        real x = info.M.m[0][3];
+        real y = info.M.m[1][3];
+        Matrix Mt;
+        Mt.translate( real3( x, y, 0 ) );
+        lassert( info.M == Mt, "top-level instances must have only an XY translation for now; no other transformations at the top" );
+        uint x_i = node_alloc( NODE_KIND::INT );
+        nodes[xy_i].u.child_first_i = x_i;
+        nodes[x_i].u.i = int( x / gdsii_units_user );      
+        uint y_i = node_alloc( NODE_KIND::INT );
+        nodes[x_i].sibling_i = y_i;
+        nodes[y_i].u.i = int( y / gdsii_units_user );
+    }
+}
+
 bool Layout::layout_is_flattened( void ) const
 {
     return name_i_to_struct_i.size() <= 1;
@@ -2940,53 +2987,6 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
         }
     }
     return dst_i;
-}
-
-void Layout::finalize_top_struct( uint parent_i, uint last_i, std::string top_name )
-{
-    //-----------------------------------------------------
-    // Create one final struct that instantiates all top_insts.
-    //-----------------------------------------------------
-    lassert( parent_i == NULL_I, "finalize parent_i must be NULL_I for now" );
-    uint bgnstr_i = node_alloc( NODE_KIND::BGNSTR );
-    nodes[last_i].sibling_i = bgnstr_i;
-    node_timestamp( nodes[bgnstr_i] );
-    uint prev_i = node_last_scalar_i( nodes[bgnstr_i] );
-
-    uint strname_i = node_alloc( NODE_KIND::STRNAME );
-    nodes[prev_i].sibling_i = strname_i;
-    nodes[strname_i].u.s_i = str_get( top_name );
-    prev_i = strname_i;
-
-    name_i_to_struct_i[nodes[strname_i].u.s_i] = bgnstr_i;
-
-    for( size_t i = 0; i < hdr->top_inst_cnt; i++ )
-    {
-        uint sref_i = node_alloc( NODE_KIND::SREF );
-        nodes[prev_i].sibling_i = sref_i;
-        prev_i = sref_i;
-
-        const TopInstInfo& info = top_insts[i];
-
-        uint sname_i = node_alloc( NODE_KIND::SNAME );
-        nodes[sname_i].u.s_i = node_name_i( nodes[info.struct_i] );
-        nodes[sref_i].u.child_first_i = sname_i;
-
-        uint xy_i = node_alloc( NODE_KIND::XY );
-        nodes[sname_i].sibling_i = xy_i;
-
-        real x = info.M.m[0][3];
-        real y = info.M.m[1][3];
-        Matrix Mt;
-        Mt.translate( real3( x, y, 0 ) );
-        lassert( info.M == Mt, "top-level instances must have only an XY translation for now; no other transformations at the top" );
-        uint x_i = node_alloc( NODE_KIND::INT );
-        nodes[xy_i].u.child_first_i = x_i;
-        nodes[x_i].u.i = int( x / gdsii_units_user );      
-        uint y_i = node_alloc( NODE_KIND::INT );
-        nodes[x_i].sibling_i = y_i;
-        nodes[y_i].u.i = int( y / gdsii_units_user );
-    }
 }
 
 // returns array of T on a page boundary
