@@ -528,6 +528,9 @@ private:
     uint inst_layout_node( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, 
                            uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
 
+    // BAH 
+    void bah_insert( uint bah_i, uint leaf_i, CONFLICT_POLICY conflict_policy );
+
     // LAYOUT I/O
     bool layout_read( std::string file_path );          // .layout
     bool layout_write( std::string file_path );         
@@ -801,6 +804,7 @@ void Layout::init( bool alloc_arrays )
         memset( hdr, 0, sizeof( Header ) );
         hdr->version = VERSION;
         hdr->root_i = NULL_I;
+        hdr->bah_root_i = NULL_I;
 
         max = aligned_alloc<Header>( 1 );
         max->node_cnt =  1024;
@@ -2975,12 +2979,14 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
     if ( nodes[dst_i].kind == NODE_KIND::XY ) {
         //-----------------------------------------------------
         // Transform each X,Y pair by M.
+        // Also keep track of the bounding rectangle if we're flattening.
         //-----------------------------------------------------
         bool is_y = false;
         real3 v;
         v.c[2] = 1.0;
         uint i = 0;
         uint prev_i = NULL_I;
+        AABR brect;
         for( uint child_i = nodes[dst_i].u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
         {
             v.c[i&1] = real(nodes[child_i].u.i) * gdsii_units_user;
@@ -2992,14 +2998,44 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                     ldout << "v=" << v << "\n";
                     ldout << "r=" << r << "\n";
                 }
-                nodes[prev_i].u.i  = r.c[0] / gdsii_units_user + 0.5;  // new X
-                nodes[child_i].u.i = r.c[1] / gdsii_units_user + 0.5;  // new Y
+
+                real2 p( r.c[0] / gdsii_units_user + 0.5,    // new X
+                         r.c[1] / gdsii_units_user + 0.5 );  // new Y
+                nodes[prev_i].u.i  = p.c[0];
+                nodes[child_i].u.i = p.c[1];
+
+                if ( copy_kind == COPY_KIND::FLATTEN ) {
+                    if ( i == 0 ) {
+                        brect = AABR( p );
+                    } else {
+                        brect.expand( p );    
+                    }
+                }
             }
             i++;
             prev_i = child_i;
         }
+
+        if ( copy_kind == COPY_KIND::FLATTEN ) {
+            //-----------------------------------------------------
+            // The parent should be an expanded element.
+            // Add it to leaf_nodes[] which has the computed brect.
+            // 
+            // Add the element (parent) to the BAH.
+            //-----------------------------------------------------
+            lassert( parent_i != uint(-1) && node_is_element( nodes[parent_i] ), "XY parent should be an element" );
+            perhaps_realloc( leaf_nodes, hdr->leaf_node_cnt, max->leaf_node_cnt, 1 );
+            uint leaf_i = hdr->leaf_node_cnt++;
+            leaf_nodes[leaf_i].node_i = parent_i;
+            leaf_nodes[leaf_i].brect  = brect;
+            bah_insert( hdr->bah_root_i, leaf_i, conflict_policy );
+        }
     }
     return dst_i;
+}
+
+void Layout::bah_insert( uint bah_i, uint leaf_i, CONFLICT_POLICY conflict_policy )
+{
 }
 
 bool Layout::layout_read( std::string layout_path )
