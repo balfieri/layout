@@ -176,6 +176,7 @@ public:
         void expand( const AABR& other );
         void expand( const real2& p );
         bool encloses( const AABR& other ) const;
+        bool intersects( const AABR& other ) const;
     };
 
     class Matrix                                        // used for instancing to transform
@@ -2362,6 +2363,14 @@ inline bool Layout::AABR::encloses( const AABR& other ) const
            max.c[1] >= other.max.c[1];
 }
 
+inline bool Layout::AABR::intersects( const AABR& other ) const
+{
+    return !( min.c[0] > other.max.c[0] ||
+              min.c[1] > other.max.c[1] ||
+              max.c[0] < other.min.c[0] ||
+              max.c[1] < other.min.c[1] );
+}
+
 uint Layout::start_library( std::string libname, real units_user, real units_meters )
 {
     lassert( hdr->root_i == NULL_I, "starting a library when layout is not empty" );
@@ -3053,6 +3062,15 @@ void Layout::bah_add( uint leaf_i, CONFLICT_POLICY conflict_policy )
 
 void Layout::bah_insert( uint bah_i, uint leaf_i, CONFLICT_POLICY conflict_policy )
 {
+    //------------------------------------------------------------
+    // See which quadrants intersect the new leaf.
+    //------------------------------------------------------------
+    for( uint i = 0; i < 2; i++ )
+    {
+        for( uint j = 0; j < 2; j++ )
+        {
+        }
+    }
 }
 
 bool Layout::layout_read( std::string layout_path )
