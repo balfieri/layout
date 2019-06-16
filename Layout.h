@@ -178,6 +178,7 @@ public:
         void intersect( const AABR& other );
         bool encloses( const AABR& other ) const;
         bool intersects( const AABR& other ) const;
+        AABR quadrant( uint i, uint j ) const;
     };
 
     class Matrix                                        // used for instancing to transform
@@ -533,6 +534,7 @@ private:
     // BAH 
     void bah_add( uint leaf_i, CONFLICT_POLICY conflict_policy );
     void bah_insert( uint bah_i, const AABR& brect, uint leaf_i, CONFLICT_POLICY conflict_policy );
+    bool bah_leaf_nodes_intersect( uint li1, uint li2, bool& is_exact ) const; // returns true if the elements intersect
 
     // LAYOUT I/O
     bool layout_read( std::string file_path );          // .layout
@@ -2381,6 +2383,25 @@ inline bool Layout::AABR::intersects( const AABR& other ) const
               max.c[1] < other.min.c[1] );
 }
 
+inline Layout::AABR Layout::AABR::quadrant( uint i, uint j ) const
+{
+    AABR quad = *this;
+    real2 half;
+    half.c[0] = (quad.max.c[0] - quad.min.c[0]) / 2.0;
+    half.c[1] = (quad.max.c[1] - quad.min.c[1]) / 2.0;
+    if ( j == 0 ) {
+        quad.max.c[0] -= half.c[0];
+    } else {
+        quad.min.c[0] += half.c[0];
+    }
+    if ( i == 0 ) {
+        quad.max.c[1] -= half.c[1];
+    } else {
+        quad.min.c[1] += half.c[1];
+    }
+    return quad;
+}
+
 uint Layout::start_library( std::string libname, real units_user, real units_meters )
 {
     lassert( hdr->root_i == NULL_I, "starting a library when layout is not empty" );
@@ -3039,7 +3060,7 @@ void Layout::bah_add( uint leaf_i, CONFLICT_POLICY conflict_policy )
         //------------------------------------------------------------
         // This is the first leaf node.
         // Create the first BAH node with it at child[0,0].
-        // Thus the overall bounding rectangle will be 2x the leaf node dimensions.
+        // But make sure the bounding rectangle is actually square in shape.
         //------------------------------------------------------------
         hdr->bah_brect = leaf_nodes[leaf_i].brect;
         perhaps_realloc( bah_nodes, hdr->bah_node_cnt, max->bah_node_cnt, 1 );
@@ -3072,56 +3093,137 @@ void Layout::bah_add( uint leaf_i, CONFLICT_POLICY conflict_policy )
     }
 }
 
-void Layout::bah_insert( uint bah_i, const AABR& bah_brect, uint leaf_i, CONFLICT_POLICY conflict_policy )
+void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, CONFLICT_POLICY conflict_policy )
 {
     //------------------------------------------------------------
     // Insert into each quadrant that intersects with the new leaf.
     //------------------------------------------------------------
-    const Leaf_Node& leaf = leaf_nodes[leaf_i];
-          BAH_Node&  bah  = bah_nodes[bah_i];
     for( uint i = 0; i < 2; i++ )
     {
         for( uint j = 0; j < 2; j++ )
         {
-            if ( bah_brect.intersects( leaf.brect ) ) {
-                if ( bah.child_i[i][j] == NULL_I ) {
+            if ( bah_brect.intersects( leaf_nodes[li].brect ) ) {
+                if ( bah_nodes[bi].child_i[i][j] == NULL_I ) {
                     //------------------------------------------------------------
                     // No child.  Make this leaf the child.
                     //------------------------------------------------------------
-                    bah.child_i[i][j] = leaf_i;
-                    bah.child_is_leaf[i][j] = true;
+                    bah_nodes[bi].child_i[i][j] = li;
+                    bah_nodes[bi].child_is_leaf[i][j] = true;
 
-                } else if ( !bah.child_is_leaf[i][j] ) {
+                } else if ( !bah_nodes[bi].child_is_leaf[i][j] ) {
                     //------------------------------------------------------------
                     // Call this recursively on the child BAH node.
                     // But first calculate the child's bounding rectangle based on i,j.
                     //------------------------------------------------------------
-                    AABR child_brect = bah_brect;
-                    real2 half;
-                    half.c[0] = (child_brect.max.c[0] - child_brect.min.c[0]) / 2.0;
-                    half.c[1] = (child_brect.max.c[1] - child_brect.min.c[1]) / 2.0;
-                    if ( j == 0 ) {
-                        child_brect.max.c[0] -= half.c[0];
-                    } else {
-                        child_brect.min.c[0] += half.c[0];
-                    }
-                    if ( i == 0 ) {
-                        child_brect.max.c[1] -= half.c[1];
-                    } else {
-                        child_brect.min.c[1] += half.c[1];
-                    }
-                    bah_insert( bah.child_i[i][j], child_brect, leaf_i, conflict_policy );
+                    const AABR child_brect = bah_brect.quadrant( i, j );
+                    bah_insert( bah_nodes[bi].child_i[i][j], child_brect, li, conflict_policy );
 
                 } else {
                     //------------------------------------------------------------
-                    // Child is a leaf.  
+                    // Child is a leaf.
                     // First, check for overlap with the leaf that is already there.
-                    // TODO
                     //------------------------------------------------------------
+                    uint li2 = bah_nodes[bi].child_i[i][j];
+                    bool is_exact;
+                    if ( bah_leaf_nodes_intersect( li, li2, is_exact ) ) {
+                        if ( is_exact ) {
+                            //------------------------------------------------------------
+                            // Exact duplicates are not added to the BAH.
+                            // But are they allowed and should they be left in the node tree?
+                            //------------------------------------------------------------
+                            lassert( conflict_policy != CONFLICT_POLICY::MERGE_NONE_ALLOW_NONE, 
+                                     "overlapping elements are not allowed by confict_policy MERGE_NONE_ALLOW_NONE" );
+                            if ( conflict_policy != CONFLICT_POLICY::MERGE_NONE_KEEP_ALL ) {
+                                //------------------------------------------------------------
+                                // Remove the element from the node tree.
+                                //------------------------------------------------------------
+                            }
+                        } else {
+                            //------------------------------------------------------------
+                            // Partial intersections are not yet supported.
+                            //------------------------------------------------------------
+                            lassert( false, "we support only exact intersections right now" );
+                        }
+
+                        //------------------------------------------------------------
+                        // Do not add it to the BAH.
+                        //------------------------------------------------------------
+                    } else {
+                        //------------------------------------------------------------
+                        // We have to add a BAH_Node as the new child, then
+                        // recursively add both leaves to it.  At some point, they won't conflict.
+                        //------------------------------------------------------------
+                        perhaps_realloc( bah_nodes, hdr->bah_node_cnt, max->bah_node_cnt, 1 );
+                        uint cbi = hdr->bah_node_cnt++;
+                        bah_nodes[bi].child_i[i][j] = cbi;
+                        bah_nodes[bi].child_is_leaf[i][j] = false;
+                        for( uint ii = 0; ii < 2; ii++ )
+                        {
+                            for( uint jj = 0; jj < 2; jj++ )
+                            {
+                                bah_nodes[cbi].child_i[ii][jj]     = NULL_I;
+                                bah_nodes[cbi].child_is_leaf[i][j] = true;
+                            }
+                        }
+                        const AABR child_brect = bah_brect.quadrant( i, j );
+                        bah_insert( cbi, child_brect, li,  conflict_policy );
+                        bah_insert( cbi, child_brect, li2, conflict_policy );
+                    }
                 }
             }
         }
     }
+}
+
+bool Layout::bah_leaf_nodes_intersect( uint li1, uint li2, bool& is_exact ) const
+{
+    //------------------------------------------------------------
+    // Return false if bounding rects do not intersect.
+    //------------------------------------------------------------
+    const Leaf_Node& leaf1 = leaf_nodes[li1];
+    const Leaf_Node& leaf2 = leaf_nodes[li2];
+    if ( !leaf1.brect.intersects( leaf2.brect ) ) return false;
+
+    //------------------------------------------------------------
+    // See if there is an exact intersection by comparing XY nodes.
+    //------------------------------------------------------------
+    const Node& node1 = nodes[leaf1.node_i];
+    const Node& node2 = nodes[leaf2.node_i];
+    lassert( node_is_element( node1 ), "leaf1 is not an element" );    
+    lassert( node_is_element( node2 ), "leaf2 is not an element" );    
+    lassert( node1.kind == node2.kind, "leaf1 and leaf2 must have same kind of bounding rects overlap" );
+    uint xy1_i = node_xy_i( node1 );
+    uint xy2_i = node_xy_i( node2 );
+    lassert( xy1_i != NULL_I, "leaf1 has no XY node" );
+    lassert( xy2_i != NULL_I, "leaf2 has no XY node" );
+    const Node& xy1 = nodes[xy1_i];
+    const Node& xy2 = nodes[xy2_i];
+
+    is_exact = true;  // for now
+    uint c1_i, c2_i;
+    for( c1_i = xy1.u.child_first_i, c2_i = xy2.u.child_first_i;
+         c1_i != NULL_I || c2_i != NULL_I;
+         c1_i = nodes[c1_i].sibling_i, c2_i = nodes[c2_i].sibling_i )
+    {
+        lassert( c1_i == NULL_I || nodes[c1_i].kind == NODE_KIND::INT, "leaf1 XY coord is not an INT" );
+        lassert( c2_i == NULL_I || nodes[c2_i].kind == NODE_KIND::INT, "leaf2 XY coord is not an INT" );
+        if ( c1_i == NULL_I || c2_i == NULL_I || nodes[c1_i].u.i != nodes[c2_i].u.i ) {
+            is_exact = false;
+            break;
+        }
+    }
+
+    //------------------------------------------------------------
+    // Can't handle partial intersections right now.
+    // Later, we'll need to build polygons and attempt to intersect them.
+    //------------------------------------------------------------
+    if ( !is_exact ) {
+        std::cout << "ERROR: bah_leaf_nodes_intersect: can't handle partial intersections right now, leaf1.brect=" <<
+                             leaf1.brect << " leaf2.brect=" << leaf2.brect << "\n";
+        lassert( false, "Aborting" );
+        is_exact = true;
+    }
+    return true;
 }
 
 bool Layout::layout_read( std::string layout_path )
