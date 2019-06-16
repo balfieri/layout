@@ -235,7 +235,10 @@ public:
         uint        layer_cnt;              // in layers array
         uint        node_cnt;               // in nodes array  
         uint        top_inst_cnt;           // in top_insts array
+        uint        leaf_node_cnt;          // in leaf_nodes array
+        uint        bah_node_cnt;           // in bah_nodes array
         uint        root_i;                 // index of root node in nodes array
+        uint        bah_root_i;             // index of root node in bah_nodes array
     };
 
     // returns index into strings[] for s;
@@ -489,6 +492,8 @@ public:
     Layer *             layers;
     Node *              nodes;
     TopInstInfo *       top_insts;
+    Leaf_Node *         leaf_nodes;
+    BAH_Node *          bah_nodes;
 
 
 //------------------------------------------------------------------------------
@@ -517,7 +522,7 @@ private:
     std::map< uint, uint >                      name_i_to_struct_i;
     std::string all_struct_names( std::string delim = "\n    " ) const;
 
-    // INSTANCING
+    // INSTANCING AND NODE COPYING
     using has_layer_cache_t = std::map< uint, std::map<uint, bool>* >;
     bool node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache, std::string indent_str ) const;
     uint inst_layout_node( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, 
@@ -803,6 +808,8 @@ void Layout::init( bool alloc_arrays )
         max->material_cnt = 1024;
         max->layer_cnt = 1024;
         max->top_inst_cnt = 1024;
+        max->leaf_node_cnt = 128;
+        max->bah_node_cnt = 128;
 
         //------------------------------------------------------------
         // Allocate initial arrays
@@ -812,6 +819,8 @@ void Layout::init( bool alloc_arrays )
         layers     = aligned_alloc<Layer>( max->layer_cnt );
         nodes      = aligned_alloc<Node>( max->node_cnt );
         top_insts  = aligned_alloc<TopInstInfo>( max->top_inst_cnt );
+        leaf_nodes = aligned_alloc<Leaf_Node>( max->leaf_node_cnt );
+        bah_nodes  = aligned_alloc<BAH_Node>( max->bah_node_cnt );
 
         materials_init();
     }
@@ -863,11 +872,15 @@ Layout::~Layout()
         delete layers;
         delete nodes;
         delete top_insts;
+        delete leaf_nodes;
+        delete bah_nodes;
         strings = nullptr;
         materials = nullptr;
         layers = nullptr;
         nodes = nullptr;
         top_insts = nullptr;
+        leaf_nodes = nullptr;
+        bah_nodes = nullptr;
     }
 }
 
@@ -2989,34 +3002,6 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
     return dst_i;
 }
 
-// returns array of T on a page boundary
-template<typename T>
-inline T * Layout::aligned_alloc( size_t cnt )
-{
-    void * mem = nullptr;
-    posix_memalign( &mem, getpagesize(), cnt*sizeof(T) );
-    return reinterpret_cast<T *>( mem );
-}
-
-// reallocate array if we are about to exceed its current size
-template<typename T>
-inline void Layout::perhaps_realloc( T *& array, const Layout::uint& hdr_cnt, Layout::uint& max_cnt, Layout::uint add_cnt )
-{
-    while( (hdr_cnt + add_cnt) > max_cnt ) {
-        void * mem = nullptr;
-        uint   old_max_cnt = max_cnt;
-        max_cnt *= 2;
-        if ( max_cnt < old_max_cnt ) {
-            lassert( old_max_cnt != NULL_I, "old_max_cnt should have been reasonable" );
-            max_cnt = NULL_I;
-        }
-        T * new_array = aligned_alloc<T>( max_cnt );
-        memcpy( new_array, array, hdr_cnt*sizeof(T) );
-        delete array;
-        array = new_array;
-    }
-}
-
 bool Layout::layout_read( std::string layout_path )
 {
     uint8_t * start;
@@ -3053,6 +3038,8 @@ bool Layout::layout_read( std::string layout_path )
     _uread( layers,      Layer,       hdr->layer_cnt );
     _uread( nodes,       Node,        hdr->node_cnt );
     _uread( top_insts,   TopInstInfo, hdr->top_inst_cnt );
+    _uread( leaf_nodes,  Leaf_Node,   hdr->leaf_node_cnt );
+    _uread( bah_nodes,   BAH_Node,    hdr->bah_node_cnt );
 
     return true;
 }
@@ -3094,6 +3081,8 @@ bool Layout::layout_write( std::string layout_path )
     _uwrite( layers,      hdr->layer_cnt     * sizeof(layers[0]) );
     _uwrite( nodes,       hdr->node_cnt      * sizeof(nodes[0]) );
     _uwrite( top_insts,   hdr->top_inst_cnt  * sizeof(top_insts[0] ));
+    _uwrite( leaf_nodes,  hdr->leaf_node_cnt * sizeof(leaf_nodes[0] ));
+    _uwrite( bah_nodes,   hdr->bah_node_cnt  * sizeof(bah_nodes[0] ));
 
     fsync( fd ); // flush
     close( fd );
@@ -4378,6 +4367,34 @@ std::string Layout::surrounding_lines( uint8_t *& xxx, uint8_t *& xxx_end )
         xxx++;
     }
     return s;
+}
+
+// returns array of T on a page boundary
+template<typename T>
+inline T * Layout::aligned_alloc( size_t cnt )
+{
+    void * mem = nullptr;
+    posix_memalign( &mem, getpagesize(), cnt*sizeof(T) );
+    return reinterpret_cast<T *>( mem );
+}
+
+// reallocate array if we are about to exceed its current size
+template<typename T>
+inline void Layout::perhaps_realloc( T *& array, const Layout::uint& hdr_cnt, Layout::uint& max_cnt, Layout::uint add_cnt )
+{
+    while( (hdr_cnt + add_cnt) > max_cnt ) {
+        void * mem = nullptr;
+        uint   old_max_cnt = max_cnt;
+        max_cnt *= 2;
+        if ( max_cnt < old_max_cnt ) {
+            lassert( old_max_cnt != NULL_I, "old_max_cnt should have been reasonable" );
+            max_cnt = NULL_I;
+        }
+        T * new_array = aligned_alloc<T>( max_cnt );
+        memcpy( new_array, array, hdr_cnt*sizeof(T) );
+        delete array;
+        array = new_array;
+    }
 }
 
 #endif
