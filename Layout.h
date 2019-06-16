@@ -531,7 +531,7 @@ private:
 
     // BAH 
     void bah_add( uint leaf_i, CONFLICT_POLICY conflict_policy );
-    void bah_insert( uint bah_i, uint leaf_i, CONFLICT_POLICY conflict_policy );
+    void bah_insert( uint bah_i, const AABR& brect, uint leaf_i, CONFLICT_POLICY conflict_policy );
 
     // LAYOUT I/O
     bool layout_read( std::string file_path );          // .layout
@@ -3054,21 +3054,24 @@ void Layout::bah_add( uint leaf_i, CONFLICT_POLICY conflict_policy )
         }
 
         //------------------------------------------------------------
-        // Insert recursively.
+        // Insert leaf recursively starting at the root.
         //------------------------------------------------------------
-        bah_insert( hdr->bah_root_i, leaf_i, conflict_policy );
+        bah_insert( hdr->bah_root_i, hdr->bah_brect, leaf_i, conflict_policy );
     }
 }
 
-void Layout::bah_insert( uint bah_i, uint leaf_i, CONFLICT_POLICY conflict_policy )
+void Layout::bah_insert( uint bah_i, const AABR& bah_brect, uint leaf_i, CONFLICT_POLICY conflict_policy )
 {
     //------------------------------------------------------------
-    // See which quadrants intersect the new leaf.
+    // Insert into each quadrant that intersects with the new leaf.
     //------------------------------------------------------------
+    const Leaf_Node& leaf = leaf_nodes[leaf_i];
     for( uint i = 0; i < 2; i++ )
     {
         for( uint j = 0; j < 2; j++ )
         {
+            if ( bah_brect.intersects( leaf.brect ) ) {
+            }
         }
     }
 }
