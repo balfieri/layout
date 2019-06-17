@@ -72,11 +72,6 @@ public:
     // write out material info used by viewer programs (file extension determines format)
     bool write_material_info( std::string file_path );
 
-    // current layout dimensions
-    real width( void ) const;
-    real length( void ) const;
-    real height( void ) const;
-
     // start of a new library; Layout must be empty
     uint start_library( std::string libname, real units_user=0.001, real units_meters=1e-9 );
 
@@ -225,14 +220,12 @@ public:
     uint inst_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, const Matrix& M,
                       uint dst_layer_first, uint dst_layer_last, std::string name );
     void finalize_top_struct( uint parent_i, uint last_i, std::string top_name );              // use to create top-level struct of all insts
-    bool layout_is_flattened( void ) const;
     uint flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string struct_name, 
                          CONFLICT_POLICY conflict_policy, const Matrix& M = Matrix() );  
-     
+    AABR bounding_rect( uint layer_first=0, uint layer_last=0xffffffff ) const;
      
     // fill of dielectrics or arbitrary material
-    void fill_dielectrics( void );
-    void fill_material( uint material_i, real x, real y, real z, real w, real l, real h );
+    void fill_dielectrics( const AABR& brect, uint layer_first=0, uint layer_last=0xffffffff );
 
     // PUBLIC DATA STRUCTURES
     //
@@ -540,6 +533,10 @@ private:
     void bah_add( uint leaf_i, uint layer, CONFLICT_POLICY conflict_policy );
     void bah_insert( uint bah_i, const AABR& brect, uint leaf_i, CONFLICT_POLICY conflict_policy );
     bool bah_leaf_nodes_intersect( uint li1, uint li2, bool& is_exact ) const; // returns true if the elements intersect
+
+    // FILL
+    void fill_dielectric_rect( uint layer_i, const AABR& rect );
+    void fill_dielectric_bvh( uint layer_i, uint bvh_i );
 
     // LAYOUT I/O
     bool layout_read( std::string file_path );          // .layout
@@ -2333,21 +2330,6 @@ void Layout::node_timestamp( Node& node )
     }
 }
 
-inline Layout::real Layout::width( void ) const
-{
-    return 0;
-}
-
-inline Layout::real Layout::length( void ) const
-{
-    return 0;
-}
-
-inline Layout::real Layout::height( void ) const
-{
-    return 0;
-}
-
 inline Layout::AABR::AABR( const Layout::real2& p )
 {
     min = p;
@@ -2686,11 +2668,6 @@ void Layout::finalize_top_struct( uint parent_i, uint last_i, std::string top_na
     }
 }
 
-bool Layout::layout_is_flattened( void ) const
-{
-    return name_i_to_struct_i.size() <= 1;
-}
-
 uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layout, std::string struct_name, 
                              CONFLICT_POLICY conflict_policy, const Matrix& M )
 {
@@ -2715,29 +2692,91 @@ uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layo
     return dst_struct_i;
 }
 
-void Layout::fill_dielectrics( void )
+Layout::AABR Layout::bounding_rect( uint layer_first, uint layer_last ) const
+{
+    //-----------------------------------------------------
+    // Take union of all layers.
+    //-----------------------------------------------------
+    layer_last = std::min( layer_last, hdr->layer_cnt-1 );
+    AABR brect;
+    bool have_one = false;
+    for( uint i = layer_first; i <= layer_last; i++ )
+    {
+        if ( layers[i].bah_root_i == NULL_I ) continue;
+
+        if ( !have_one ) {
+            brect = layers[i].bah_brect;
+            have_one = true;
+        } else {
+            brect.expand( layers[i].bah_brect );
+        }
+    }
+    lassert( have_one, "found no bounding area hierarchy (BAH) so could not determine bounding rectangle" );
+    return brect;
+}
+
+void Layout::fill_dielectrics( const AABR& brect, uint layer_first, uint layer_last )
 {
     //-----------------------------------------------------
     // For each layer that is not part of previous layer:
     //-----------------------------------------------------
-    for( uint32_t i = 0; i < hdr->layer_cnt; i++ )
+    layer_last = std::min( layer_last, hdr->layer_cnt-1 );
+    for( uint32_t i = layer_first; i <= layer_last; i++ )
     {
+        if ( layers[i].same_zoffset_as_prev ) continue;
+        lassert( layers[i].bah_root_i != NULL_I, "layer " + std::to_string(i) + " has no bounding area hierarchy (BAH)" );
+
         //-----------------------------------------------------
-        // Walk the entire BAH for this layer.
+        // First, fill any space that's inside the overall brect but
+        // outside the layer's bah_brect.
+        //-----------------------------------------------------
+        if ( brect.min.c[0] < layers[i].bah_brect.min.c[0] ) {
+            // left
+            AABR rect = brect;
+            rect.max.c[0] = layers[i].bah_brect.min.c[0];
+            fill_dielectric_rect( i, rect );
+        }
+        if ( brect.max.c[0] > layers[i].bah_brect.max.c[0] ) {
+            // right
+            AABR rect = brect;
+            rect.min.c[0] = layers[i].bah_brect.max.c[0];
+            fill_dielectric_rect( i, rect );
+        }
+        if ( brect.min.c[1] < layers[i].bah_brect.min.c[1] ) {
+            // top
+            AABR rect = layers[i].bah_brect;
+            rect.min.c[1] = brect.min.c[1];
+            rect.max.c[1] = layers[i].bah_brect.min.c[1];
+            fill_dielectric_rect( i, rect );
+        }
+        if ( brect.max.c[1] > layers[i].bah_brect.max.c[1] ) {
+            // bottom
+            AABR rect = layers[i].bah_brect;
+            rect.min.c[1] = layers[i].bah_brect.max.c[1];
+            rect.max.c[1] = brect.max.c[1];
+            fill_dielectric_rect( i, rect );
+        }
+
+        //-----------------------------------------------------
+        // Next, walk the entire BAH for this layer.
         // We'll fill empty space at each leaf.
         //-----------------------------------------------------
     }
 }
 
-void Layout::fill_material( uint material_i, real x, real y, real z, real w, real l, real h )
+void Layout::fill_dielectric_rect( uint layer_i, const AABR& rect )
 {
     //-----------------------------------------------------
-    // For now, we require that the space consumed by
-    // the fill material is outside the space consumed by
-    // the layout.  Thus we need only add a box of the 
-    // material at origin [x,y,z] and dimensions [w,l,h].
-    // Simple.
+    // Add a rectangular boundary on the given layer.
     //-----------------------------------------------------
+}
+
+void Layout::fill_dielectric_bvh( uint layer_i, uint bvh_i )
+{
+    //-----------------------------------------------------
+    // Fill each quadrant.
+    //-----------------------------------------------------
+    lassert( bvh_i != NULL_I, "bvh_i should be non-null" );
 }
 
 inline uint Layout::node_alloc( NODE_KIND kind )
