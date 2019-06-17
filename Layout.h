@@ -179,6 +179,7 @@ public:
         bool encloses( const AABR& other ) const;
         bool intersects( const AABR& other ) const;
         AABR quadrant( uint i, uint j ) const;
+        AABR enclosing_square( real scale_factor=1.0 ) const;
     };
 
     class Matrix                                        // used for instancing to transform
@@ -535,6 +536,7 @@ private:
                            uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
 
     // BAH 
+    uint bah_node_alloc( void );
     void bah_add( uint leaf_i, uint layer, CONFLICT_POLICY conflict_policy );
     void bah_insert( uint bah_i, const AABR& brect, uint leaf_i, CONFLICT_POLICY conflict_policy );
     bool bah_leaf_nodes_intersect( uint li1, uint li2, bool& is_exact ) const; // returns true if the elements intersect
@@ -2419,6 +2421,17 @@ inline Layout::AABR Layout::AABR::quadrant( uint i, uint j ) const
     return quad;
 }
 
+inline Layout::AABR Layout::AABR::enclosing_square( real scale_factor ) const
+{
+    AABR square = *this;
+    real w  = max.c[0] - min.c[0];
+    real h  = max.c[1] - min.c[1];
+    real wh = std::max( w, h ) * scale_factor;  // side of square, scaled
+    square.max.c[0] = min.c[0] + wh;
+    square.max.c[1] = min.c[1] + wh;
+    return square;
+}
+
 uint Layout::start_library( std::string libname, real units_user, real units_meters )
 {
     lassert( hdr->root_i == NULL_I, "starting a library when layout is not empty" );
@@ -2705,21 +2718,13 @@ uint Layout::flatten_layout( uint parent_i, uint last_i, const Layout * src_layo
 void Layout::fill_dielectrics( void )
 {
     //-----------------------------------------------------
-    // For each layer:
+    // For each layer that is not part of previous layer:
     //-----------------------------------------------------
     for( uint32_t i = 0; i < hdr->layer_cnt; i++ )
     {
         //-----------------------------------------------------
-        // Build a 2D kd-tree, which is a space-divided binary tree.
-        // It will make it very easy to figure out where there
-        // are empty spaces.
-        //-----------------------------------------------------
-
-        //-----------------------------------------------------
-        // Walk the kd-tree down to the leaf level.
-        // For leaves that have a triangle or rectangle, it's
-        // trivial to determine the remaining empty space.
-        // For empty leaves, it's obviously the entire rectangle.
+        // Walk the entire BAH for this layer.
+        // We'll fill empty space at each leaf.
         //-----------------------------------------------------
     }
 }
@@ -3074,29 +3079,39 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
     return dst_i;
 }
 
+uint Layout::bah_node_alloc( void )
+{
+    perhaps_realloc( bah_nodes, hdr->bah_node_cnt, max->bah_node_cnt, 1 );
+    uint bi = hdr->bah_node_cnt++;
+    for( uint i = 0; i < 2; i++ )
+    {
+        for( uint j = 0; j < 2; j++ )
+        {
+            bah_nodes[bi].child_i[i][j]       = NULL_I;
+            bah_nodes[bi].child_is_leaf[i][j] = true;
+        }
+    }
+    return bi;
+}
+
 void Layout::bah_add( uint bah_layer_i, uint leaf_i, CONFLICT_POLICY conflict_policy )
 {
     if ( layers[bah_layer_i].bah_root_i == NULL_I ) {
         //------------------------------------------------------------
         // This is the first leaf node.
-        // Create the first BAH node with it at child[0,0].
-        // But make sure the bounding rectangle is actually square in shape.
+        // Create the first BAH node with the leaf in quadrant 0,0.
+        // But make sure the bounding rectangle is actually square in shape and
+        // scaled up by 2x to make sense with the child in quadrant 0,0.
         //------------------------------------------------------------
-        layers[bah_layer_i].bah_brect = leaf_nodes[leaf_i].brect;
-        perhaps_realloc( bah_nodes, hdr->bah_node_cnt, max->bah_node_cnt, 1 );
-        layers[bah_layer_i].bah_root_i = hdr->bah_node_cnt++;
-        BAH_Node& bah_node = bah_nodes[layers[bah_layer_i].bah_root_i];
-        for( uint i = 0; i < 2; i++ )
-        {
-            for( uint j = 0; j < 2; j++ )
-            {
-                bah_node.child_i[i][j]       = (i == 0 && j == 0) ? leaf_i : NULL_I;
-                bah_node.child_is_leaf[i][j] = true;
-            }
-        }
+        uint bi = bah_node_alloc();
+        bah_nodes[bi].child_i[0][0] = leaf_i;
+
+        layers[bah_layer_i].bah_root_i = bi;
+        layers[bah_layer_i].bah_brect  = leaf_nodes[leaf_i].brect.enclosing_square( 2.0 );
 
     } else {
-        while( false && !layers[bah_layer_i].bah_brect.encloses( leaf_nodes[leaf_i].brect ) )
+        const AABR& leaf_brect = leaf_nodes[leaf_i].brect;
+        while( !layers[bah_layer_i].bah_brect.encloses( leaf_brect ) )
         {
             //------------------------------------------------------------
             // The entire BAH needs to be expanded because it won't contain
@@ -3104,6 +3119,31 @@ void Layout::bah_add( uint bah_layer_i, uint leaf_i, CONFLICT_POLICY conflict_po
             // and put the current root in the quadrant that allows for expansion 
             // in the right direction.
             //------------------------------------------------------------
+            AABR bah_brect = layers[bah_layer_i].bah_brect;
+            real w = bah_brect.max.c[0] - bah_brect.min.c[0];
+            real h = bah_brect.max.c[1] - bah_brect.min.c[1];
+            uint i, j;
+            if ( bah_brect.min.c[0] < leaf_brect.min.c[0] ) {
+                j = 0;
+                bah_brect.max.c[0] += w;
+            } else {
+                j = 1;
+                bah_brect.min.c[0] -= w;
+            }
+            if ( bah_brect.min.c[1] < leaf_brect.min.c[1] ) {
+                i = 0;
+                bah_brect.max.c[1] += h;
+            } else {
+                i = 1;
+                bah_brect.min.c[1] -= h;
+            }
+            
+            uint bi = bah_node_alloc();
+            bah_nodes[bi].child_i[i][j]       = layers[bah_layer_i].bah_root_i;
+            bah_nodes[bi].child_is_leaf[i][j] = false;
+
+            layers[bah_layer_i].bah_root_i = bi;
+            layers[bah_layer_i].bah_brect  = bah_brect;
         }
 
         //------------------------------------------------------------
@@ -3173,8 +3213,7 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, CONFLICT_POLIC
                         // We have to add a BAH_Node as the new child, then
                         // recursively add both leaves to it.  At some point, they won't conflict.
                         //------------------------------------------------------------
-                        perhaps_realloc( bah_nodes, hdr->bah_node_cnt, max->bah_node_cnt, 1 );
-                        uint cbi = hdr->bah_node_cnt++;
+                        uint cbi = bah_node_alloc();
                         bah_nodes[bi].child_i[i][j] = cbi;
                         bah_nodes[bi].child_is_leaf[i][j] = false;
                         for( uint ii = 0; ii < 2; ii++ )
