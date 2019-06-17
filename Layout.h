@@ -257,8 +257,8 @@ public:
         uint        leaf_node_cnt;          // in leaf_nodes array
         uint        bah_node_cnt;           // in bah_nodes array
         uint        root_i;                 // index of root node in nodes array
-        uint        bah_root_i;             // index of root node in bah_nodes array
-        AABR        bah_brect;              // bounding rectangle of entire BAH
+        uint *      layer_bah_root_i;       // index of per-layer root node in bah_nodes array
+        AABR *      layer_bah_brect;        // overall bounding rectangle of per-layer BAH
     };
 
     // returns index into strings[] for s;
@@ -305,6 +305,8 @@ public:
         uint        material_i;             	// index of main material in materials[]
         uint        dielectric_material_i;  	// index of dielectric material in materials[]
         uint        material_rgba;              // material color in RGBA8 format
+        uint        bah_root_i;                 // index in bah_nodes[] of this layer's BAH root node (if !same_zoffset_as_prev)
+        AABR        bah_brect;                  // bounding rectangle of this layer's BAH             (if !same_zoffset_as_prev)
     };
 
     static uint color( real r, real g, real b, real a=1.0 );
@@ -439,6 +441,7 @@ public:
     uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
     std::string node_name( const Node& node ) const;            // find name for node
     uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
+    uint        node_bah_layer( const Node& node ) const;       // find LAYER value for flattened node and get layer to use for BAH
     uint        node_xy_i( const Node& node ) const;            // find index of XY node within node
 
     static std::string  str( NODE_KIND kind );
@@ -532,7 +535,7 @@ private:
                            uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
 
     // BAH 
-    void bah_add( uint leaf_i, CONFLICT_POLICY conflict_policy );
+    void bah_add( uint leaf_i, uint layer, CONFLICT_POLICY conflict_policy );
     void bah_insert( uint bah_i, const AABR& brect, uint leaf_i, CONFLICT_POLICY conflict_policy );
     bool bah_leaf_nodes_intersect( uint li1, uint li2, bool& is_exact ) const; // returns true if the elements intersect
 
@@ -809,7 +812,6 @@ void Layout::init( bool alloc_arrays )
         memset( hdr, 0, sizeof( Header ) );
         hdr->version = VERSION;
         hdr->root_i = NULL_I;
-        hdr->bah_root_i = NULL_I;
 
         max = aligned_alloc<Header>( 1 );
         max->node_cnt =  1024;
@@ -2181,6 +2183,21 @@ inline uint Layout::node_layer( const Node& node ) const
     }
 }
 
+inline uint Layout::node_bah_layer( const Node& node ) const
+{
+    uint layer_i = node_layer( node );
+    lassert( layer_i < hdr->layer_cnt, "node_layer() is out of range of current layer_cnt" );
+    while( layers[layer_i].same_zoffset_as_prev ) 
+    {
+        //------------------------------------------------------------
+        // Move to previous.
+        //------------------------------------------------------------
+        lassert( layer_i != 0, "layers[0].same_zoffset_as_prev should be false" );
+        layer_i--;
+    }
+    return layer_i;
+}
+
 std::string Layout::all_struct_names( std::string delim ) const
 {
     std::string names = "";
@@ -3044,28 +3061,31 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
             // Add the element (parent) to the BAH.
             //-----------------------------------------------------
             lassert( parent_i != uint(-1) && node_is_element( nodes[parent_i] ), "XY parent should be an element" );
+            uint bah_layer_i = node_bah_layer( nodes[parent_i] );
+
             perhaps_realloc( leaf_nodes, hdr->leaf_node_cnt, max->leaf_node_cnt, 1 );
             uint leaf_i = hdr->leaf_node_cnt++;
             leaf_nodes[leaf_i].node_i = parent_i;
             leaf_nodes[leaf_i].brect  = brect;
-            bah_add( leaf_i, conflict_policy );
+
+            bah_add( bah_layer_i, leaf_i, conflict_policy );
         }
     }
     return dst_i;
 }
 
-void Layout::bah_add( uint leaf_i, CONFLICT_POLICY conflict_policy )
+void Layout::bah_add( uint bah_layer_i, uint leaf_i, CONFLICT_POLICY conflict_policy )
 {
-    if ( hdr->bah_root_i == NULL_I ) {
+    if ( layers[bah_layer_i].bah_root_i == NULL_I ) {
         //------------------------------------------------------------
         // This is the first leaf node.
         // Create the first BAH node with it at child[0,0].
         // But make sure the bounding rectangle is actually square in shape.
         //------------------------------------------------------------
-        hdr->bah_brect = leaf_nodes[leaf_i].brect;
+        layers[bah_layer_i].bah_brect = leaf_nodes[leaf_i].brect;
         perhaps_realloc( bah_nodes, hdr->bah_node_cnt, max->bah_node_cnt, 1 );
-        hdr->bah_root_i = hdr->bah_node_cnt++;
-        BAH_Node& bah_node = bah_nodes[hdr->bah_root_i];
+        layers[bah_layer_i].bah_root_i = hdr->bah_node_cnt++;
+        BAH_Node& bah_node = bah_nodes[layers[bah_layer_i].bah_root_i];
         for( uint i = 0; i < 2; i++ )
         {
             for( uint j = 0; j < 2; j++ )
@@ -3076,7 +3096,7 @@ void Layout::bah_add( uint leaf_i, CONFLICT_POLICY conflict_policy )
         }
 
     } else {
-        while( false && !hdr->bah_brect.encloses( leaf_nodes[leaf_i].brect ) )
+        while( false && !layers[bah_layer_i].bah_brect.encloses( leaf_nodes[leaf_i].brect ) )
         {
             //------------------------------------------------------------
             // The entire BAH needs to be expanded because it won't contain
@@ -3089,7 +3109,7 @@ void Layout::bah_add( uint leaf_i, CONFLICT_POLICY conflict_policy )
         //------------------------------------------------------------
         // Insert leaf recursively starting at the root.
         //------------------------------------------------------------
-        bah_insert( hdr->bah_root_i, hdr->bah_brect, leaf_i, conflict_policy );
+        bah_insert( layers[bah_layer_i].bah_root_i, layers[bah_layer_i].bah_brect, leaf_i, conflict_policy );
     }
 }
 
