@@ -3207,11 +3207,13 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, CONFLICT_POLIC
         for( uint j = 0; j < 2; j++ )
         {
             AABR quadrant_brect = bah_brect.quadrant( i, j );
+            std::cout << indent_str << "quadrant[" << i << "," << j << "]=" << quadrant_brect << "\n";
             if ( quadrant_brect.intersects( leaf_nodes[li].brect ) ) {
                 if ( bah_nodes[bi].child_i[i][j] == NULL_I ) {
                     //------------------------------------------------------------
                     // No child.  Make this leaf the child.
                     //------------------------------------------------------------
+                    std::cout << indent_str << "empty child, make this leaf the child\n";
                     bah_nodes[bi].child_i[i][j] = li;
                     bah_nodes[bi].child_is_leaf[i][j] = true;
 
@@ -3220,6 +3222,7 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, CONFLICT_POLIC
                     // Call this recursively on the child BAH node.
                     // But first calculate the child's bounding rectangle based on i,j.
                     //------------------------------------------------------------
+                    std::cout << indent_str << "child is not a leaf, call recursively...\n";
                     bah_insert( bah_nodes[bi].child_i[i][j], quadrant_brect, li, conflict_policy, indent_str );
 
                 } else {
@@ -3230,6 +3233,7 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, CONFLICT_POLIC
                     uint li2 = bah_nodes[bi].child_i[i][j];
                     bool is_exact;
                     if ( bah_leaf_nodes_intersect( li, li2, is_exact ) ) {
+                        std::cout << indent_str << "child is a leaf, and intersects with new leaf\n";
                         if ( is_exact ) {
                             //------------------------------------------------------------
                             // Exact duplicates are not added to the BAH.
@@ -3257,6 +3261,7 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, CONFLICT_POLIC
                         // We have to add a BAH_Node as the new child, then
                         // recursively add both leaves to it.  At some point, they won't conflict.
                         //------------------------------------------------------------
+                        std::cout << indent_str << "child is a non-intersecting leaf, replace with new BAH node and recurse for both leaves...\n";
                         uint cbi = bah_node_alloc();
                         bah_nodes[bi].child_i[i][j] = cbi;
                         bah_nodes[bi].child_is_leaf[i][j] = false;
