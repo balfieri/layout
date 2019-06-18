@@ -531,7 +531,7 @@ private:
     // BAH 
     uint bah_node_alloc( void );
     void bah_add( uint leaf_i, uint layer, CONFLICT_POLICY conflict_policy );
-    void bah_insert( uint bah_i, const AABR& brect, uint leaf_i, CONFLICT_POLICY conflict_policy );
+    void bah_insert( uint bah_i, const AABR& brect, uint leaf_i, CONFLICT_POLICY conflict_policy, std::string indent_str="" );
     bool bah_leaf_nodes_intersect( uint li1, uint li2, bool& is_exact ) const; // returns true if the elements intersect
 
     // FILL
@@ -3086,10 +3086,11 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                 nodes[child_i].u.i = p.c[1];
 
                 if ( copy_kind == COPY_KIND::FLATTEN ) {
+                    real2 r2( r.c[0], r.c[1] );
                     if ( i == 0 ) {
-                        brect = AABR( p );
+                        brect = AABR( r2 );
                     } else {
-                        brect.expand( p );    
+                        brect.expand( r2 );    
                     }
                 }
             }
@@ -3192,16 +3193,21 @@ void Layout::bah_add( uint bah_layer_i, uint leaf_i, CONFLICT_POLICY conflict_po
     }
 }
 
-void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, CONFLICT_POLICY conflict_policy )
+void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, CONFLICT_POLICY conflict_policy, std::string indent_str )
 {
     //------------------------------------------------------------
     // Insert into each quadrant that intersects with the new leaf.
     //------------------------------------------------------------
+    AABR leaf_brect = leaf_nodes[li].brect;
+    leaf_brect.intersect( bah_brect );
+    std::cout << indent_str << "bah_insert bi=" << bi << " bah_brect=" << bah_brect << " li=" << li << " leaf_brect=" << leaf_brect << "\n";
+    indent_str += "  ";
     for( uint i = 0; i < 2; i++ )
     {
         for( uint j = 0; j < 2; j++ )
         {
-            if ( bah_brect.intersects( leaf_nodes[li].brect ) ) {
+            AABR quadrant_brect = bah_brect.quadrant( i, j );
+            if ( quadrant_brect.intersects( leaf_nodes[li].brect ) ) {
                 if ( bah_nodes[bi].child_i[i][j] == NULL_I ) {
                     //------------------------------------------------------------
                     // No child.  Make this leaf the child.
@@ -3214,8 +3220,7 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, CONFLICT_POLIC
                     // Call this recursively on the child BAH node.
                     // But first calculate the child's bounding rectangle based on i,j.
                     //------------------------------------------------------------
-                    const AABR child_brect = bah_brect.quadrant( i, j );
-                    bah_insert( bah_nodes[bi].child_i[i][j], child_brect, li, conflict_policy );
+                    bah_insert( bah_nodes[bi].child_i[i][j], quadrant_brect, li, conflict_policy, indent_str );
 
                 } else {
                     //------------------------------------------------------------
@@ -3263,9 +3268,8 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, CONFLICT_POLIC
                                 bah_nodes[cbi].child_is_leaf[i][j] = true;
                             }
                         }
-                        const AABR child_brect = bah_brect.quadrant( i, j );
-                        bah_insert( cbi, child_brect, li,  conflict_policy );
-                        bah_insert( cbi, child_brect, li2, conflict_policy );
+                        bah_insert( cbi, quadrant_brect, li,  conflict_policy, indent_str );
+                        bah_insert( cbi, quadrant_brect, li2, conflict_policy, indent_str );
                     }
                 }
             }
