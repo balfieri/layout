@@ -2711,12 +2711,15 @@ Layout::AABR Layout::bounding_rect( uint layer_first, uint layer_last ) const
             brect.expand( layers[i].bah_brect );
         }
     }
+#ifdef DO_BAH
     lassert( have_one, "found no bounding area hierarchy (BAH) so could not determine bounding rectangle" );
+#endif
     return brect;
 }
 
 void Layout::fill_dielectrics( const AABR& brect, uint layer_first, uint layer_last )
 {
+#ifdef DO_BAH
     //-----------------------------------------------------
     // For each layer that is not part of previous layer:
     //-----------------------------------------------------
@@ -2762,6 +2765,7 @@ void Layout::fill_dielectrics( const AABR& brect, uint layer_first, uint layer_l
         // We'll fill empty space at each leaf.
         //-----------------------------------------------------
     }
+#endif
 }
 
 void Layout::fill_dielectric_rect( uint layer_i, const AABR& rect )
@@ -3098,6 +3102,7 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
             prev_i = child_i;
         }
 
+#ifdef DO_BAH
         if ( copy_kind == COPY_KIND::FLATTEN ) {
             //-----------------------------------------------------
             // The parent should be an expanded element.
@@ -3115,6 +3120,7 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
 
             bah_add( bah_layer_i, leaf_i, conflict_policy );
         }
+#endif
     }
     return dst_i;
 }
@@ -3303,7 +3309,7 @@ bool Layout::bah_leaf_nodes_intersect( uint li1, uint li2, bool& is_exact ) cons
     if ( node1.kind != node2.kind ) {
         std::cout << "ERROR: leaf1 and leaf2 must have same kind if bounding rects overlap, got " << str(node1.kind) << " and " << str(node2.kind) << "\n";
         std::cout << "       leaf1_brect=" << leaf1.brect << " leaf2_brect=" << leaf2.brect << "\n";
-        lassert( false, "Aborting..." );
+        //lassert( false, "Aborting..." );
     }
     uint xy1_i = node_xy_i( node1 );
     uint xy2_i = node_xy_i( node2 );
@@ -3333,6 +3339,34 @@ bool Layout::bah_leaf_nodes_intersect( uint li1, uint li2, bool& is_exact ) cons
     if ( !is_exact ) {
         std::cout << "ERROR: bah_leaf_nodes_intersect: can't handle partial intersections right now, leaf1.brect=" <<
                              leaf1.brect << " leaf2.brect=" << leaf2.brect << "\n";
+        std::cout << "    leaf1 XY:";
+        bool have_x = false;
+        real x;
+        for( c1_i = xy1.u.child_first_i; c1_i != NULL_I; c1_i = nodes[c1_i].sibling_i )
+        {
+            real coord = real(nodes[c1_i].u.i) * gdsii_units_user;
+            if ( !have_x ) {
+                x = coord;
+            } else {
+                std::cout << " [" << x << "," << coord << "]";
+            }
+            have_x = !have_x;
+        }
+        std::cout << "\n";
+
+        std::cout << "    leaf2 XY:";
+        have_x = false;
+        for( c2_i = xy2.u.child_first_i; c2_i != NULL_I; c2_i = nodes[c2_i].sibling_i )
+        {
+            real coord = real(nodes[c2_i].u.i) * gdsii_units_user;
+            if ( !have_x ) {
+                x = coord;
+            } else {
+                std::cout << " [" << x << "," << coord << "]";
+            }
+            have_x = !have_x;
+        }
+        std::cout << "\n";
         lassert( false, "Aborting" );
         is_exact = true;
     }
