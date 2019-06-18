@@ -2378,10 +2378,10 @@ inline void Layout::AABR::intersect( const Layout::AABR& other )
 
 inline bool Layout::AABR::intersects( const AABR& other ) const
 {
-    return !( min.c[0] > other.max.c[0] ||
-              min.c[1] > other.max.c[1] ||
-              max.c[0] < other.min.c[0] ||
-              max.c[1] < other.min.c[1] );
+    return !( min.c[0] >= other.max.c[0] ||
+              min.c[1] >= other.max.c[1] ||
+              max.c[0] <= other.min.c[0] ||
+              max.c[1] <= other.min.c[1] );
 }
 
 inline Layout::AABR Layout::AABR::quadrant( uint i, uint j ) const
@@ -3080,8 +3080,8 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                     ldout << "r=" << r << "\n";
                 }
 
-                real2 p( r.c[0] / gdsii_units_user + 0.5,    // new X
-                         r.c[1] / gdsii_units_user + 0.5 );  // new Y
+                real2 p( r.c[0] / gdsii_units_user,    // new X
+                         r.c[1] / gdsii_units_user );  // new Y
                 nodes[prev_i].u.i  = p.c[0];
                 nodes[child_i].u.i = p.c[1];
 
