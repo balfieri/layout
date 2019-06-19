@@ -437,6 +437,7 @@ public:
     uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
     uint        node_bah_layer( const Node& node ) const;       // find LAYER value for flattened node and get layer to use for BAH
     uint        node_xy_i( const Node& node ) const;            // find index of XY node within node
+    uint        node_pathtype( const Node& node ) const;        // find PATHTYPE for PATH node and return number
 
     static std::string  str( NODE_KIND kind );
     NODE_KIND           hier_end_kind( NODE_KIND kind ) const;      // returns corresponding end kind for hier kind
@@ -2282,6 +2283,16 @@ inline uint Layout::node_xy_i( const Node& node ) const
     return NULL_I;
 }
 
+inline uint Layout::node_pathtype( const Node& node ) const
+{
+    lassert( node.kind == NODE_KIND::PATH, "pathtype() should have been called on a PATH node" );
+    for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i ) 
+    {
+        if ( nodes[child_i].kind == NODE_KIND::PATHTYPE ) return nodes[child_i].u.i;
+    }
+    return 0;   // default
+}
+
 void Layout::node_timestamp( Node& node )
 {
     lassert( node.kind == NODE_KIND::BGNLIB || node.kind == NODE_KIND::BGNSTR, "node_timestamp: node must be BGNLIB or BGNSTR" );
@@ -2803,22 +2814,13 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
         //-----------------------------------------------------
         switch( src_node.kind )
         {
-            case NODE_KIND::STRNAME:
-            {
-                //-----------------------------------------------------
-                // Blow off this node if we're in a struct that's
-                // being flattened.
-                //-----------------------------------------------------
-                if ( in_flatten ) return NULL_I;
-                break;
-            }
-
             case NODE_KIND::SREF:
             case NODE_KIND::AREF:
             {
                 //-----------------------------------------------------
                 // First extract the instancing params.
                 //-----------------------------------------------------
+                in_flatten = true;
                 const Node * src_nodes = src_layout->nodes;
                 uint sname_i = NULL_I;
                 uint struct_i = NULL_I;
@@ -3004,12 +3006,22 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                         }
                         for( ; src_child_i != NULL_I; src_child_i = src_nodes[src_child_i].sibling_i )
                         {
-                            uint dst_child_i = node_copy( parent_i, last_i, src_layout, src_child_i, copy_kind, conflict_policy, inst_M, true );
+                            uint dst_child_i = node_copy( parent_i, last_i, src_layout, src_child_i, copy_kind, conflict_policy, inst_M, in_flatten );
                             if ( dst_child_i != NULL_I ) last_i = dst_child_i;
                         }
                     }
                 }
                 return last_i;
+            }
+
+            case NODE_KIND::STRNAME:
+            {
+                //-----------------------------------------------------
+                // Blow off this node if we're in a struct that's
+                // being flattened.
+                //-----------------------------------------------------
+                if ( in_flatten ) return NULL_I;
+                break;
             }
 
             default:
@@ -3028,17 +3040,53 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
     uint dst_i = node_alloc( src_node.kind );
     bool src_is_parent = src_layout->node_is_parent( src_node );
     if ( src_is_parent ) {
+        bool converting_path = in_flatten && src_node.kind == NODE_KIND::PATH;
+        if ( converting_path ) nodes[dst_i].kind = NODE_KIND::BOUNDARY;
         nodes[dst_i].u.child_first_i = NULL_I;
         if ( copy_kind != COPY_KIND::ONE ) {
             //-----------------------------------------------------
             // Copy children.
             //-----------------------------------------------------
             uint dst_prev_i = NULL_I;
+            uint width = 0;
+            uint pathtype = 0;
             for( src_i = src_node.u.child_first_i; src_i != NULL_I; src_i = src_layout->nodes[src_i].sibling_i )
             {
-                if ( copy_kind != COPY_KIND::DEEP && copy_kind != COPY_KIND::FLATTEN && !node_is_scalar( src_layout->nodes[src_i] ) ) break;
+                const Node& src = src_layout->nodes[src_i];
 
-                dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, copy_kind, conflict_policy, M );
+                if ( copy_kind != COPY_KIND::DEEP && copy_kind != COPY_KIND::FLATTEN && !node_is_scalar( src ) ) break;
+
+                if ( converting_path ) {
+                    if ( src.kind == NODE_KIND::WIDTH ) {
+                        //-----------------------------------------------------
+                        // Save and skip
+                        //-----------------------------------------------------
+                        width = src.u.i;
+                        continue;
+                    
+                    } else if ( src.kind == NODE_KIND::PATHTYPE ) {
+                        //-----------------------------------------------------
+                        // Save and skip
+                        //-----------------------------------------------------
+                        pathtype = src.u.i;
+                        continue;
+
+                    } else if ( src.kind == NODE_KIND::XY ) {
+                        //-----------------------------------------------------
+                        // 
+                        //-----------------------------------------------------
+                        dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, copy_kind, conflict_policy, M, in_flatten );
+
+                    } else { 
+                        //-----------------------------------------------------
+                        // Copy
+                        //-----------------------------------------------------
+                        dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, copy_kind, conflict_policy, M, in_flatten );
+                    }
+
+                } else {
+                    dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, copy_kind, conflict_policy, M, in_flatten );
+                }
             }
         }
     } else {
