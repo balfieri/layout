@@ -140,9 +140,13 @@ public:
 
         real   dot( const real2 &v2 ) const;
         real   length( void ) const;
-        real   length_sqr( void ) const ;
+        real   length_sqr( void ) const;
         real2& normalize( void );
         real2  normalized( void ) const;
+        bool   colinear( const real2& p2, const real2& p3 ) const; // returns true if 3 points are colinear
+        int    orientation( const real2& p2, const real2& p3 ) const;  // 0=colinear, 1=clockwise, 2=counterclockwise
+        bool   intersects( const real2& p2, const real2& p3, const real2& p4 ) const;
+        bool   intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const;
         real2  operator + ( const real2& v ) const;
         real2  operator - ( const real2& v ) const;
         real2  operator * ( const real2& v ) const;
@@ -1676,6 +1680,83 @@ inline Layout::real2 Layout::real2::normalized( void ) const
     return *this / length();
 }
 
+inline bool Layout::real2::colinear( const real2& p2, const real2& p3 ) const
+{
+    const real2& p1 = *this;
+
+    return p2.c[0] <= std::max( p1.c[0], p3.c[0] ) && p2.c[0] >= std::min( p1.c[0], p3.c[0] ) &&
+           p2.c[1] <= std::max( p1.c[1], p3.c[1] ) && p2.c[1] >= std::min( p1.c[1], p3.c[1] );
+}
+
+inline int Layout::real2::orientation( const real2& p2, const real2& p3 ) const
+{
+    const real2& p1 = *this;
+
+    // See https://www.geeksforgeeks.org/orientation-3-ordered-points/
+    // for details of below formula.
+    //
+    real val = (p2.c[1] - p1.c[1]) * (p3.c[0] - p2.c[0]) -
+               (p2.c[0] - p1.c[0]) * (p3.c[1] - p2.c[1]);
+
+    return (val == 0) ? 0 :     // colinear
+           (val >  0) ? 1 : 2;  // clockwise or counterclockwise
+}
+
+inline bool Layout::real2::intersects( const real2& p2, const real2& p3, const real2& p4 ) const
+{
+    const real2& p1 = *this;
+
+    // Find the four orientations needed for general and special cases
+    int o1 = p1.orientation( p2, p3 );
+    int o2 = p1.orientation( p2, p4 );
+    int o3 = p3.orientation( p4, p1 );
+    int o4 = p3.orientation( p4, p2 );
+
+    // General case
+    if ( o1 != o2 && o3 != o4 ) return true;
+
+    // Special Cases
+    // p1, p2 and p3 are colinear and p3 lies on segment p1p2
+    if ( o1 == 0 && p1.colinear( p3, p2 ) ) return true;
+
+    // p1, p2 and p4 are colinear and p4 lies on segment p1p2
+    if ( o2 == 0 && p1.colinear( p4, p2 ) ) return true;
+
+    // p3, p4 and p1 are colinear and p1 lies on segment p3p4
+    if ( o3 == 0 && p3.colinear( p1, p4 ) ) return true; 
+
+    // p3, p4 and p2 are colinear and p2 lies on segment p3p4
+    if ( o4 == 0 && p3.colinear( p2, p4 ) ) return true;
+
+    return false; 
+}
+
+inline bool Layout::real2::intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const
+{
+    const real2& p1 = *this;
+
+    // Line (p1, p2) is represented as a1x + b1y = c1 
+    real  a1 = p2.c[1] - p1.c[1];
+    real  b1 = p1.c[0] - p2.c[0];
+    real  c1 = a1*p1.c[0] + b1*p1.c[1];
+
+    // Line (p3, p4) is represented as a2x + b2y = c2 
+    real  a2 = p4.c[1] - p3.c[1];
+    real  b2 = p3.c[0] - p4.c[0];
+    real  c2 = a2*p3.c[0] + b2*p3.c[1];
+  
+    real determinant = a1*b2 - a2*b1; 
+  
+    if ( determinant == 0 ) {
+        // parallel lines
+        return false;
+    } else {
+        ip.c[0] = (b2*c1 - b1*c2) / determinant; 
+        ip.c[1] = (a1*c2 - a2*c1) / determinant; 
+        return true;
+    } 
+}
+
 inline Layout::real2 Layout::real2::operator + ( const Layout::real2& v2 ) const
 {
     real2 r;
@@ -3073,7 +3154,10 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
 
                     } else if ( src.kind == NODE_KIND::XY ) {
                         //-----------------------------------------------------
-                        // 
+                        // 1) Start at the first point, but extend backwards width/2
+                        //    for pathtype 1 and pathtype 2.
+                        // 2) Go to the right bottom corner (gradually for rounded).
+                        // 3) Now extend parallel to the original line toward the right top corner.
                         //-----------------------------------------------------
                         dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, copy_kind, conflict_policy, M, in_flatten );
 
