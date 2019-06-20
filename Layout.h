@@ -148,6 +148,7 @@ public:
         bool   lines_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const;
         bool   segments_intersect( const real2& p2, const real2& p3, const real2& p4 ) const;
         bool   segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const;
+        void   perpendicular_segment( const real2& p2, real length, real2& p3, real2& p4 ) const;  // (p2, p3) will pass through p1
         real2  operator + ( const real2& v ) const;
         real2  operator - ( const real2& v ) const;
         real2  operator * ( const real2& v ) const;
@@ -1764,6 +1765,17 @@ inline bool Layout::real2::segments_intersection( const real2& p2, const real2& 
     return p1.lines_intersection( p2, p3, p4, ip ) &&
            ip.on_segment( p1, p2 ) && 
            ip.on_segment( p3, p4 );
+}
+
+void Layout::real2::perpendicular_segment( const real2& p2, real length, real2& p3, real2& p4 ) const
+{
+    const real2& p1 = *this;
+
+    real2 dxy = p1 - p2;
+    dxy.normalize();
+    real l2 = length / 2.0;
+    p3 = p1 + real2(  l2*dxy.c[1], -l2*dxy.c[0] );
+    p4 = p1 + real2( -l2*dxy.c[1],  l2*dxy.c[0] );
 }
 
 inline Layout::real2 Layout::real2::operator + ( const Layout::real2& v2 ) const
