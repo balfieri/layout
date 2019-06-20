@@ -143,10 +143,11 @@ public:
         real   length_sqr( void ) const;
         real2& normalize( void );
         real2  normalized( void ) const;
-        bool   colinear( const real2& p2, const real2& p3 ) const; // returns true if 3 points are colinear
+        bool   on_segment( const real2& p2, const real2& p3 ) const; // returns true if this point is on line segment (p2, p3)
         int    orientation( const real2& p2, const real2& p3 ) const;  // 0=colinear, 1=clockwise, 2=counterclockwise
-        bool   intersects( const real2& p2, const real2& p3, const real2& p4 ) const;
-        bool   intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const;
+        bool   lines_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const;
+        bool   segments_intersect( const real2& p2, const real2& p3, const real2& p4 ) const;
+        bool   segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const;
         real2  operator + ( const real2& v ) const;
         real2  operator - ( const real2& v ) const;
         real2  operator * ( const real2& v ) const;
@@ -1680,12 +1681,12 @@ inline Layout::real2 Layout::real2::normalized( void ) const
     return *this / length();
 }
 
-inline bool Layout::real2::colinear( const real2& p2, const real2& p3 ) const
+inline bool Layout::real2::on_segment( const real2& p2, const real2& p3 ) const
 {
     const real2& p1 = *this;
 
-    return p2.c[0] <= std::max( p1.c[0], p3.c[0] ) && p2.c[0] >= std::min( p1.c[0], p3.c[0] ) &&
-           p2.c[1] <= std::max( p1.c[1], p3.c[1] ) && p2.c[1] >= std::min( p1.c[1], p3.c[1] );
+    return p1.c[0] <= std::max( p2.c[0], p3.c[0] ) && p1.c[0] >= std::min( p2.c[0], p3.c[0] ) &&
+           p1.c[1] <= std::max( p2.c[1], p3.c[1] ) && p1.c[1] >= std::min( p2.c[1], p3.c[1] );
 }
 
 inline int Layout::real2::orientation( const real2& p2, const real2& p3 ) const
@@ -1702,7 +1703,7 @@ inline int Layout::real2::orientation( const real2& p2, const real2& p3 ) const
            (val >  0) ? 1 : 2;  // clockwise or counterclockwise
 }
 
-inline bool Layout::real2::intersects( const real2& p2, const real2& p3, const real2& p4 ) const
+inline bool Layout::real2::segments_intersect( const real2& p2, const real2& p3, const real2& p4 ) const
 {
     const real2& p1 = *this;
 
@@ -1717,21 +1718,21 @@ inline bool Layout::real2::intersects( const real2& p2, const real2& p3, const r
 
     // Special Cases
     // p1, p2 and p3 are colinear and p3 lies on segment p1p2
-    if ( o1 == 0 && p1.colinear( p3, p2 ) ) return true;
+    if ( o1 == 0 && p3.on_segment( p1, p2 ) ) return true;
 
     // p1, p2 and p4 are colinear and p4 lies on segment p1p2
-    if ( o2 == 0 && p1.colinear( p4, p2 ) ) return true;
+    if ( o2 == 0 && p4.on_segment( p1, p2 ) ) return true;
 
     // p3, p4 and p1 are colinear and p1 lies on segment p3p4
-    if ( o3 == 0 && p3.colinear( p1, p4 ) ) return true; 
+    if ( o3 == 0 && p1.on_segment( p3, p4 ) ) return true; 
 
     // p3, p4 and p2 are colinear and p2 lies on segment p3p4
-    if ( o4 == 0 && p3.colinear( p2, p4 ) ) return true;
+    if ( o4 == 0 && p2.on_segment( p3, p4 ) ) return true;
 
     return false; 
 }
 
-inline bool Layout::real2::intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const
+inline bool Layout::real2::lines_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const
 {
     const real2& p1 = *this;
 
@@ -1748,13 +1749,21 @@ inline bool Layout::real2::intersection( const real2& p2, const real2& p3, const
     real determinant = a1*b2 - a2*b1; 
   
     if ( determinant == 0 ) {
-        // parallel lines
-        return false;
+        return false;   // parallel
     } else {
         ip.c[0] = (b2*c1 - b1*c2) / determinant; 
         ip.c[1] = (a1*c2 - a2*c1) / determinant; 
         return true;
     } 
+}
+
+inline bool Layout::real2::segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const
+{
+    const real2& p1 = *this;
+
+    return p1.lines_intersection( p2, p3, p4, ip ) &&
+           ip.on_segment( p1, p2 ) && 
+           ip.on_segment( p3, p4 );
 }
 
 inline Layout::real2 Layout::real2::operator + ( const Layout::real2& v2 ) const
