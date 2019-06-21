@@ -3202,16 +3202,50 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
 
                     } else if ( src.kind == NODE_KIND::XY ) {
                         //-----------------------------------------------------
-                        // 1) Start at the first point, but extend backwards width/2
-                        //    for pathtype 1 and pathtype 2.
-                        // 2) Go to the right bottom corner (gradually for rounded).
-                        // 3) Now extend parallel to the original line toward the right top corner.
+                        // Add each line segment separately.
+                        //
+                        // For pathtype 0:
+                        //     Get parallel segments width/2 from the src segment on each side.
+                        //     Add a rectangle through these points.
+                        //
+                        // For pathtype 1:
+                        //     Pad the src segment by width/2 on each end.
+                        //     Goto pathtype 1.
+                        //
+                        // For pathtype 2:
+                        //     Get parallel segments as for pathtype 0.
+                        //     Then extend the src segment to get the two arc endpoints.
+                        //     Add 4 arcs from arc endpoints to parallel segment endpoints.
+                        //     The arcs are tesselated.
+                        //
+                        // Remember to add a final segment from the last point back to the first of the new BOUNDARY.
                         //-----------------------------------------------------
-                        dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, copy_kind, conflict_policy, M, in_flatten );
+                        real2 p0;
+                        real2 p1;
+                        bool have_x = false;
+                        bool have_p0 = false;
+                        for( uint src_xy_i = src.u.child_first_i; src_xy_i != NULL_I; src_xy_i = src_layout->nodes[src_xy_i].sibling_i )
+                        {
+                            const Node& src_xy = src_layout->nodes[src_xy_i];
+                            lassert( src_xy.kind == NODE_KIND::INT, "XY coordinate should be an INT" );
+                            real xy_r = real(src_xy.u.i) * src_layout->gdsii_units_user;
+                            if ( !have_x ) {
+                                p1.c[0] = xy_r;
+                                have_x = true;
+                            } else {    
+                                p1.c[1] = xy_r;
+                                if ( have_p0 ) {
+                                    lassert( pathtype >= 0 && pathtype <= 2, "pathtype is out of range 0 .. 2" );      
+                                }
+                                p0 = p1;
+                                have_x = false;
+                                have_p0 = true; 
+                            } 
+                        }
 
                     } else { 
                         //-----------------------------------------------------
-                        // Copy
+                        // Copy node unmodified, such as a DATATYPE or LAYER.
                         //-----------------------------------------------------
                         dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, copy_kind, conflict_policy, M, in_flatten );
                     }
