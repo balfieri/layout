@@ -3235,8 +3235,46 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                             } else {    
                                 p1.c[1] = xy_r;
                                 if ( have_p0 ) {
+                                    // see comments above 
                                     lassert( pathtype >= 0 && pathtype <= 2, "pathtype is out of range 0 .. 2" );      
+                                    lassert( width >= 0.0, "PATH WIDTH should be >= 0.0" );
+                                    real2 s0 = p0;
+                                    real2 s1 = p1;
+                                    if ( pathtype == 1 ) p0.pad_segment( p1, width/2.0, s0, s1 );        
+                                    real2 s2, s3, s4, s5;
+                                    s0.parallel_segment( s1,  width/2.0, s2, s3 );
+                                    s0.parallel_segment( s1, -width/2.0, s4, s5 );
+                                    if ( pathtype == 2 ) p0.pad_segment( p1, width/2.0, s0, s1 );        
+
+                                    real2 vertex[10];
+                                    uint  c = 0;
+                                    vertex[c++] = s2;
+                                    vertex[c++] = s3;
+                                    if ( pathtype == 2 ) vertex[c++] = s1;
+                                    vertex[c++] = s5;
+                                    vertex[c++] = s4;
+                                    if ( pathtype == 2 ) vertex[c++] = s0;
+                                    vertex[c++] = s2;  // close the loop
+
+                                    uint dst_xy_i = node_alloc( NODE_KIND::XY );
+                                    if ( dst_prev_i != NULL_I ) nodes[dst_prev_i].sibling_i = dst_xy_i;
+                                    dst_prev_i = dst_xy_i;
+
+                                    uint dst_xy_prev_i = NULL_I;
+                                    for( uint cc = 0; cc < c; cc++ )
+                                    {
+                                        uint dst_x_i = node_alloc( NODE_KIND::INT );
+                                        nodes[dst_x_i].u.i = vertex[cc].c[0] / gdsii_units_user;        
+                                        if ( dst_xy_prev_i != NULL_I ) nodes[dst_xy_prev_i].sibling_i = dst_x_i;
+                                        dst_xy_prev_i = dst_x_i;
+                                        
+                                        uint dst_y_i = node_alloc( NODE_KIND::INT );
+                                        nodes[dst_y_i].u.i = vertex[cc].c[1] / gdsii_units_user;        
+                                        nodes[dst_xy_prev_i].sibling_i = dst_y_i;
+                                        dst_xy_prev_i = dst_y_i;
+                                    }
                                 }
+
                                 p0 = p1;
                                 have_x = false;
                                 have_p0 = true; 
