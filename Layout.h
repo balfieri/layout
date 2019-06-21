@@ -3163,12 +3163,10 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
     //-----------------------------------------------------
     // Copy the main node.
     //-----------------------------------------------------
-    uint dst_i = node_alloc( src_node.kind );
+    bool converting_path = in_flatten && src_node.kind == NODE_KIND::PATH;
+    uint dst_i = converting_path ? NULL_I : node_alloc( src_node.kind );
     bool src_is_parent = src_layout->node_is_parent( src_node );
     if ( src_is_parent ) {
-        bool converting_path = in_flatten && src_node.kind == NODE_KIND::PATH;
-        if ( converting_path ) nodes[dst_i].kind = NODE_KIND::BOUNDARY;
-        nodes[dst_i].u.child_first_i = NULL_I;
         if ( copy_kind != COPY_KIND::ONE ) {
             //-----------------------------------------------------
             // Copy children.
@@ -3176,6 +3174,8 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
             uint dst_prev_i = NULL_I;
             uint width = 0;
             uint pathtype = 0;
+            uint datatype = NULL_I;
+            uint layer = NULL_I;
             for( src_i = src_node.u.child_first_i; src_i != NULL_I; src_i = src_layout->nodes[src_i].sibling_i )
             {
                 const Node& src = src_layout->nodes[src_i];
@@ -3198,6 +3198,20 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                         // Save and skip
                         //-----------------------------------------------------
                         pathtype = src.u.i;
+                        continue;
+
+                    } else if ( src.kind == NODE_KIND::DATATYPE ) {
+                        //-----------------------------------------------------
+                        // Save and skip
+                        //-----------------------------------------------------
+                        datatype = src.u.i;
+                        continue;
+
+                    } else if ( src.kind == NODE_KIND::LAYER ) {
+                        //-----------------------------------------------------
+                        // Save and skip
+                        //-----------------------------------------------------
+                        layer = src.u.i;
                         continue;
 
                     } else if ( src.kind == NODE_KIND::XY ) {
@@ -3256,6 +3270,8 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                                     if ( pathtype == 2 ) vertex[c++] = s0;
                                     vertex[c++] = s2;  // close the loop
 
+                                    // TODO: BOUNDARY, LAYER, DATATYPE, and then XY
+
                                     uint dst_xy_i = node_alloc( NODE_KIND::XY );
                                     if ( dst_prev_i != NULL_I ) nodes[dst_prev_i].sibling_i = dst_xy_i;
                                     dst_prev_i = dst_xy_i;
@@ -3282,11 +3298,10 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                         }
 
                     } else { 
-                        //-----------------------------------------------------
-                        // Copy node unmodified, such as a DATATYPE or LAYER.
-                        //-----------------------------------------------------
-                        dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, copy_kind, conflict_policy, M, in_flatten );
+                        lassert( false, "unexpected PATH child kind " + str(src.kind) );
                     }
+
+                    return dst_i;
 
                 } else {
                     dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, copy_kind, conflict_policy, M, in_flatten );
