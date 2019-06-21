@@ -148,7 +148,9 @@ public:
         bool   lines_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const;
         bool   segments_intersect( const real2& p2, const real2& p3, const real2& p4 ) const;
         bool   segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const;
+        void   pad_segment( const real2& p2, real pad, real2& p1_new, real2& p2_new ) const;       // (p1_new, p2_new) are new endpoints
         void   perpendicular_segment( const real2& p2, real length, real2& p3, real2& p4 ) const;  // (p2, p3) will pass through p1
+        void   parallel_segment( const real2& p2, real dist, real2& p1_new, real2& p2_new ) const; // (p1_new, p2_new) are new endpoints
         real2  operator + ( const real2& v ) const;
         real2  operator - ( const real2& v ) const;
         real2  operator * ( const real2& v ) const;
@@ -1767,6 +1769,16 @@ inline bool Layout::real2::segments_intersection( const real2& p2, const real2& 
            ip.on_segment( p3, p4 );
 }
 
+void Layout::real2::pad_segment( const real2& p2, real pad, real2& p1_new, real2& p2_new ) const
+{
+    const real2& p1 = *this;
+
+    real2 dxy = p1 - p2;
+    dxy.normalize();
+    p1_new = p1 + real2(  pad*dxy.c[0],  pad*dxy.c[1] );
+    p2_new = p2 + real2( -pad*dxy.c[0], -pad*dxy.c[1] );
+}
+
 void Layout::real2::perpendicular_segment( const real2& p2, real length, real2& p3, real2& p4 ) const
 {
     const real2& p1 = *this;
@@ -1776,6 +1788,18 @@ void Layout::real2::perpendicular_segment( const real2& p2, real length, real2& 
     real l2 = length / 2.0;
     p3 = p1 + real2(  l2*dxy.c[1], -l2*dxy.c[0] );
     p4 = p1 + real2( -l2*dxy.c[1],  l2*dxy.c[0] );
+}
+
+void Layout::real2::parallel_segment( const real2& p2, real dist, real2& p1_new, real2& p2_new ) const
+{
+    const real2& p1 = *this;
+    const real2 v12 = p2 - p1;
+
+    real2 p3;
+    real2 p4;
+    perpendicular_segment( p2, std::abs(dist) * 2.0, p3, p4 );
+    p1_new = (dist >= 0.0) ? p3 : p4;
+    p2_new = p1_new + v12;
 }
 
 inline Layout::real2 Layout::real2::operator + ( const Layout::real2& v2 ) const
@@ -3159,6 +3183,9 @@ inline uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_la
                 if ( copy_kind != COPY_KIND::DEEP && copy_kind != COPY_KIND::FLATTEN && !node_is_scalar( src ) ) break;
 
                 if ( converting_path ) {
+                    //-----------------------------------------------------
+                    // PATH -> BOUNDARY conversion
+                    //-----------------------------------------------------
                     if ( src.kind == NODE_KIND::WIDTH ) {
                         //-----------------------------------------------------
                         // Save and skip
