@@ -443,9 +443,11 @@ public:
     uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
     std::string node_name( const Node& node ) const;            // find name for node
     uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
+    uint        node_width( const Node& node ) const;           // find WIDTH value for node 
     uint        node_bah_layer( const Node& node ) const;       // find LAYER value for flattened node and get layer to use for BAH
     uint        node_xy_i( const Node& node ) const;            // find index of XY node within node
-    uint        node_pathtype( const Node& node ) const;        // find PATHTYPE for PATH node and return number
+    uint        node_pathtype( const Node& node ) const;        // find PATHTYPE for node and return number (default: 0)
+    uint        node_datatype( const Node& node ) const;        // find DATATYPE for node and return number (default: 0)
 
     static std::string  str( NODE_KIND kind );
     NODE_KIND           hier_end_kind( NODE_KIND kind ) const;      // returns corresponding end kind for hier kind
@@ -2316,6 +2318,27 @@ inline uint Layout::node_layer( const Node& node ) const
     }
 }
 
+inline uint Layout::node_width( const Node& node ) const
+{
+    if ( node.kind == NODE_KIND::WIDTH ) {
+        uint int_node_i = node.u.child_first_i;
+        lassert( int_node_i != NULL_I && nodes[int_node_i].kind == NODE_KIND::INT && nodes[int_node_i].sibling_i == NULL_I, "bad WIDTH node" );
+        return nodes[int_node_i].u.i;
+    } else {
+        lassert( node_is_element( node ), "node_width: node is not a WIDTH or an ELEMENT" );
+        for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i ) 
+        {
+            if ( nodes[child_i].kind == NODE_KIND::WIDTH ) {
+                uint int_node_i = nodes[child_i].u.child_first_i;
+                lassert( int_node_i != NULL_I && nodes[int_node_i].kind == NODE_KIND::INT && nodes[int_node_i].sibling_i == NULL_I, "bad WIDTH node" );
+                return nodes[int_node_i].u.i;
+            }
+        }
+        lassert( false, "could not find width for node" );
+        return NULL_I;
+    }
+}
+
 inline uint Layout::node_bah_layer( const Node& node ) const
 {
     uint layer_i = node_layer( node );
@@ -2418,10 +2441,33 @@ inline uint Layout::node_xy_i( const Node& node ) const
 
 inline uint Layout::node_pathtype( const Node& node ) const
 {
-    lassert( node.kind == NODE_KIND::PATH, "pathtype() should have been called on a PATH node" );
-    for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i ) 
-    {
-        if ( nodes[child_i].kind == NODE_KIND::PATHTYPE ) return nodes[child_i].u.i;
+    if ( node.kind == NODE_KIND::PATHTYPE ) {
+        uint child_i = node.u.child_first_i;
+        lassert( child_i != NULL_I, "PATHTYPE node has no child INT" );
+        lassert( nodes[child_i].kind == NODE_KIND::INT, "PATHTYPE child node is not an INT" );
+        return nodes[child_i].u.i;
+    } else {    
+        lassert( node.kind == NODE_KIND::PATH, "pathtype() should have been called on a PATH node" );
+        for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i ) 
+        {
+            if ( nodes[child_i].kind == NODE_KIND::PATHTYPE ) return nodes[child_i].u.i;
+        }
+    }
+    return 0;   // default
+}
+
+inline uint Layout::node_datatype( const Node& node ) const
+{
+    if ( node.kind == NODE_KIND::DATATYPE ) {
+        uint child_i = node.u.child_first_i;
+        lassert( child_i != NULL_I, "DATATYPE node has no child INT" );
+        lassert( nodes[child_i].kind == NODE_KIND::INT, "DATATYPE child node is not an INT" );
+        return nodes[child_i].u.i;
+    } else {    
+        for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i ) 
+        {
+            if ( nodes[child_i].kind == NODE_KIND::DATATYPE ) return nodes[child_i].u.i;
+        }
     }
     return 0;   // default
 }
@@ -3261,10 +3307,10 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
 
         switch( src.kind )
         {
-            case NODE_KIND::WIDTH:              width = real(src.u.i) * gdsii_units_user;       break;
-            case NODE_KIND::PATHTYPE:           pathtype = src.u.i;                             break; 
-            case NODE_KIND::DATATYPE:           datatype = src.u.i;                             break; 
-            case NODE_KIND::LAYER:              layer = src.u.i;                                break;
+            case NODE_KIND::WIDTH:              width    = src_layout->node_width( src ) * gdsii_units_user; break;
+            case NODE_KIND::PATHTYPE:           pathtype = src_layout->node_pathtype( src );    break;
+            case NODE_KIND::DATATYPE:           datatype = src_layout->node_datatype( src );    break;
+            case NODE_KIND::LAYER:              layer    = src_layout->node_layer( src );       break;
             case NODE_KIND::XY:
             {
                 //-----------------------------------------------------
