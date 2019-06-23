@@ -34,8 +34,13 @@ int main( int argc, const char * argv[] )
     file = file_base + ".exported.gds";
     std::cout << "Writing " + file + "...\n";
     layout->write( file );
-    delete layout;
+
+    file = file_base + ".exported.raw";
+    std::cout << "Writing " + file + "...\n";
+    layout->write( file );
 
     std::cout << std::flush;
+
+    delete layout;
     return 0; 
 }
