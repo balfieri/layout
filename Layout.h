@@ -3233,7 +3233,7 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
     // First record the width, pathtype, etc.
     //-----------------------------------------------------
     lassert( src_layout->nodes[src_i].kind == NODE_KIND::PATH, "node_convert_path_to_boundary not called on PATH node" );
-    uint width = 0;
+    real width = 0;
     uint pathtype = 0;
     uint datatype = NULL_I;
     uint layer = NULL_I;
@@ -3245,10 +3245,10 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
 
         switch( src.kind )
         {
-            case NODE_KIND::WIDTH:              width = src.u.i;        break;
-            case NODE_KIND::PATHTYPE:           pathtype = src.u.i;     break; 
-            case NODE_KIND::DATATYPE:           datatype = src.u.i;     break; 
-            case NODE_KIND::LAYER:              layer = src.u.i;        break;
+            case NODE_KIND::WIDTH:              width = real(src.u.i) * gdsii_units_user;       break;
+            case NODE_KIND::PATHTYPE:           pathtype = src.u.i;                             break; 
+            case NODE_KIND::DATATYPE:           datatype = src.u.i;                             break; 
+            case NODE_KIND::LAYER:              layer = src.u.i;                                break;
             case NODE_KIND::XY:
             {
                 //-----------------------------------------------------
@@ -3296,7 +3296,7 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
                             s0.parallel_segment( s1, -width/2.0, s4, s5 );
                             if ( pathtype == 2 ) p0.pad_segment( p1, width/2.0, s0, s1 );        
 
-                            real2 vertex[10];
+                            real2 vertex[14];
                             uint  c = 0;
                             vertex[c++] = s2;
                             vertex[c++] = s3;
@@ -3305,6 +3305,7 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
                             vertex[c++] = s4;
                             if ( pathtype == 2 ) vertex[c++] = s0;
                             vertex[c++] = s2;  // close the loop
+                            lassert( c <= 14, "oops" );
 
                             //-----------------------------------------------------
                             // We have what we need to make the per-segment BOUNDARY,
