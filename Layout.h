@@ -459,8 +459,6 @@ public:
     };
 
     uint        node_alloc( NODE_KIND kind );                   // allocate a node of the given kind
-    uint        node_flatten_ref( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, 
-                                  CONFLICT_POLICY conflict_policy, const Matrix& M );
     uint        node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND copy_kind, 
                            CONFLICT_POLICY conflict_policy=CONFLICT_POLICY::MERGE_NONE_KEEP_ALL, const Matrix& M = Matrix(), bool in_flatten=false );
     void        node_timestamp( Node& node );                   // adds timestamp fields to node
@@ -538,6 +536,10 @@ private:
     bool node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache, std::string indent_str ) const;
     uint inst_layout_node( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, 
                            uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
+    uint node_flatten_ref( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, CONFLICT_POLICY conflict_policy, const Matrix& M );
+    uint node_convert_path_to_boundary( uint parent_i, uint last_i, const Layout * src_layout, uint src_i,
+                           CONFLICT_POLICY conflict_policy, const Matrix& M );
+    void node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, CONFLICT_POLICY conflict_policy, const Matrix& M );
 
     // BAH 
     uint bah_node_alloc( void );
@@ -2932,6 +2934,97 @@ inline uint Layout::node_alloc( NODE_KIND kind )
     return ni;
 }
 
+uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND copy_kind, 
+                        CONFLICT_POLICY conflict_policy, const Matrix& M, bool in_flatten )
+{
+    const Node& src_node = src_layout->nodes[src_i];
+    if ( copy_kind == COPY_KIND::FLATTEN ) {
+        //-----------------------------------------------------
+        // Flattening handles certain nodes differently than hier copies.
+        //-----------------------------------------------------
+        switch( src_node.kind )
+        {
+            case NODE_KIND::SREF:
+            case NODE_KIND::AREF:
+                return node_flatten_ref( parent_i, last_i, src_layout, src_i, conflict_policy, M );
+
+            case NODE_KIND::STRNAME:
+                if ( in_flatten ) return NULL_I;  // blow this off
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    uint dst_first_i;
+    if ( in_flatten && src_node.kind == NODE_KIND::PATH ) {
+        //-----------------------------------------------------
+        // Convert PATH to BOUNDARY     
+        //-----------------------------------------------------
+        dst_first_i = node_convert_path_to_boundary( parent_i, last_i, src_layout, src_i, conflict_policy, M );
+    } else {
+        //-----------------------------------------------------
+        // Normal Copy
+        //-----------------------------------------------------
+        dst_first_i = node_alloc( src_node.kind );
+        if ( src_layout->node_is_parent( src_node ) ) { 
+            if ( copy_kind != COPY_KIND::ONE ) {
+                //-----------------------------------------------------
+                // Copy children.
+                //-----------------------------------------------------
+                uint dst_prev_i = NULL_I;
+                for( src_i = src_node.u.child_first_i; src_i != NULL_I; src_i = src_layout->nodes[src_i].sibling_i )
+                {
+                    const Node& src = src_layout->nodes[src_i];
+
+                    if ( copy_kind == COPY_KIND::DEEP || copy_kind == COPY_KIND::FLATTEN || node_is_scalar( src ) ) {
+                        dst_prev_i = node_copy( dst_first_i, dst_prev_i, src_layout, src_i, copy_kind, conflict_policy, M, in_flatten );
+                    } else {
+                        break;
+                    }
+                }
+            }
+        } else if ( node_is_string( src_node ) ) {
+            // STR
+            nodes[dst_first_i].u.s_i = str_get( &src_layout->strings[src_node.u.s_i] );
+
+        } else {
+            // INT, REAL
+            nodes[dst_first_i].u = src_node.u;
+        }
+    }
+
+    //-----------------------------------------------------
+    // For each dst_i (could be more than one for PATH to BOUNDARY conversion):
+    //-----------------------------------------------------
+    for( uint dst_i = dst_first_i; dst_i != NULL_I; dst_i = nodes[dst_i].sibling_i )
+    {
+        //-----------------------------------------------------
+        // Connect the new dst_i node to parent_i or last_i.
+        //-----------------------------------------------------
+        if ( last_i != NULL_I ) {
+            lassert( nodes[last_i].sibling_i == NULL_I || nodes[last_i].sibling_i == dst_i, "node_copy: nodes[last_i] sibling_i is already set" ); 
+            lassert( parent_i == NULL_I || nodes[parent_i].u.child_first_i != NULL_I, "node_copy: nodes[parent_i] is not set but last_i is set" );
+            nodes[last_i].sibling_i = dst_i;
+        } else if ( parent_i != NULL_I ) {
+            lassert( nodes[parent_i].u.child_first_i == NULL_I, "node_copy: nodes[parent_i] child_first_i is already set but last_i is NULL_I" ); 
+            nodes[parent_i].u.child_first_i = dst_i;
+        }
+        last_i = dst_i;
+
+        if ( nodes[dst_i].kind == NODE_KIND::XY ) {
+            //-----------------------------------------------------
+            // Transform each X,Y pair by M.
+            // Also keep track of the bounding rectangle if we're flattening.
+            //-----------------------------------------------------
+            node_transform_xy( parent_i, dst_i, copy_kind, conflict_policy, M );
+        }
+    }
+
+    return last_i;
+}
+
 uint Layout::node_flatten_ref( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, CONFLICT_POLICY conflict_policy, const Matrix& M )
 {
     //-----------------------------------------------------
@@ -3131,260 +3224,219 @@ uint Layout::node_flatten_ref( uint parent_i, uint last_i, const Layout * src_la
     return last_i;
 }
 
-uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND copy_kind, 
-                        CONFLICT_POLICY conflict_policy, const Matrix& M, bool in_flatten )
+uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const Layout * src_layout, uint src_i,
+                                            CONFLICT_POLICY conflict_policy, const Matrix& M )
 {
-    const Node& src_node = src_layout->nodes[src_i];
-    if ( copy_kind == COPY_KIND::FLATTEN ) {
-        //-----------------------------------------------------
-        // Flattening handles certain nodes differently than hier copies.
-        //-----------------------------------------------------
-        switch( src_node.kind )
+    //-----------------------------------------------------
+    // PATH -> BOUNDARY conversion
+    // 
+    // First record the width, pathtype, etc.
+    //-----------------------------------------------------
+    lassert( src_layout->nodes[src_i].kind == NODE_KIND::PATH, "node_convert_path_to_boundary not called on PATH node" );
+    uint width = 0;
+    uint pathtype = 0;
+    uint datatype = NULL_I;
+    uint layer = NULL_I;
+    uint dst_first_i = NULL_I;
+    uint dst_prev_i = NULL_I;
+    for( src_i = src_layout->nodes[src_i].u.child_first_i; src_i != NULL_I; src_i = src_layout->nodes[src_i].sibling_i )
+    {
+        const Node& src = src_layout->nodes[src_i];
+
+        switch( src.kind )
         {
-            case NODE_KIND::SREF:
-            case NODE_KIND::AREF:
-                return node_flatten_ref( parent_i, last_i, src_layout, src_i, conflict_policy, M );
-
-            case NODE_KIND::STRNAME:
-                if ( in_flatten ) return NULL_I;  // blow this off
-                break;
-
-            default:
-                break;
-        }
-    }
-
-    //-----------------------------------------------------
-    // Copy the main node.
-    //-----------------------------------------------------
-    bool converting_path = in_flatten && src_node.kind == NODE_KIND::PATH;
-    uint dst_i = converting_path ? NULL_I : node_alloc( src_node.kind );
-    bool src_is_parent = src_layout->node_is_parent( src_node );
-    if ( src_is_parent ) {
-        if ( copy_kind != COPY_KIND::ONE ) {
-            //-----------------------------------------------------
-            // Copy children.
-            //-----------------------------------------------------
-            uint dst_prev_i = NULL_I;
-            uint width = 0;
-            uint pathtype = 0;
-            uint datatype = NULL_I;
-            uint layer = NULL_I;
-            for( src_i = src_node.u.child_first_i; src_i != NULL_I; src_i = src_layout->nodes[src_i].sibling_i )
+            case NODE_KIND::WIDTH:              width = src.u.i;        break;
+            case NODE_KIND::PATHTYPE:           pathtype = src.u.i;     break; 
+            case NODE_KIND::DATATYPE:           datatype = src.u.i;     break; 
+            case NODE_KIND::LAYER:              layer = src.u.i;        break;
+            case NODE_KIND::XY:
             {
-                const Node& src = src_layout->nodes[src_i];
+                //-----------------------------------------------------
+                // Add each line segment separately.
+                //
+                // For pathtype 0:
+                //     Get parallel segments width/2 from the src segment on each side.
+                //     Add a rectangle through these points.
+                //
+                // For pathtype 1:
+                //     Pad the src segment by width/2 on each end.
+                //     Goto pathtype 1.
+                //
+                // For pathtype 2:
+                //     Get parallel segments as for pathtype 0.
+                //     Then extend the src segment to get the two arc endpoints.
+                //     Add 4 arcs from arc endpoints to parallel segment endpoints.
+                //     The arcs are tesselated.
+                //
+                // Remember to add a final segment from the last point back to the first of the new BOUNDARY.
+                //-----------------------------------------------------
+                real2 p0;
+                real2 p1;
+                bool have_x = false;
+                bool have_p0 = false;
+                for( uint src_xy_i = src.u.child_first_i; src_xy_i != NULL_I; src_xy_i = src_layout->nodes[src_xy_i].sibling_i )
+                {
+                    const Node& src_xy = src_layout->nodes[src_xy_i];
+                    lassert( src_xy.kind == NODE_KIND::INT, "XY coordinate should be an INT" );
+                    real xy_r = real(src_xy.u.i) * src_layout->gdsii_units_user;
+                    if ( !have_x ) {
+                        p1.c[0] = xy_r;
+                        have_x = true;
+                    } else {    
+                        p1.c[1] = xy_r;
+                        if ( have_p0 ) {
+                            // see comments above 
+                            lassert( pathtype >= 0 && pathtype <= 2, "pathtype is out of range 0 .. 2" );      
+                            lassert( width >= 0.0, "PATH WIDTH should be >= 0.0" );
+                            real2 s0 = p0;
+                            real2 s1 = p1;
+                            if ( pathtype == 1 ) p0.pad_segment( p1, width/2.0, s0, s1 );        
+                            real2 s2, s3, s4, s5;
+                            s0.parallel_segment( s1,  width/2.0, s2, s3 );
+                            s0.parallel_segment( s1, -width/2.0, s4, s5 );
+                            if ( pathtype == 2 ) p0.pad_segment( p1, width/2.0, s0, s1 );        
 
-                if ( copy_kind != COPY_KIND::DEEP && copy_kind != COPY_KIND::FLATTEN && !node_is_scalar( src ) ) break;
+                            real2 vertex[10];
+                            uint  c = 0;
+                            vertex[c++] = s2;
+                            vertex[c++] = s3;
+                            if ( pathtype == 2 ) vertex[c++] = s1;
+                            vertex[c++] = s5;
+                            vertex[c++] = s4;
+                            if ( pathtype == 2 ) vertex[c++] = s0;
+                            vertex[c++] = s2;  // close the loop
 
-                if ( converting_path ) {
-                    //-----------------------------------------------------
-                    // PATH -> BOUNDARY conversion
-                    //-----------------------------------------------------
-                    if ( src.kind == NODE_KIND::WIDTH ) {
-                        //-----------------------------------------------------
-                        // Save and skip
-                        //-----------------------------------------------------
-                        width = src.u.i;
-                        continue;
-                    
-                    } else if ( src.kind == NODE_KIND::PATHTYPE ) {
-                        //-----------------------------------------------------
-                        // Save and skip
-                        //-----------------------------------------------------
-                        pathtype = src.u.i;
-                        continue;
+                            //-----------------------------------------------------
+                            // We have what we need to make the per-segment BOUNDARY,
+                            // so do it.
+                            //-----------------------------------------------------
+                            uint dst_i = node_alloc( NODE_KIND::BOUNDARY );
+                            if ( dst_first_i == NULL_I ) dst_first_i = dst_i;
+                            if ( dst_prev_i != NULL_I )  nodes[dst_prev_i].sibling_i = dst_i;
+                            dst_prev_i = dst_i;
 
-                    } else if ( src.kind == NODE_KIND::DATATYPE ) {
-                        //-----------------------------------------------------
-                        // Save and skip
-                        //-----------------------------------------------------
-                        datatype = src.u.i;
-                        continue;
+                            // LAYER
+                            lassert( layer != NULL_I, "PATH node has no LAYER child node" );
+                            uint dst_layer_i = node_alloc( NODE_KIND::LAYER );
+                            nodes[dst_layer_i].u.i = layer;
+                            nodes[dst_i].u.child_first_i = dst_layer_i;
 
-                    } else if ( src.kind == NODE_KIND::LAYER ) {
-                        //-----------------------------------------------------
-                        // Save and skip
-                        //-----------------------------------------------------
-                        layer = src.u.i;
-                        continue;
+                            uint dst_last_i = dst_layer_i;
+                            if ( datatype != NULL_I ) {
+                                // DATATYPE
+                                uint dst_datatype_i = node_alloc( NODE_KIND::DATATYPE );
+                                nodes[dst_datatype_i].u.i = datatype;
+                                nodes[dst_last_i].sibling_i = dst_datatype_i;
+                                dst_last_i = dst_datatype_i;
+                            }
 
-                    } else if ( src.kind == NODE_KIND::XY ) {
-                        //-----------------------------------------------------
-                        // Add each line segment separately.
-                        //
-                        // For pathtype 0:
-                        //     Get parallel segments width/2 from the src segment on each side.
-                        //     Add a rectangle through these points.
-                        //
-                        // For pathtype 1:
-                        //     Pad the src segment by width/2 on each end.
-                        //     Goto pathtype 1.
-                        //
-                        // For pathtype 2:
-                        //     Get parallel segments as for pathtype 0.
-                        //     Then extend the src segment to get the two arc endpoints.
-                        //     Add 4 arcs from arc endpoints to parallel segment endpoints.
-                        //     The arcs are tesselated.
-                        //
-                        // Remember to add a final segment from the last point back to the first of the new BOUNDARY.
-                        //-----------------------------------------------------
-                        real2 p0;
-                        real2 p1;
-                        bool have_x = false;
-                        bool have_p0 = false;
-                        for( uint src_xy_i = src.u.child_first_i; src_xy_i != NULL_I; src_xy_i = src_layout->nodes[src_xy_i].sibling_i )
-                        {
-                            const Node& src_xy = src_layout->nodes[src_xy_i];
-                            lassert( src_xy.kind == NODE_KIND::INT, "XY coordinate should be an INT" );
-                            real xy_r = real(src_xy.u.i) * src_layout->gdsii_units_user;
-                            if ( !have_x ) {
-                                p1.c[0] = xy_r;
-                                have_x = true;
-                            } else {    
-                                p1.c[1] = xy_r;
-                                if ( have_p0 ) {
-                                    // see comments above 
-                                    lassert( pathtype >= 0 && pathtype <= 2, "pathtype is out of range 0 .. 2" );      
-                                    lassert( width >= 0.0, "PATH WIDTH should be >= 0.0" );
-                                    real2 s0 = p0;
-                                    real2 s1 = p1;
-                                    if ( pathtype == 1 ) p0.pad_segment( p1, width/2.0, s0, s1 );        
-                                    real2 s2, s3, s4, s5;
-                                    s0.parallel_segment( s1,  width/2.0, s2, s3 );
-                                    s0.parallel_segment( s1, -width/2.0, s4, s5 );
-                                    if ( pathtype == 2 ) p0.pad_segment( p1, width/2.0, s0, s1 );        
+                            // XY
+                            uint dst_xy_i = node_alloc( NODE_KIND::XY );
+                            nodes[dst_last_i].sibling_i = dst_xy_i;
 
-                                    real2 vertex[10];
-                                    uint  c = 0;
-                                    vertex[c++] = s2;
-                                    vertex[c++] = s3;
-                                    if ( pathtype == 2 ) vertex[c++] = s1;
-                                    vertex[c++] = s5;
-                                    vertex[c++] = s4;
-                                    if ( pathtype == 2 ) vertex[c++] = s0;
-                                    vertex[c++] = s2;  // close the loop
+                            uint dst_xy_prev_i = NULL_I;
+                            for( uint cc = 0; cc < c; cc++ )
+                            {
+                                uint dst_x_i = node_alloc( NODE_KIND::INT );
+                                nodes[dst_x_i].u.i = vertex[cc].c[0] / gdsii_units_user;        
+                                if ( dst_xy_prev_i == NULL_I ) {
+                                    nodes[dst_xy_i].u.child_first_i = dst_x_i;
+                                } else {
+                                    nodes[dst_xy_prev_i].sibling_i = dst_x_i;
+                                } 
+                                
+                                uint dst_y_i = node_alloc( NODE_KIND::INT );
+                                nodes[dst_y_i].u.i = vertex[cc].c[1] / gdsii_units_user;        
+                                nodes[dst_x_i].sibling_i = dst_y_i;
+                                dst_xy_prev_i = dst_y_i;
+                            }
 
-                                    // TODO: BOUNDARY, LAYER, DATATYPE, and then XY
-                                    // Then let the whole thing get copied and transformed below        
-
-                                    uint dst_xy_i = node_alloc( NODE_KIND::XY );
-                                    if ( dst_prev_i != NULL_I ) nodes[dst_prev_i].sibling_i = dst_xy_i;
-                                    dst_prev_i = dst_xy_i;
-
-                                    uint dst_xy_prev_i = NULL_I;
-                                    for( uint cc = 0; cc < c; cc++ )
-                                    {
-                                        uint dst_x_i = node_alloc( NODE_KIND::INT );
-                                        nodes[dst_x_i].u.i = vertex[cc].c[0] / gdsii_units_user;        
-                                        if ( dst_xy_prev_i != NULL_I ) nodes[dst_xy_prev_i].sibling_i = dst_x_i;
-                                        dst_xy_prev_i = dst_x_i;
-                                        
-                                        uint dst_y_i = node_alloc( NODE_KIND::INT );
-                                        nodes[dst_y_i].u.i = vertex[cc].c[1] / gdsii_units_user;        
-                                        nodes[dst_xy_prev_i].sibling_i = dst_y_i;
-                                        dst_xy_prev_i = dst_y_i;
-                                    }
-                                }
-
-                                p0 = p1;
-                                have_x = false;
-                                have_p0 = true; 
-                            } 
+                            //-----------------------------------------------------
+                            // Transform XY pairs using M.
+                            // Also add to BAH.
+                            //-----------------------------------------------------
+                            node_transform_xy( dst_i, dst_xy_i, COPY_KIND::FLATTEN, conflict_policy, M );
                         }
 
-                    } else { 
-                        lassert( false, "unexpected PATH child kind " + str(src.kind) );
-                    }
+                        p0 = p1;
+                        have_x = false;
+                        have_p0 = true; 
+                    } 
+                }
+            }
 
-                    return dst_i;
+            default:
+            {
+                lassert( false, "unexpected PATH child kind " + str(src.kind) );
+                break;
+            }
+        }
+    }
 
+    return dst_first_i;
+}
+
+void Layout::node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, CONFLICT_POLICY conflict_policy, const Matrix& M )
+{
+    lassert( nodes[xy_i].kind == NODE_KIND::XY, "node_transform_xy is not called on an XY node" );      
+    bool is_y = false;
+    real3 v;
+    v.c[2] = 1.0;
+    uint i = 0;
+    uint prev_i = NULL_I;
+    AABR brect;
+    for( uint child_i = nodes[xy_i].u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
+    {
+        //---------------------------------------------------------
+        // Transform next X,Y pair
+        //---------------------------------------------------------
+        v.c[i&1] = real(nodes[child_i].u.i) * gdsii_units_user;
+        if ( i&1 ) {
+            real3 r;
+            M.transform( v, r, true ); // divide by w
+            if ( copy_kind == COPY_KIND::FLATTEN ) {
+                ldout << "M=\n" << M << "\n";
+                ldout << "v=" << v << "\n";
+                ldout << "r=" << r << "\n";
+            }
+
+            real2 p( r.c[0] / gdsii_units_user,    // new X
+                     r.c[1] / gdsii_units_user );  // new Y
+            nodes[prev_i].u.i  = p.c[0];
+            nodes[child_i].u.i = p.c[1];
+
+            if ( copy_kind == COPY_KIND::FLATTEN ) {
+                real2 r2( r.c[0], r.c[1] );
+                if ( i == 0 ) {
+                    brect = AABR( r2 );
                 } else {
-                    dst_prev_i = node_copy( dst_i, dst_prev_i, src_layout, src_i, copy_kind, conflict_policy, M, in_flatten );
+                    brect.expand( r2 );    
                 }
             }
         }
-    } else {
-        if ( node_is_string( src_node ) ) {
-            nodes[dst_i].u.s_i = str_get( &src_layout->strings[src_node.u.s_i] );
-        } else {
-            nodes[dst_i].u = src_node.u;
-        }
+        i++;
+        prev_i = child_i;
     }
-    
-    //-----------------------------------------------------
-    // Connect the new node.
-    //-----------------------------------------------------
-    if ( last_i != NULL_I ) {
-        lassert( nodes[last_i].sibling_i == NULL_I, "node_copy: nodes[last_i] sibling_i is already set" ); 
-        lassert( parent_i == NULL_I || nodes[parent_i].u.child_first_i != NULL_I, "node_copy: nodes[parent_i] is not set but last_i is set" );
-        nodes[last_i].sibling_i = dst_i;
-    } else if ( parent_i != NULL_I ) {
-        lassert( nodes[parent_i].u.child_first_i == NULL_I, "node_copy: nodes[parent_i] child_first_i is already set but last_i is NULL_I" ); 
-        nodes[parent_i].u.child_first_i = dst_i;
-    }
-
-    if ( nodes[dst_i].kind == NODE_KIND::XY ) {
-        //-----------------------------------------------------
-        // Transform each X,Y pair by M.
-        // Also keep track of the bounding rectangle if we're flattening.
-        //-----------------------------------------------------
-        bool is_y = false;
-        real3 v;
-        v.c[2] = 1.0;
-        uint i = 0;
-        uint prev_i = NULL_I;
-        AABR brect;
-        for( uint child_i = nodes[dst_i].u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
-        {
-            v.c[i&1] = real(nodes[child_i].u.i) * gdsii_units_user;
-            if ( i&1 ) {
-                real3 r;
-                M.transform( v, r, true ); // divide by w
-                if ( copy_kind == COPY_KIND::FLATTEN ) {
-                    ldout << "M=\n" << M << "\n";
-                    ldout << "v=" << v << "\n";
-                    ldout << "r=" << r << "\n";
-                }
-
-                real2 p( r.c[0] / gdsii_units_user,    // new X
-                         r.c[1] / gdsii_units_user );  // new Y
-                nodes[prev_i].u.i  = p.c[0];
-                nodes[child_i].u.i = p.c[1];
-
-                if ( copy_kind == COPY_KIND::FLATTEN ) {
-                    real2 r2( r.c[0], r.c[1] );
-                    if ( i == 0 ) {
-                        brect = AABR( r2 );
-                    } else {
-                        brect.expand( r2 );    
-                    }
-                }
-            }
-            i++;
-            prev_i = child_i;
-        }
 
 #ifdef DO_BAH
-        if ( copy_kind == COPY_KIND::FLATTEN ) {
-            //-----------------------------------------------------
-            // The parent should be an expanded element.
-            // Add it to leaf_nodes[] which has the computed brect.
-            // 
-            // Add the element (parent) to the BAH.
-            //-----------------------------------------------------
-            lassert( parent_i != uint(-1) && node_is_element( nodes[parent_i] ), "XY parent should be an element" );
-            uint bah_layer_i = node_bah_layer( nodes[parent_i] );
+    if ( copy_kind == COPY_KIND::FLATTEN ) {
+        //-----------------------------------------------------
+        // The parent should be an expanded element.
+        // Add it to leaf_nodes[] which has the computed brect.
+        // 
+        // Add the element (parent) to the BAH.
+        //-----------------------------------------------------
+        lassert( parent_i != uint(-1) && node_is_element( nodes[parent_i] ), "XY parent should be an element" );
+        uint bah_layer_i = node_bah_layer( nodes[parent_i] );
 
-            perhaps_realloc( leaf_nodes, hdr->leaf_node_cnt, max->leaf_node_cnt, 1 );
-            uint leaf_i = hdr->leaf_node_cnt++;
-            leaf_nodes[leaf_i].node_i = parent_i;
-            leaf_nodes[leaf_i].brect  = brect;
+        perhaps_realloc( leaf_nodes, hdr->leaf_node_cnt, max->leaf_node_cnt, 1 );
+        uint leaf_i = hdr->leaf_node_cnt++;
+        leaf_nodes[leaf_i].node_i = parent_i;
+        leaf_nodes[leaf_i].brect  = brect;
 
-            bah_add( bah_layer_i, leaf_i, conflict_policy );
-        }
-#endif
+        bah_add( bah_layer_i, leaf_i, conflict_policy );
     }
-    return dst_i;
+#endif
 }
 
 uint Layout::bah_node_alloc( void )
