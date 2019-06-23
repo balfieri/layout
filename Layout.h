@@ -459,6 +459,9 @@ public:
     };
 
     uint        node_alloc( NODE_KIND kind );                   // allocate a node of the given kind
+    uint        node_alloc_int( _int i );                       // allocate INT node
+    uint        node_alloc_real( real r );                      // allocate REAL node
+    uint        node_alloc_str( std::string s );                // allocate STR node
     uint        node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND copy_kind, 
                            CONFLICT_POLICY conflict_policy=CONFLICT_POLICY::MERGE_NONE_KEEP_ALL, const Matrix& M = Matrix(), bool in_flatten=false );
     void        node_timestamp( Node& node );                   // adds timestamp fields to node
@@ -2435,8 +2438,7 @@ void Layout::node_timestamp( Node& node )
     uint prev_i = NULL_I;
     for( uint i = 0; i < 2; i++ ) 
     {
-        uint ni = node_alloc( NODE_KIND::INT );
-        nodes[ni].u.i = tm->tm_year;
+        uint ni = node_alloc_int( tm->tm_year );
         if ( i == 0 ) {
             node.u.child_first_i = ni;
         } else {
@@ -2444,28 +2446,23 @@ void Layout::node_timestamp( Node& node )
         }
         prev_i = ni;
 
-        ni = node_alloc( NODE_KIND::INT );
-        nodes[ni].u.i = tm->tm_mon;
+        ni = node_alloc_int( tm->tm_mon );
         nodes[prev_i].sibling_i = ni;
         prev_i = ni;
 
-        ni = node_alloc( NODE_KIND::INT );
-        nodes[ni].u.i = tm->tm_mday;
+        ni = node_alloc_int( tm->tm_mday );
         nodes[prev_i].sibling_i = ni;
         prev_i = ni;
 
-        ni = node_alloc( NODE_KIND::INT );
-        nodes[ni].u.i = tm->tm_hour;
+        ni = node_alloc_int( tm->tm_hour );
         nodes[prev_i].sibling_i = ni;
         prev_i = ni;
 
-        ni = node_alloc( NODE_KIND::INT );
-        nodes[ni].u.i = tm->tm_min;
+        ni = node_alloc_int( tm->tm_min );
         nodes[prev_i].sibling_i = ni;
         prev_i = ni;
 
-        ni = node_alloc( NODE_KIND::INT );
-        nodes[ni].u.i = tm->tm_sec;
+        ni = node_alloc_int( tm->tm_sec );
         nodes[prev_i].sibling_i = ni;
         prev_i = ni;
     }
@@ -2584,13 +2581,11 @@ uint Layout::start_library( std::string libname, real units_user, real units_met
     gdsii_units_user = units_user;
     gdsii_units_meters = units_meters;
     nodes[prev_i].sibling_i = ni;
-    ni2 = node_alloc( NODE_KIND::REAL );
+    ni2 = node_alloc_real( units_user );
     nodes[ni].u.child_first_i = ni2;
-    nodes[ni2].u.r = units_user;
     prev_i = ni2;
-    ni2 = node_alloc( NODE_KIND::REAL );
+    ni2 = node_alloc_real( units_meters );
     nodes[prev_i].sibling_i = ni2;
-    nodes[ni2].u.r = units_meters;
     prev_i = ni;
 
     return prev_i;
@@ -2931,6 +2926,27 @@ inline uint Layout::node_alloc( NODE_KIND kind )
     nodes[ni].kind = kind;
     nodes[ni].sibling_i = NULL_I;
     nodes[ni].u.child_first_i = NULL_I;
+    return ni;
+}
+
+inline uint Layout::node_alloc_int( _int i )
+{
+    uint ni = node_alloc( NODE_KIND::INT );
+    nodes[ni].u.i = i;
+    return ni;
+}
+
+inline uint Layout::node_alloc_real( real r )
+{
+    uint ni = node_alloc( NODE_KIND::REAL );
+    nodes[ni].u.r = r;
+    return ni;
+}
+
+inline uint Layout::node_alloc_str( std::string s )
+{
+    uint ni = node_alloc( NODE_KIND::STR );
+    nodes[ni].u.s_i = str_get( s );
     return ni;
 }
 
@@ -3311,6 +3327,8 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
                             // We have what we need to make the per-segment BOUNDARY,
                             // so do it.
                             //-----------------------------------------------------
+
+                            // BOUNDARY
                             uint dst_i = node_alloc( NODE_KIND::BOUNDARY );
                             if ( dst_first_i == NULL_I ) dst_first_i = dst_i;
                             if ( dst_prev_i != NULL_I )  nodes[dst_prev_i].sibling_i = dst_i;
@@ -3319,15 +3337,15 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
                             // LAYER
                             lassert( layer != NULL_I, "PATH node has no LAYER child node" );
                             uint dst_layer_i = node_alloc( NODE_KIND::LAYER );
-                            nodes[dst_layer_i].u.i = layer;
                             nodes[dst_i].u.child_first_i = dst_layer_i;
-
+                            nodes[dst_layer_i].u.child_first_i = node_alloc_int( layer );
                             uint dst_last_i = dst_layer_i;
+
                             if ( datatype != NULL_I ) {
                                 // DATATYPE
                                 uint dst_datatype_i = node_alloc( NODE_KIND::DATATYPE );
-                                nodes[dst_datatype_i].u.i = datatype;
                                 nodes[dst_last_i].sibling_i = dst_datatype_i;
+                                nodes[dst_datatype_i].u.child_first_i = node_alloc_int( datatype );    
                                 dst_last_i = dst_datatype_i;
                             }
 
@@ -3338,16 +3356,14 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
                             uint dst_xy_prev_i = NULL_I;
                             for( uint cc = 0; cc < c; cc++ )
                             {
-                                uint dst_x_i = node_alloc( NODE_KIND::INT );
-                                nodes[dst_x_i].u.i = vertex[cc].c[0] / gdsii_units_user;        
+                                uint dst_x_i = node_alloc_int( vertex[cc].c[0] / gdsii_units_user );        
                                 if ( dst_xy_prev_i == NULL_I ) {
                                     nodes[dst_xy_i].u.child_first_i = dst_x_i;
                                 } else {
                                     nodes[dst_xy_prev_i].sibling_i = dst_x_i;
                                 } 
                                 
-                                uint dst_y_i = node_alloc( NODE_KIND::INT );
-                                nodes[dst_y_i].u.i = vertex[cc].c[1] / gdsii_units_user;        
+                                uint dst_y_i = node_alloc_int( vertex[cc].c[1] / gdsii_units_user );
                                 nodes[dst_x_i].sibling_i = dst_y_i;
                                 dst_xy_prev_i = dst_y_i;
                             }
