@@ -3627,18 +3627,22 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, const AABR& le
                                      "overlapping elements are not allowed by confict_policy MERGE_NONE_ALLOW_NONE" );
                             if ( conflict_policy != CONFLICT_POLICY::MERGE_NONE_KEEP_ALL ) {
                                 //------------------------------------------------------------
-                                // Remove the element from the node tree.
+                                // TODO: Remove the element from the node tree.
                                 //------------------------------------------------------------
                             }
                         } else {
-                            //------------------------------------------------------------
-                            // Partial intersections are not yet supported.
-                            //------------------------------------------------------------
-                            lassert( false, "we support only exact intersections right now" );
+                            if ( conflict_policy != CONFLICT_POLICY::MERGE_NONE_KEEP_ALL ) {
+                                //------------------------------------------------------------
+                                // Partial intersections are not yet supported.
+                                //------------------------------------------------------------
+                                lassert( conflict_policy == CONFLICT_POLICY::MERGE_ALL,
+                                         "merging partially overlapping elements is allowed only by conflict_policy MERGE_ALL" );
+                                lassert( false, "sorry, can't do MERGE_ALL on partially overlapped elements" );
+                            }
                         }
 
                         //------------------------------------------------------------
-                        // Do not add it to the BAH.
+                        // TODO: Add other cases to the BAH
                         //------------------------------------------------------------
                     } else {
                         //------------------------------------------------------------
