@@ -3363,6 +3363,7 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
                         have_p0 = true; 
                     } 
                 }
+                break;
             }
 
             default:
