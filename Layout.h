@@ -3471,11 +3471,12 @@ void Layout::node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, C
 
             if ( copy_kind == COPY_KIND::FLATTEN ) {
                 real2 r2( r.c[0], r.c[1] );
-                if ( i == 0 ) {
+                if ( i == 1 ) {
                     brect = AABR( r2 );
                 } else {
                     brect.expand( r2 );    
                 }
+                ldout << "brect=" << brect << "\n";     
             }
         }
         i++;
