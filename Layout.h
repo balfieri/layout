@@ -547,10 +547,16 @@ private:
     void node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, CONFLICT_POLICY conflict_policy, const Matrix& M );
 
     // BAH 
-    uint bah_node_alloc( void );
-    void bah_add( uint leaf_i, uint layer, CONFLICT_POLICY conflict_policy );
-    void bah_insert( uint bah_i, const AABR& brect, uint leaf_i, const AABR& leaf_brect, CONFLICT_POLICY conflict_policy, std::string indent_str="" );
-    bool bah_leaf_nodes_intersect( uint li1, uint li2, bool& is_exact ) const; // returns true if the elements intersect
+    uint    bah_node_alloc( void );
+    void    bah_add( uint leaf_i, uint layer, CONFLICT_POLICY conflict_policy );
+    void    bah_insert( uint bah_i, const AABR& brect, uint leaf_i, const AABR& leaf_brect, CONFLICT_POLICY conflict_policy, std::string indent_str="" );
+    bool    bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uint li2, bool& is_exact ); 
+
+    real2 * alloc_vtx_array( uint vtx_cnt );
+    real2 * alloc_vtx_array( const Node& xy_node, uint& vtx_cnt );
+    real2 * alloc_vtx_array( const AABR& brect, uint& vtx_cnt );
+    void    dealloc_vtx_array( real2 * vtx_array );
+    real2 * polygon_intersection( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint vtx_cnt );
 
     // FILL
     void fill_dielectric_rect( uint layer_i, const AABR& rect );
@@ -3617,7 +3623,7 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, const AABR& le
                     //------------------------------------------------------------
                     uint li2 = bah_nodes[bi].child_i[i][j];
                     bool is_exact;
-                    if ( bah_leaf_nodes_intersect( li, li2, is_exact ) ) {
+                    if ( bah_leaf_nodes_intersect( quadrant_brect, li, li2, is_exact ) ) {
                         std::cout << indent_str2 << "child is a leaf, and intersects with new leaf\n";
                         if ( is_exact ) {
                             //------------------------------------------------------------
@@ -3673,14 +3679,19 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, const AABR& le
     }
 }
 
-bool Layout::bah_leaf_nodes_intersect( uint li1, uint li2, bool& is_exact ) const
+bool Layout::bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uint li2, bool& is_exact ) 
 {
     //------------------------------------------------------------
-    // Return false if bounding rects do not intersect.
+    // First, clamp the leaf brects by the current quadrant_brect.      
+    // Return false if resulting leaf brects do not intersect.
     //------------------------------------------------------------
-    const Leaf_Node& leaf1 = leaf_nodes[li1];
-    const Leaf_Node& leaf2 = leaf_nodes[li2];
-    if ( !leaf1.brect.intersects( leaf2.brect ) ) return false;
+    Leaf_Node& leaf1 = leaf_nodes[li1];
+    Leaf_Node& leaf2 = leaf_nodes[li2];
+    AABR leaf1_brect = leaf1.brect;
+    AABR leaf2_brect = leaf2.brect;
+    leaf1_brect.intersect( quadrant_brect );     
+    leaf2_brect.intersect( quadrant_brect );     
+    if ( !leaf1_brect.intersects( leaf2_brect ) ) return false;
 
     //------------------------------------------------------------
     // See if there is an exact intersection by comparing XY nodes.
@@ -3689,11 +3700,8 @@ bool Layout::bah_leaf_nodes_intersect( uint li1, uint li2, bool& is_exact ) cons
     const Node& node2 = nodes[leaf2.node_i];
     lassert( node_is_element( node1 ), "leaf1 is not an element" );    
     lassert( node_is_element( node2 ), "leaf2 is not an element" );    
-    if ( node1.kind != node2.kind ) {
-        std::cout << "ERROR: leaf1 and leaf2 must have same kind if bounding rects overlap, got " << str(node1.kind) << " and " << str(node2.kind) << "\n";
-        std::cout << "       leaf1_brect=" << leaf1.brect << " leaf2_brect=" << leaf2.brect << "\n";
-        //lassert( false, "Aborting..." );
-    }
+    lassert( node1.kind == node2.kind, "ERROR: leaf1 and leaf2 must have same kind if bounding rects overlap, got " +
+                                       str(node1.kind) + " and " + str(node2.kind) )  ;
     uint xy1_i = node_xy_i( node1 );
     uint xy2_i = node_xy_i( node2 );
     lassert( xy1_i != NULL_I, "leaf1 has no XY node" );
@@ -3714,46 +3722,115 @@ bool Layout::bah_leaf_nodes_intersect( uint li1, uint li2, bool& is_exact ) cons
             break;
         }
     }
+    if ( is_exact ) return true;
 
     //------------------------------------------------------------
-    // Can't handle partial intersections right now.
-    // Later, we'll need to build polygons and attempt to intersect them.
+    // Complicated Case
+    //
+    // We probably have a partial intersection, but there's
+    // a chance there is no intersection at all or one polygon completely covers the other.   
+    // Attempt to intersect and merge them.
+    //
+    // First, make this easier by copying the vertexes from
+    // both polygons into arrays that we can process more easily.
+    // Also create a square from the bah_brect.
     //------------------------------------------------------------
-    if ( !is_exact ) {
-        std::cout << "ERROR: bah_leaf_nodes_intersect: can't handle partial intersections right now, leaf1.brect=" <<
-                             leaf1.brect << " leaf2.brect=" << leaf2.brect << "\n";
-        std::cout << "    leaf1 XY:";
-        bool have_x = false;
-        real x;
-        for( c1_i = xy1.u.child_first_i; c1_i != NULL_I; c1_i = nodes[c1_i].sibling_i )
-        {
-            real coord = real(nodes[c1_i].u.i) * gdsii_units_user;
-            if ( !have_x ) {
-                x = coord;
-            } else {
-                std::cout << " [" << x << "," << coord << "]";
-            }
-            have_x = !have_x;
-        }
-        std::cout << "\n";
+    uint vtx1_cnt;
+    uint vtx2_cnt;
+    uint vtxr_cnt;
+    real2 * vtx1 = alloc_vtx_array( nodes[c1_i],    vtx1_cnt );
+    real2 * vtx2 = alloc_vtx_array( nodes[c2_i],    vtx2_cnt );
+    real2 * vtxr = alloc_vtx_array( quadrant_brect, vtxr_cnt );
 
-        std::cout << "    leaf2 XY:";
-        have_x = false;
-        for( c2_i = xy2.u.child_first_i; c2_i != NULL_I; c2_i = nodes[c2_i].sibling_i )
-        {
-            real coord = real(nodes[c2_i].u.i) * gdsii_units_user;
-            if ( !have_x ) {
-                x = coord;
-            } else {
-                std::cout << " [" << x << "," << coord << "]";
-            }
-            have_x = !have_x;
-        }
-        std::cout << "\n";
-        lassert( false, "Aborting" );
-        is_exact = true;
-    }
+    //------------------------------------------------------------
+    // Intersect both leaf polygons with the brect polygon.
+    // Then intersect the resultant polygons to get the final polygon.  
+    //------------------------------------------------------------
+    uint vtx1r_cnt;
+    uint vtx2r_cnt;
+    uint vtx_cnt;
+    real2 * vtx1r = polygon_intersection( vtx1, vtx1_cnt, vtxr, vtxr_cnt, vtx1r_cnt );
+    real2 * vtx2r = polygon_intersection( vtx2, vtx2_cnt, vtxr, vtxr_cnt, vtx2r_cnt );
+    real2 * vtx   = polygon_intersection( vtx1r, vtx1r_cnt, vtx2r, vtx2r_cnt, vtx_cnt );
+
+    //------------------------------------------------------------
+    //------------------------------------------------------------
+
+    //------------------------------------------------------------
+    // Deallocate vtx arrays.
+    //------------------------------------------------------------
+    dealloc_vtx_array( vtx1 );
+    dealloc_vtx_array( vtx1r );
+    dealloc_vtx_array( vtx2 );
+    dealloc_vtx_array( vtx2r );
+    dealloc_vtx_array( vtxr );
+    dealloc_vtx_array( vtx );
     return true;
+}
+
+Layout::real2 * Layout::alloc_vtx_array( uint vtx_cnt )
+{
+    //------------------------------------------------------------
+    // Later, we'll cache these.
+    //------------------------------------------------------------
+    return new real2[vtx_cnt];
+}
+
+Layout::real2 * Layout::alloc_vtx_array( const Node& xy_node, uint& vtx_cnt )
+{
+    //------------------------------------------------------------
+    // First count number of vertices.
+    //------------------------------------------------------------
+    lassert( xy_node.kind == NODE_KIND::XY, "expected XY, got " + str(xy_node.kind) );
+    vtx_cnt = 0;
+    bool have_x = false;                
+    for( uint ci = xy_node.u.child_first_i; ci != NULL_I; ci = nodes[ci].sibling_i )
+    {
+        if ( have_x ) vtx_cnt++;
+        have_x = !have_x;
+    }
+    lassert( !have_x, "no Y coord" );
+
+    //------------------------------------------------------------
+    // Now allocate that vtx_array and copy them out.
+    //------------------------------------------------------------
+    real2 * vtx_array = alloc_vtx_array( vtx_cnt );
+    uint i = 0;
+    for( uint ci = xy_node.u.child_first_i; ci != NULL_I; ci = nodes[ci].sibling_i )
+    {
+        if ( !have_x ) {
+            vtx_array[i].c[0] = nodes[ci].u.i;
+        } else {
+            vtx_array[i++].c[1] = nodes[ci].u.i;
+        }
+        have_x = !have_x;
+    }
+    return vtx_array;
+}
+
+Layout::real2 * Layout::alloc_vtx_array( const AABR& brect, uint& vtx_cnt )
+{
+    vtx_cnt = 5;        
+    real2 * vtx_array = new real2[vtx_cnt];
+    vtx_array[0] = brect.min;
+    vtx_array[1].c[0] = brect.max.c[0]; 
+    vtx_array[1].c[1] = brect.min.c[1]; 
+    vtx_array[2] = brect.max;
+    vtx_array[3].c[0] = brect.min.c[0]; 
+    vtx_array[3].c[1] = brect.max.c[1]; 
+    vtx_array[4] = vtx_array[0];
+    return vtx_array;
+}
+
+void Layout::dealloc_vtx_array( real2 * vtx_array )
+{
+    delete[] vtx_array;
+}
+
+Layout::real2 * Layout::polygon_intersection( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint vtx_cnt )
+{
+    // TODO     
+    return nullptr;
 }
 
 bool Layout::layout_read( std::string layout_path )
