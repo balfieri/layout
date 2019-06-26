@@ -163,6 +163,7 @@ public:
         real2& operator *= ( const real s );
         real2& operator /= ( const real2 &v2 );
         real2& operator /= ( const real s );
+        bool   operator == ( const real2 &v2 ); 
     };
 
     // Axis-Aligned Bounding Rectangle (2D)
@@ -1909,6 +1910,11 @@ inline Layout::real2& Layout::real2::operator /= ( const Layout::real s )
     c[0] /= s;
     c[1] /= s;
     return *this;
+}
+
+inline bool Layout::real2::operator == ( const Layout::real2 &v2 )
+{
+    return c[0] == v2.c[0] && c[1] == v2.c[1];  
 }
 
 inline void Layout::Matrix::identity( void )
@@ -3854,6 +3860,7 @@ Layout::real2 * Layout::polygon_merge_or_intersection( bool do_merge, const real
 {
     //------------------------------------------------------------
     // First find any intersection point between the two polygons.
+    // We check all pairs of line segments.
     //------------------------------------------------------------
     uint i, j;
     for( i = 0; i < vtx1_cnt; i++ )
@@ -3870,7 +3877,9 @@ Layout::real2 * Layout::polygon_merge_or_intersection( bool do_merge, const real
 
     if ( i == vtx1_cnt ) {
         //------------------------------------------------------------
-        // No intersection.  Now, we need to check to see if one polygon
+        // NO INTERSECTION
+        //
+        // Now, we need to check to see if one polygon
         // completely contains the other.  We can use the bounding boxes 
         // to determine this.  One will contain the other.
         //------------------------------------------------------------
@@ -3885,57 +3894,64 @@ Layout::real2 * Layout::polygon_merge_or_intersection( bool do_merge, const real
             vtx_cnt = vtx2_cnt;
             return copy_vtx_array( vtx2, vtx2_cnt );
         }
-        return nullptr;  // disjoint 
+        // they don't overlap at all 
+        return nullptr;  
 
     } else {
         //------------------------------------------------------------
+        // INTERSECTION
+        //
         // Allocate a vtx array for the resultant polygon.
+        // Start with the intersection point from above.
         //------------------------------------------------------------
         real2 * vtx = new real2[vtx1_cnt + vtx2_cnt];
         vtx_cnt = 0;                
 
-        //------------------------------------------------------------
-        // Start with the first segment of polygon1.
-        // If merging, put the first vertex in the resultant array. 
-        //------------------------------------------------------------
-        bool in_polygon = do_merge; 
-        if ( do_merge ) vtx[vtx_cnt++] = vtx1[0]; 
-        for( uint i = 1; i < vtx1_cnt; i++ )
+        const real2 * vtxn[2]     = { vtx1, vtx2 };
+        const uint    vtxn_cnt[2] = { vtx1_cnt, vtx2_cnt };  
+        uint          vtxn_i[2]   = { i, j };
+        uint          curr        = 0;
+        for( ;; ) 
         {
             //------------------------------------------------------------
-            // Try to find the segment in the other polygon that has a single intersection
-            // point with the current segment.  Choose the one where the point
-            // is closest to the first point of the segment.
+            // Record the last intersection point.
             //------------------------------------------------------------
-            uint best_j = NULL_I;
-            real best_dist = 1e100;
-            for( uint j = 1; j < vtx2_cnt; j++ )
+            lassert( vtx_cnt != (vtx1_cnt + vtx2_cnt), "vtx array grew bigger than expected" );
+            vtx[vtx_cnt++] = vtxn[curr][vtxn_i[curr]];
+
+            //------------------------------------------------------------
+            // If we're back at the first intersection point, we are done.
+            //------------------------------------------------------------
+            if ( vtx_cnt != 1 && vtx[vtx_cnt-1] == vtx[0] ) return vtx;
+
+            //------------------------------------------------------------
+            // Not done.
+            // Switch to the other polygon.
+            // For merge, head outside the current polygon.
+            // For intersection, head inside the current polygon.
+            //------------------------------------------------------------
+            for( uint i = 1; i < vtx1_cnt; i++ )
             {
-                real2 ip;
-                if ( vtx1[i-1].segments_intersection( vtx1[i], vtx2[i-1], vtx2[i], ip ) ) {
-                    real ip_dist = (ip - vtx1[i-1]).length();     
-                    if ( best_j == NULL_I || ip_dist < best_dist ) {
-                        best_j = j;
-                        best_dist = ip_dist;
+                //------------------------------------------------------------
+                // Try to find the segment in the other polygon that has a single intersection
+                // point with the current segment.  Choose the one where the point
+                // is closest to the first point of the segment.
+                //------------------------------------------------------------
+                uint best_j = NULL_I;
+                real best_dist = 1e100;
+                for( uint j = 1; j < vtx2_cnt; j++ )
+                {
+                    real2 ip;
+                    if ( vtx1[i-1].segments_intersection( vtx1[i], vtx2[i-1], vtx2[i], ip ) ) {
+                        real ip_dist = (ip - vtx1[i-1]).length();     
+                        if ( best_j == NULL_I || ip_dist < best_dist ) {
+                            best_j = j;
+                            best_dist = ip_dist;
+                        }
                     }
                 }
             }
-
-            if ( best_j == NULL_I ) {
-                //------------------------------------------------------------
-                // No unique intersection point.
-                // We are going to use this entire line segment from polygon1
-                // and we are going to continue with polygon1.
-                //------------------------------------------------------------
-            } else {
-                //------------------------------------------------------------
-                // Add a segment from the origin to the intersection point.
-                // Then switch to traversing polygon2 from the intersection point.
-                //------------------------------------------------------------
-            }
         }
-
-        return vtx;
     }    
 }
 
