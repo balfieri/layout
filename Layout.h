@@ -555,10 +555,12 @@ private:
     real2 * alloc_vtx_array( uint vtx_cnt );
     real2 * alloc_vtx_array( const Node& xy_node, uint& vtx_cnt );
     real2 * alloc_vtx_array( const AABR& brect, uint& vtx_cnt );
+    real2 * copy_vtx_array( const real2 * other, uint other_cnt );
     void    dealloc_vtx_array( real2 * vtx_array );
     real2 * polygon_merge_or_intersection( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt );
     real2 * polygon_merge(        const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt );
     real2 * polygon_intersection( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt );
+    AABR    polygon_brect( const real2 * vtx, uint vtx_cnt );
 
     // FILL
     void fill_dielectric_rect( uint layer_i, const AABR& rect );
@@ -3835,6 +3837,13 @@ Layout::real2 * Layout::alloc_vtx_array( const AABR& brect, uint& vtx_cnt )
     return vtx_array;
 }
 
+Layout::real2 * Layout::copy_vtx_array( const real2 * other, uint other_cnt )
+{
+    real2 * vtx = alloc_vtx_array( other_cnt );
+    memcpy( vtx, other, other_cnt * sizeof( real2 ) );
+    return vtx;
+}
+
 void Layout::dealloc_vtx_array( real2 * vtx_array )
 {
     delete[] vtx_array;
@@ -3844,43 +3853,90 @@ Layout::real2 * Layout::polygon_merge_or_intersection( bool do_merge, const real
                                                        uint& vtx_cnt )
 {
     //------------------------------------------------------------
-    // Start with the first segment of polygon1.
+    // First find any intersection point between the two polygons.
     //------------------------------------------------------------
-    for( uint i = 1; i < vtx1_cnt; i++ )
+    uint i, j;
+    for( i = 0; i < vtx1_cnt; i++ )
     {
-        //------------------------------------------------------------
-        // Try to find the segment in the other polygon that has a single intersection
-        // point with the current segment.  Choose the one where the point
-        // is closest to the first point of the segment.
-        //------------------------------------------------------------
-        uint best_j = NULL_I;
-        real best_dist = 1e100;
-        for( uint j = 1; j < vtx2_cnt; j++ )
+        uint i2 = (i + 1) % vtx1_cnt;
+        for( j = 0; j < vtx2_cnt; j++ )
         {
+            uint j2 = (j + 1) % vtx2_cnt;
             real2 ip;
-            if ( vtx1[i-1].segments_intersection( vtx1[i], vtx2[i-1], vtx2[i], ip ) ) {
-                real ip_dist = (ip - vtx1[i-1]).length();     
-                if ( best_j == NULL_I || ip_dist < best_dist ) {
-                    best_j = j;
-                    best_dist = ip_dist;
+            if ( vtx1[i].segments_intersection( vtx1[i2], vtx2[j], vtx2[j2], ip ) ) break;
+        }
+        if ( j != vtx2_cnt ) break;
+    }   
+
+    if ( i == vtx1_cnt ) {
+        //------------------------------------------------------------
+        // No intersection.  Now, we need to check to see if one polygon
+        // completely contains the other.  We can use the bounding boxes 
+        // to determine this.  One will contain the other.
+        //------------------------------------------------------------
+        lassert( j == vtx2_cnt, "something is wrong" );
+        AABR brect1 = polygon_brect( vtx1, vtx1_cnt ); 
+        AABR brect2 = polygon_brect( vtx2, vtx2_cnt ); 
+        if ( brect1.encloses( brect2 ) ) {
+            vtx_cnt = vtx1_cnt;
+            return copy_vtx_array( vtx1, vtx1_cnt );
+        }
+        if ( brect2.encloses( brect1 ) ) {
+            vtx_cnt = vtx2_cnt;
+            return copy_vtx_array( vtx2, vtx2_cnt );
+        }
+        return nullptr;  // disjoint 
+
+    } else {
+        //------------------------------------------------------------
+        // Allocate a vtx array for the resultant polygon.
+        //------------------------------------------------------------
+        real2 * vtx = new real2[vtx1_cnt + vtx2_cnt];
+        vtx_cnt = 0;                
+
+        //------------------------------------------------------------
+        // Start with the first segment of polygon1.
+        // If merging, put the first vertex in the resultant array. 
+        //------------------------------------------------------------
+        bool in_polygon = do_merge; 
+        if ( do_merge ) vtx[vtx_cnt++] = vtx1[0]; 
+        for( uint i = 1; i < vtx1_cnt; i++ )
+        {
+            //------------------------------------------------------------
+            // Try to find the segment in the other polygon that has a single intersection
+            // point with the current segment.  Choose the one where the point
+            // is closest to the first point of the segment.
+            //------------------------------------------------------------
+            uint best_j = NULL_I;
+            real best_dist = 1e100;
+            for( uint j = 1; j < vtx2_cnt; j++ )
+            {
+                real2 ip;
+                if ( vtx1[i-1].segments_intersection( vtx1[i], vtx2[i-1], vtx2[i], ip ) ) {
+                    real ip_dist = (ip - vtx1[i-1]).length();     
+                    if ( best_j == NULL_I || ip_dist < best_dist ) {
+                        best_j = j;
+                        best_dist = ip_dist;
+                    }
                 }
+            }
+
+            if ( best_j == NULL_I ) {
+                //------------------------------------------------------------
+                // No unique intersection point.
+                // We are going to use this entire line segment from polygon1
+                // and we are going to continue with polygon1.
+                //------------------------------------------------------------
+            } else {
+                //------------------------------------------------------------
+                // Add a segment from the origin to the intersection point.
+                // Then switch to traversing polygon2 from the intersection point.
+                //------------------------------------------------------------
             }
         }
 
-        if ( best_j == NULL_I ) {
-            //------------------------------------------------------------
-            // No unique intersection point.
-            // We are going to use this entire line segment from polygon1
-            // and we are going to continue with polygon1.
-            //------------------------------------------------------------
-        } else {
-            //------------------------------------------------------------
-            // Add a segment from the origin to the intersection point.
-            // Then switch to traversing polygon2 from the intersection point.
-            //------------------------------------------------------------
-        }
-    }
-    return nullptr;
+        return vtx;
+    }    
 }
 
 Layout::real2 * Layout::polygon_merge( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt )
@@ -3891,6 +3947,16 @@ Layout::real2 * Layout::polygon_merge( const real2 * vtx1, uint vtx1_cnt, const 
 Layout::real2 * Layout::polygon_intersection( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt )
 {
     return polygon_merge_or_intersection( false, vtx1, vtx1_cnt, vtx2, vtx2_cnt, vtx_cnt );
+}
+
+Layout::AABR Layout::polygon_brect( const real2 * vtx, uint vtx_cnt )
+{
+    AABR brect( vtx[0] );       
+    for( uint i = 1; i < vtx_cnt; i++ )
+    {
+        brect.expand( vtx[i] );
+    }
+    return brect;      
 }
 
 bool Layout::layout_read( std::string layout_path )
