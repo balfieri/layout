@@ -556,8 +556,9 @@ private:
     real2 * alloc_vtx_array( const Node& xy_node, uint& vtx_cnt );
     real2 * alloc_vtx_array( const AABR& brect, uint& vtx_cnt );
     void    dealloc_vtx_array( real2 * vtx_array );
-    real2 * polygon_intersection( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint vtx_cnt );
-    real2 * polygon_merge(        const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint vtx_cnt );
+    real2 * polygon_merge_or_intersection( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt );
+    real2 * polygon_merge(        const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt );
+    real2 * polygon_intersection( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt );
 
     // FILL
     void fill_dielectric_rect( uint layer_i, const AABR& rect );
@@ -3839,7 +3840,8 @@ void Layout::dealloc_vtx_array( real2 * vtx_array )
     delete[] vtx_array;
 }
 
-Layout::real2 * Layout::polygon_merge( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint vtx_cnt )
+Layout::real2 * Layout::polygon_merge_or_intersection( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, 
+                                                       uint& vtx_cnt )
 {
     //------------------------------------------------------------
     // Start with the first segment of polygon1.
@@ -3881,10 +3883,14 @@ Layout::real2 * Layout::polygon_merge( const real2 * vtx1, uint vtx1_cnt, const 
     return nullptr;
 }
 
-Layout::real2 * Layout::polygon_intersection( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint vtx_cnt )
+Layout::real2 * Layout::polygon_merge( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt )
 {
-    // TODO     
-    return nullptr;
+    return polygon_merge_or_intersection( true, vtx1, vtx1_cnt, vtx2, vtx2_cnt, vtx_cnt );
+}
+
+Layout::real2 * Layout::polygon_intersection( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt )
+{
+    return polygon_merge_or_intersection( false, vtx1, vtx1_cnt, vtx2, vtx2_cnt, vtx_cnt );
 }
 
 bool Layout::layout_read( std::string layout_path )
