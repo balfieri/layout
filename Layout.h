@@ -560,9 +560,7 @@ private:
     real2 * alloc_vtx_array( const AABR& brect, uint& vtx_cnt );
     real2 * copy_vtx_array( const real2 * other, uint other_cnt );
     void    dealloc_vtx_array( real2 * vtx_array );
-    real2 * polygon_merge_or_intersection( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt );
-    real2 * polygon_merge(        const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt );
-    real2 * polygon_intersection( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt );
+    real2 * polygon_merge_or_intersect( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt );
     AABR    polygon_brect( const real2 * vtx, uint vtx_cnt );
 
     // FILL
@@ -3769,8 +3767,8 @@ bool Layout::bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uin
     //------------------------------------------------------------
     uint vtx1r_cnt;
     uint vtx2r_cnt;
-    real2 * vtx1r = polygon_intersection( vtx1, vtx1_cnt, vtxr, vtxr_cnt, vtx1r_cnt );
-    real2 * vtx2r = polygon_intersection( vtx2, vtx2_cnt, vtxr, vtxr_cnt, vtx2r_cnt );
+    real2 * vtx1r = polygon_merge_or_intersect( false, vtx1, vtx1_cnt, vtxr, vtxr_cnt, vtx1r_cnt );
+    real2 * vtx2r = polygon_merge_or_intersect( false, vtx2, vtx2_cnt, vtxr, vtxr_cnt, vtx2r_cnt );
 
     //------------------------------------------------------------
     // Merge the resultant polygons to get the final merged polygon.  
@@ -3778,7 +3776,7 @@ bool Layout::bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uin
     // at all and nothing should be changed.
     //------------------------------------------------------------
     uint vtx_cnt;
-    real2 * vtx = polygon_merge( vtx1r, vtx1r_cnt, vtx2r, vtx2r_cnt, vtx_cnt );
+    real2 * vtx = polygon_merge_or_intersect( true, vtx1r, vtx1r_cnt, vtx2r, vtx2r_cnt, vtx_cnt );
     if ( vtx != nullptr ) {
         //------------------------------------------------------------
         // Replace the two leaf nodes with one leaf node with the final
@@ -3867,26 +3865,27 @@ void Layout::dealloc_vtx_array( real2 * vtx_array )
     delete[] vtx_array;
 }
 
-Layout::real2 * Layout::polygon_merge_or_intersection( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, 
-                                                       uint& vtx_cnt )
+Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, 
+                                                    uint& vtx_cnt )
 {
     //------------------------------------------------------------
     // First find any intersection point between the two polygons.
     // We check all pairs of line segments.
     //------------------------------------------------------------
-    uint i, j;
+    uint i, i2, j, j2;
+    real2 ip;
     for( i = 0; i < vtx1_cnt; i++ )
     {
-        uint i2 = (i + 1) % vtx1_cnt;
+        i2 = (i + 1) % vtx1_cnt;
         for( j = 0; j < vtx2_cnt; j++ )
         {
-            uint j2 = (j + 1) % vtx2_cnt;
-            real2 ip;
+            j2 = (j + 1) % vtx2_cnt;
             if ( vtx1[i].segments_intersection( vtx1[i2], vtx2[j], vtx2[j2], ip ) ) break;
         }
         if ( j != vtx2_cnt ) break;
     }   
 
+    real2 * vtx;
     if ( i == vtx1_cnt ) {
         //------------------------------------------------------------
         // NO INTERSECTION
@@ -3907,7 +3906,7 @@ Layout::real2 * Layout::polygon_merge_or_intersection( bool do_merge, const real
             return copy_vtx_array( vtx2, vtx2_cnt );
         }
         // they don't overlap at all 
-        return nullptr;  
+        vtx = nullptr;  
 
     } else {
         //------------------------------------------------------------
@@ -3916,66 +3915,109 @@ Layout::real2 * Layout::polygon_merge_or_intersection( bool do_merge, const real
         // Allocate a vtx array for the resultant polygon.
         // Start with the intersection point from above.
         //------------------------------------------------------------
-        real2 * vtx = new real2[vtx1_cnt + vtx2_cnt];
+        vtx = new real2[vtx1_cnt + vtx2_cnt];
         vtx_cnt = 0;                
 
-        const real2 * vtxn[2]     = { vtx1, vtx2 };
-        const uint    vtxn_cnt[2] = { vtx1_cnt, vtx2_cnt };  
-        uint          vtxn_i[2]   = { i, j };
-        uint          curr        = 0;
+        uint          curr           = 0;                       // current polygon index
+        uint          other          = 1;                       // other   polygon index
+        const real2 * vtxn[2]        = { vtx1, vtx2 };
+        const uint    vtxn_cnt[2]    = { vtx1_cnt, vtx2_cnt };  
+        bool          is_ccw         = true;                    // current direction is ccw?
+        bool          have_ip        = true;
+        uint          curr_s0_i      = i;
+        uint          curr_s1_i      = i2;
+        uint          other_s0_i     = j;
+        uint          other_s1_i     = j2;
         for( ;; ) 
         {
-            //------------------------------------------------------------
-            // Record the last intersection point.
-            //------------------------------------------------------------
             lassert( vtx_cnt != (vtx1_cnt + vtx2_cnt), "vtx array grew bigger than expected" );
-            vtx[vtx_cnt++] = vtxn[curr][vtxn_i[curr]];
+            if ( have_ip ) {
+                //------------------------------------------------------------
+                // Record the intersection point, ip.
+                //------------------------------------------------------------
+                vtx[vtx_cnt++] = ip;
+
+                //------------------------------------------------------------
+                // If we're back at the first intersection point, we are done.
+                //------------------------------------------------------------
+                if ( vtx_cnt != 1 && vtx[vtx_cnt-1] == vtx[0] ) break;
+
+                //------------------------------------------------------------
+                // For merge,        head outside the current polygon.
+                // For intersection, head inside  the current polygon.
+                //------------------------------------------------------------
+                const real2& curr_s0  = vtxn[curr][curr_s0_i];
+                const real2& curr_s1  = vtxn[curr][curr_s1_i];
+                const real2& other_s0 = vtxn[other][other_s0_i];
+                const real2& other_s1 = vtxn[other][other_s1_i];
+
+                bool use_other_s0 = (is_ccw == do_merge) ? other_s0.is_left_of_segment(  curr_s0, curr_s1 ) :
+                                                           other_s0.is_right_of_segment( curr_s0, curr_s1 );
+                bool use_other_s1 = (is_ccw == do_merge) ? other_s1.is_left_of_segment(  curr_s0, curr_s1 ) :
+                                                           other_s1.is_right_of_segment( curr_s0, curr_s1 );
+                lassert( use_other_s0 || use_other_s1, "neither other segment endpoint is inside the current polygon - investigate" );
+
+                //------------------------------------------------------------
+                // Set curr_s0_i = other's chosen s0 or s1
+                // Set curr_s1_i = other's not-chosen s0 or s1
+                // Switch to the other polygon.
+                // Follow (ip, curr_s1).
+                //------------------------------------------------------------
+                curr_s0_i = use_other_s0 ? other_s0_i : other_s1_i;
+                curr_s1_i = use_other_s0 ? other_s1_i : other_s0_i;
+                is_ccw    = use_other_s1;      
+                curr      = other;
+                other     = 1 - curr;
+
+            } else {
+                //------------------------------------------------------------
+                // Record the endpoint (curr_s1_i) of whatever segment we are on.
+                // Then make that the curr_s0_i and calculate the next curr_s1_i 
+                // based on our current direction (ccw or cw).
+                // If we're back at the first intersection point, we are done.
+                //------------------------------------------------------------
+                ip = vtxn[curr][curr_s1_i];
+                vtx[vtx_cnt++] = ip;
+                if ( vtx_cnt != 1 && vtx[vtx_cnt-1] == vtx[0] ) break;
+
+                curr_s0_i = curr_s1_i;
+                curr_s1_i = (curr_s0_i + (is_ccw ? 1 : (vtxn_cnt[curr]-1))) % vtxn_cnt[curr];
+            }
 
             //------------------------------------------------------------
-            // If we're back at the first intersection point, we are done.
+            // See if there's an intersection point along (ip, curr_s1) with
+            // the (new) other segment.  Choose the one that is closest to ip.
             //------------------------------------------------------------
-            if ( vtx_cnt != 1 && vtx[vtx_cnt-1] == vtx[0] ) return vtx;
-
-            //------------------------------------------------------------
-            // Not done.
-            // Switch to the other polygon.
-            // For merge, head outside the current polygon.
-            // For intersection, head inside the current polygon.
-            //------------------------------------------------------------
-            uint other = 1 - curr;
-            for( uint i = 1; i < vtx1_cnt; i++ )
+            uint  best_k = NULL_I;
+            real  best_dist = 1e100;
+            real2 best_ip;
+            for( uint k = 0; k < vtxn_cnt[other]; k++ )
             {
-                //------------------------------------------------------------
-                // Try to find the segment in the other polygon that has a single intersection
-                // point with the current segment.  Choose the one where the point
-                // is closest to the first point of the segment.
-                //------------------------------------------------------------
-                uint best_j = NULL_I;
-                real best_dist = 1e100;
-                for( uint j = 1; j < vtx2_cnt; j++ )
-                {
-                    real2 ip;
-                    if ( vtx1[i-1].segments_intersection( vtx1[i], vtx2[i-1], vtx2[i], ip ) ) {
-                        real ip_dist = (ip - vtx1[i-1]).length();     
-                        if ( best_j == NULL_I || ip_dist < best_dist ) {
-                            best_j = j;
-                            best_dist = ip_dist;
-                        }
+                uint k2 = (k + 1) % vtxn_cnt[other];
+                real2 this_ip;
+                const real2 curr_s1 = vtxn[curr][curr_s1_i];
+                if ( vtxn[other][k].segments_intersection( vtxn[other][k2], ip, curr_s1, this_ip ) ) {
+                    real this_ip_dist = (ip - vtxn[other][k]).length();     
+                    if ( best_k == NULL_I || this_ip_dist < best_dist ) {
+                        best_k    = k;
+                        best_dist = this_ip_dist;
+                        best_ip   = this_ip;
                     }
                 }
             }
+
+            have_ip = best_k != NULL_I;
+            if ( have_ip ) {
+                //------------------------------------------------------------
+                // There was an intersection.
+                // Set the new ip to best_ip and go back to the top of the loop.
+                //------------------------------------------------------------
+                ip = best_ip;
+            }
         }
     }    
-}
 
-Layout::real2 * Layout::polygon_merge( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt )
-{
-    return polygon_merge_or_intersection( true, vtx1, vtx1_cnt, vtx2, vtx2_cnt, vtx_cnt );
-}
-
-Layout::real2 * Layout::polygon_intersection( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt )
-{
-    return polygon_merge_or_intersection( false, vtx1, vtx1_cnt, vtx2, vtx2_cnt, vtx_cnt );
+    return vtx;
 }
 
 Layout::AABR Layout::polygon_brect( const real2 * vtx, uint vtx_cnt )
