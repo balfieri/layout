@@ -555,13 +555,14 @@ private:
     void    bah_insert( uint bah_i, const AABR& brect, uint leaf_i, const AABR& leaf_brect, CONFLICT_POLICY conflict_policy, std::string indent_str="" );
     bool    bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uint li2, bool& is_exact ); 
 
-    real2 * alloc_vtx_array( uint vtx_cnt );
-    real2 * alloc_vtx_array( const Node& xy_node, uint& vtx_cnt );
-    real2 * alloc_vtx_array( const AABR& brect, uint& vtx_cnt );
-    real2 * copy_vtx_array( const real2 * other, uint other_cnt );
-    void    dealloc_vtx_array( real2 * vtx_array );
-    real2 * polygon_merge_or_intersect( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt );
-    AABR    polygon_brect( const real2 * vtx, uint vtx_cnt );
+    real2 *     polygon_alloc( uint vtx_cnt );
+    real2 *     polygon_alloc( const Node& xy_node, uint& vtx_cnt );
+    real2 *     polygon_alloc( const AABR& brect, uint& vtx_cnt );
+    real2 *     polygon_copy( const real2 * other, uint other_cnt );
+    void        polygon_dealloc( real2 * vtx_array );
+    real2 *     polygon_merge_or_intersect( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt );
+    AABR        polygon_brect( const real2 * vtx, uint vtx_cnt ) const;
+    std::string polygon_str( const real2 * vtx, uint vtx_cnt ) const;
 
     // FILL
     void fill_dielectric_rect( uint layer_i, const AABR& rect );
@@ -3758,9 +3759,12 @@ bool Layout::bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uin
     uint vtx1_cnt;
     uint vtx2_cnt;
     uint vtxr_cnt;
-    real2 * vtx1 = alloc_vtx_array( nodes[c1_i],    vtx1_cnt );
-    real2 * vtx2 = alloc_vtx_array( nodes[c2_i],    vtx2_cnt );
-    real2 * vtxr = alloc_vtx_array( quadrant_brect, vtxr_cnt );
+    real2 * vtx1 = polygon_alloc( xy1,            vtx1_cnt );
+    real2 * vtx2 = polygon_alloc( xy2,            vtx2_cnt );
+    real2 * vtxr = polygon_alloc( quadrant_brect, vtxr_cnt );
+    ldout << "xy1: " << polygon_str( vtx1, vtx1_cnt ) << "\n";
+    ldout << "xy2: " << polygon_str( vtx2, vtx2_cnt ) << "\n";
+    ldout << "qbrect: " << polygon_str( vtxr, vtxr_cnt ) << "\n";
 
     //------------------------------------------------------------
     // Intersect both leaf polygons with the brect polygon.
@@ -3769,6 +3773,8 @@ bool Layout::bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uin
     uint vtx2r_cnt;
     real2 * vtx1r = polygon_merge_or_intersect( false, vtx1, vtx1_cnt, vtxr, vtxr_cnt, vtx1r_cnt );
     real2 * vtx2r = polygon_merge_or_intersect( false, vtx2, vtx2_cnt, vtxr, vtxr_cnt, vtx2r_cnt );
+    ldout << "xy1r: " << polygon_str( vtx1r, vtx1r_cnt ) << "\n";
+    ldout << "xy2r: " << polygon_str( vtx2r, vtx2r_cnt ) << "\n";
 
     //------------------------------------------------------------
     // Merge the resultant polygons to get the final merged polygon.  
@@ -3790,16 +3796,16 @@ bool Layout::bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uin
     //------------------------------------------------------------
     // Deallocate vtx arrays.
     //------------------------------------------------------------
-    if ( vtx != nullptr ) dealloc_vtx_array( vtx );
-    dealloc_vtx_array( vtx1r );
-    dealloc_vtx_array( vtx2r );
-    dealloc_vtx_array( vtx1 );
-    dealloc_vtx_array( vtx2 );
-    dealloc_vtx_array( vtxr );
+    if ( vtx != nullptr ) polygon_dealloc( vtx );
+    polygon_dealloc( vtx1r );
+    polygon_dealloc( vtx2r );
+    polygon_dealloc( vtx1 );
+    polygon_dealloc( vtx2 );
+    polygon_dealloc( vtxr );
     return vtx != nullptr; 
 }
 
-Layout::real2 * Layout::alloc_vtx_array( uint vtx_cnt )
+Layout::real2 * Layout::polygon_alloc( uint vtx_cnt )
 {
     //------------------------------------------------------------
     // Later, we'll cache these.
@@ -3807,7 +3813,7 @@ Layout::real2 * Layout::alloc_vtx_array( uint vtx_cnt )
     return new real2[vtx_cnt];
 }
 
-Layout::real2 * Layout::alloc_vtx_array( const Node& xy_node, uint& vtx_cnt )
+Layout::real2 * Layout::polygon_alloc( const Node& xy_node, uint& vtx_cnt )
 {
     //------------------------------------------------------------
     // First count number of vertices.
@@ -3825,21 +3831,21 @@ Layout::real2 * Layout::alloc_vtx_array( const Node& xy_node, uint& vtx_cnt )
     //------------------------------------------------------------
     // Now allocate that vtx_array and copy them out.
     //------------------------------------------------------------
-    real2 * vtx_array = alloc_vtx_array( vtx_cnt );
+    real2 * vtx_array = polygon_alloc( vtx_cnt );
     uint i = 0;
     for( uint ci = xy_node.u.child_first_i; ci != NULL_I; ci = nodes[ci].sibling_i )
     {
         if ( !have_x ) {
-            vtx_array[i].c[0] = nodes[ci].u.i;
+            vtx_array[i].c[0] = real(nodes[ci].u.i) * gdsii_units_user;
         } else {
-            vtx_array[i++].c[1] = nodes[ci].u.i;
+            vtx_array[i++].c[1] = real(nodes[ci].u.i) * gdsii_units_user;
         }
         have_x = !have_x;
     }
     return vtx_array;
 }
 
-Layout::real2 * Layout::alloc_vtx_array( const AABR& brect, uint& vtx_cnt )
+Layout::real2 * Layout::polygon_alloc( const AABR& brect, uint& vtx_cnt )
 {
     vtx_cnt = 5;        
     real2 * vtx_array = new real2[vtx_cnt];
@@ -3853,14 +3859,14 @@ Layout::real2 * Layout::alloc_vtx_array( const AABR& brect, uint& vtx_cnt )
     return vtx_array;
 }
 
-Layout::real2 * Layout::copy_vtx_array( const real2 * other, uint other_cnt )
+Layout::real2 * Layout::polygon_copy( const real2 * other, uint other_cnt )
 {
-    real2 * vtx = alloc_vtx_array( other_cnt );
+    real2 * vtx = polygon_alloc( other_cnt );
     memcpy( vtx, other, other_cnt * sizeof( real2 ) );
     return vtx;
 }
 
-void Layout::dealloc_vtx_array( real2 * vtx_array )
+void Layout::polygon_dealloc( real2 * vtx_array )
 {
     delete[] vtx_array;
 }
@@ -3899,11 +3905,11 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         AABR brect2 = polygon_brect( vtx2, vtx2_cnt ); 
         if ( brect1.encloses( brect2 ) ) {
             vtx_cnt = vtx1_cnt;
-            return copy_vtx_array( vtx1, vtx1_cnt );
+            return polygon_copy( vtx1, vtx1_cnt );
         }
         if ( brect2.encloses( brect1 ) ) {
             vtx_cnt = vtx2_cnt;
-            return copy_vtx_array( vtx2, vtx2_cnt );
+            return polygon_copy( vtx2, vtx2_cnt );
         }
         // they don't overlap at all 
         vtx = nullptr;  
@@ -4020,7 +4026,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     return vtx;
 }
 
-Layout::AABR Layout::polygon_brect( const real2 * vtx, uint vtx_cnt )
+Layout::AABR Layout::polygon_brect( const real2 * vtx, uint vtx_cnt ) const
 {
     AABR brect( vtx[0] );       
     for( uint i = 1; i < vtx_cnt; i++ )
@@ -4028,6 +4034,21 @@ Layout::AABR Layout::polygon_brect( const real2 * vtx, uint vtx_cnt )
         brect.expand( vtx[i] );
     }
     return brect;      
+}
+
+std::string Layout::polygon_str( const real2 * vtx, uint vtx_cnt ) const
+{
+    std::string s = "[";
+    for( uint i = 0; i < vtx_cnt; i++ )
+    {
+        if ( i != 0 ) s += ",";
+        s += " [";
+        s += std::to_string( vtx[i].c[0] );
+        s += ",";
+        s += std::to_string( vtx[i].c[1] );
+        s += "]";
+    }
+    return s;
 }
 
 bool Layout::layout_read( std::string layout_path )
