@@ -3885,7 +3885,6 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     // First find any intersection point between the two polygons.
     // We check all pairs of line segments.
     //------------------------------------------------------------
-    const bool include_endpoints = false;
     uint i, i2, j, j2;
     real2 ip;
     for( i = 0; i < vtx1_cnt; i++ )
@@ -3894,7 +3893,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         for( j = 0; j < vtx2_cnt; j++ )
         {
             j2 = (j + 1) % vtx2_cnt;
-            if ( vtx1[i].segments_intersection( vtx1[i2], vtx2[j], vtx2[j2], ip, include_endpoints ) ) break;
+            if ( vtx1[i].segments_intersection( vtx1[i2], vtx2[j], vtx2[j2], ip, !do_merge ) ) break;
         }
         if ( j != vtx2_cnt ) break;
     }   
@@ -3950,8 +3949,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
                 //------------------------------------------------------------
                 // Record the intersection point, ip.
                 //------------------------------------------------------------
-                ldout << "new intersection point: " << ip << "\n";
                 vtx[vtx_cnt++] = ip;
+                ldout << "new polygon so far: " << polygon_str( vtx, vtx_cnt, "orange" );
 
                 //------------------------------------------------------------
                 // If we're back at the first intersection point, we are done.
@@ -4016,7 +4015,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
                 uint k2 = (k + 1) % vtxn_cnt[other];
                 real2 this_ip;
                 const real2 curr_s1 = vtxn[curr][curr_s1_i];
-                if ( vtxn[other][k].segments_intersection( vtxn[other][k2], ip, curr_s1, this_ip, include_endpoints ) ) {
+                if ( vtxn[other][k].segments_intersection( vtxn[other][k2], ip, curr_s1, this_ip, !do_merge ) ) {
                     real this_ip_dist = (ip - vtxn[other][k]).length();     
                     if ( best_k == NULL_I || this_ip_dist < best_dist ) {
                         best_k    = k;
