@@ -3921,6 +3921,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         }
         // they don't overlap at all 
         vtx = nullptr;  
+        vtx_cnt = 0;
 
     } else {
         //------------------------------------------------------------
