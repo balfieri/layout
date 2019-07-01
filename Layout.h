@@ -143,13 +143,13 @@ public:
         real   length_sqr( void ) const;
         real2& normalize( void );
         real2  normalized( void ) const;
-        bool   is_on_segment( const real2& p2, const real2& p3 ) const;       // returns true if this point is on line segment (p2, p3)
+        bool   is_on_segment( const real2& p2, const real2& p3, bool include_endpoints ) const;  // returns true if this point is on line segment (p2, p3)
         bool   is_left_of_segment( const real2& p2, const real2& p3 ) const;  // returns true if this point is to the left  of segment (p2, p3)
         bool   is_right_of_segment( const real2& p2, const real2& p3 ) const; // returns true if this point is to the right of segment (p2, p3)
         int    orientation( const real2& p2, const real2& p3 ) const;         // returns: 0=colinear, 1=clockwise, 2=counterclockwise
         bool   lines_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const;
-        bool   segments_intersect( const real2& p2, const real2& p3, const real2& p4 ) const;
-        bool   segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const;
+        bool   segments_intersect( const real2& p2, const real2& p3, const real2& p4, bool include_endpoints ) const;
+        bool   segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip, bool include_endpoints ) const;
         void   pad_segment( const real2& p2, real pad, real2& p1_new, real2& p2_new ) const;       // (p1_new, p2_new) are new endpoints
         void   perpendicular_segment( const real2& p2, real length, real2& p3, real2& p4 ) const;  // (p2, p3) will pass through p1
         void   parallel_segment( const real2& p2, real dist, real2& p1_new, real2& p2_new ) const; // (p1_new, p2_new) are new endpoints
@@ -1705,12 +1705,17 @@ inline Layout::real2 Layout::real2::normalized( void ) const
     return *this / length();
 }
 
-inline bool Layout::real2::is_on_segment( const real2& p2, const real2& p3 ) const
+inline bool Layout::real2::is_on_segment( const real2& p2, const real2& p3, bool include_endpoints ) const
 {
     const real2& p1 = *this;
 
-    return p1.c[0] <= std::max( p2.c[0], p3.c[0] ) && p1.c[0] >= std::min( p2.c[0], p3.c[0] ) &&
-           p1.c[1] <= std::max( p2.c[1], p3.c[1] ) && p1.c[1] >= std::min( p2.c[1], p3.c[1] );
+    if ( include_endpoints ) {
+        return p1.c[0] <= std::max( p2.c[0], p3.c[0] ) && p1.c[0] >= std::min( p2.c[0], p3.c[0] ) &&
+               p1.c[1] <= std::max( p2.c[1], p3.c[1] ) && p1.c[1] >= std::min( p2.c[1], p3.c[1] );
+    } else {
+        return p1.c[0] <  std::max( p2.c[0], p3.c[0] ) && p1.c[0] >  std::min( p2.c[0], p3.c[0] ) &&
+               p1.c[1] <  std::max( p2.c[1], p3.c[1] ) && p1.c[1] >  std::min( p2.c[1], p3.c[1] );
+    }
 }
 
 inline bool Layout::real2::is_left_of_segment( const real2& p2, const real2& p3 ) const
@@ -1737,7 +1742,7 @@ inline int Layout::real2::orientation( const real2& p2, const real2& p3 ) const
            (val >  0) ? 1 : 2;  // clockwise or counterclockwise
 }
 
-inline bool Layout::real2::segments_intersect( const real2& p2, const real2& p3, const real2& p4 ) const
+inline bool Layout::real2::segments_intersect( const real2& p2, const real2& p3, const real2& p4, bool include_endpoints ) const
 {
     const real2& p1 = *this;
 
@@ -1752,16 +1757,16 @@ inline bool Layout::real2::segments_intersect( const real2& p2, const real2& p3,
 
     // Special Cases
     // p1, p2 and p3 are colinear and p3 lies on segment p1p2
-    if ( o1 == 0 && p3.is_on_segment( p1, p2 ) ) return true;
+    if ( o1 == 0 && p3.is_on_segment( p1, p2, include_endpoints ) ) return true;
 
     // p1, p2 and p4 are colinear and p4 lies on segment p1p2
-    if ( o2 == 0 && p4.is_on_segment( p1, p2 ) ) return true;
+    if ( o2 == 0 && p4.is_on_segment( p1, p2, include_endpoints ) ) return true;
 
     // p3, p4 and p1 are colinear and p1 lies on segment p3p4
-    if ( o3 == 0 && p1.is_on_segment( p3, p4 ) ) return true; 
+    if ( o3 == 0 && p1.is_on_segment( p3, p4, include_endpoints ) ) return true; 
 
     // p3, p4 and p2 are colinear and p2 lies on segment p3p4
-    if ( o4 == 0 && p2.is_on_segment( p3, p4 ) ) return true;
+    if ( o4 == 0 && p2.is_on_segment( p3, p4, include_endpoints ) ) return true;
 
     return false; 
 }
@@ -1791,13 +1796,13 @@ inline bool Layout::real2::lines_intersection( const real2& p2, const real2& p3,
     } 
 }
 
-inline bool Layout::real2::segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const
+inline bool Layout::real2::segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip, bool include_endpoints ) const
 {
     const real2& p1 = *this;
 
     return p1.lines_intersection( p2, p3, p4, ip ) &&
-           ip.is_on_segment( p1, p2 ) && 
-           ip.is_on_segment( p3, p4 );
+           ip.is_on_segment( p1, p2, include_endpoints ) && 
+           ip.is_on_segment( p3, p4, include_endpoints );
 }
 
 void Layout::real2::pad_segment( const real2& p2, real pad, real2& p1_new, real2& p2_new ) const
@@ -3878,6 +3883,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     // First find any intersection point between the two polygons.
     // We check all pairs of line segments.
     //------------------------------------------------------------
+    const bool include_endpoints = false;
     uint i, i2, j, j2;
     real2 ip;
     for( i = 0; i < vtx1_cnt; i++ )
@@ -3886,7 +3892,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         for( j = 0; j < vtx2_cnt; j++ )
         {
             j2 = (j + 1) % vtx2_cnt;
-            if ( vtx1[i].segments_intersection( vtx1[i2], vtx2[j], vtx2[j2], ip ) ) break;
+            if ( vtx1[i].segments_intersection( vtx1[i2], vtx2[j], vtx2[j2], ip, include_endpoints ) ) break;
         }
         if ( j != vtx2_cnt ) break;
     }   
@@ -3941,6 +3947,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
                 //------------------------------------------------------------
                 // Record the intersection point, ip.
                 //------------------------------------------------------------
+                ldout << "new intersection point: " << ip << "\n";
                 vtx[vtx_cnt++] = ip;
 
                 //------------------------------------------------------------
@@ -3956,11 +3963,15 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
                 const real2& curr_s1  = vtxn[curr][curr_s1_i];
                 const real2& other_s0 = vtxn[other][other_s0_i];
                 const real2& other_s1 = vtxn[other][other_s1_i];
+                ldout << "curr_seg:  [ " << curr_s0  << ", " << curr_s1  << " ]\n";
+                ldout << "other_seg: [ " << other_s0 << ", " << other_s1 << " ]\n";
 
                 bool use_other_s0 = (is_ccw == do_merge) ? other_s0.is_left_of_segment(  curr_s0, curr_s1 ) :
                                                            other_s0.is_right_of_segment( curr_s0, curr_s1 );
                 bool use_other_s1 = (is_ccw == do_merge) ? other_s1.is_left_of_segment(  curr_s0, curr_s1 ) :
                                                            other_s1.is_right_of_segment( curr_s0, curr_s1 );
+                ldout << "use_other_s0=" << use_other_s0 << " use_other_s1=" << use_other_s1 << 
+                         " is_ccw=" << is_ccw << " do_merge=" << do_merge << "\n";
                 lassert( use_other_s0 || use_other_s1, "neither other segment endpoint is inside the current polygon - investigate" );
 
                 //------------------------------------------------------------
@@ -4002,7 +4013,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
                 uint k2 = (k + 1) % vtxn_cnt[other];
                 real2 this_ip;
                 const real2 curr_s1 = vtxn[curr][curr_s1_i];
-                if ( vtxn[other][k].segments_intersection( vtxn[other][k2], ip, curr_s1, this_ip ) ) {
+                if ( vtxn[other][k].segments_intersection( vtxn[other][k2], ip, curr_s1, this_ip, include_endpoints ) ) {
                     real this_ip_dist = (ip - vtxn[other][k]).length();     
                     if ( best_k == NULL_I || this_ip_dist < best_dist ) {
                         best_k    = k;
