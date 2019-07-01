@@ -562,7 +562,7 @@ private:
     void        polygon_dealloc( real2 * vtx_array );
     real2 *     polygon_merge_or_intersect( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt );
     AABR        polygon_brect( const real2 * vtx, uint vtx_cnt ) const;
-    std::string polygon_str( const real2 * vtx, uint vtx_cnt, std::string color, real xy_scale=1.0, real x_off=0.0, real y_off=0.0 ) const;
+    std::string polygon_str( const real2 * vtx, uint vtx_cnt, std::string color, real xy_scale=4.0, real x_off=100.0, real y_off=100.0 ) const;
 
     // FILL
     void fill_dielectric_rect( uint layer_i, const AABR& rect );
@@ -3768,9 +3768,9 @@ bool Layout::bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uin
     real2 * vtx2 = polygon_alloc( xy2,            vtx2_cnt );
     real2 * vtxr = polygon_alloc( quadrant_brect, vtxr_cnt );
     ldout << "xy1, xy2, qbrect:\n";
-    ldout << polygon_str( vtx1, vtx1_cnt, "red",    4.0, 100.0, 100.0 ) << "\n";
-    ldout << polygon_str( vtx2, vtx2_cnt, "green",  4.0, 100.0, 100.0 ) << "\n";
-    ldout << polygon_str( vtxr, vtxr_cnt, "yellow", 4.0, 100.0, 100.0 ) << "\n";
+    ldout << polygon_str( vtx1, vtx1_cnt, "red" );
+    ldout << polygon_str( vtx2, vtx2_cnt, "green" );
+    ldout << polygon_str( vtxr, vtxr_cnt, "yellow" );
 
     //------------------------------------------------------------
     // Intersect both leaf polygons with the brect polygon.
@@ -3780,8 +3780,8 @@ bool Layout::bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uin
     real2 * vtx1r = polygon_merge_or_intersect( false, vtx1, vtx1_cnt, vtxr, vtxr_cnt, vtx1r_cnt );
     real2 * vtx2r = polygon_merge_or_intersect( false, vtx2, vtx2_cnt, vtxr, vtxr_cnt, vtx2r_cnt );
     ldout << "xy1r, xy2r:\n";
-    ldout << polygon_str( vtx1r, vtx1r_cnt, "red",   4.0, 100.0, 100.0 ) << "\n";
-    ldout << polygon_str( vtx2r, vtx2r_cnt, "green", 4.0, 100.0, 100.0 ) << "\n";
+    ldout << polygon_str( vtx1r, vtx1r_cnt, "red" );
+    ldout << polygon_str( vtx2r, vtx2r_cnt, "green" );
 
     //------------------------------------------------------------
     // Merge the resultant polygons to get the final merged polygon.  
@@ -4052,15 +4052,17 @@ Layout::AABR Layout::polygon_brect( const real2 * vtx, uint vtx_cnt ) const
 
 std::string Layout::polygon_str( const real2 * vtx, uint vtx_cnt, std::string color, real xy_scale, real x_off, real y_off ) const
 {
-    std::string s = "<polygon points=\"";
+    std::string s = "<polygon points='";
     for( uint i = 0; i < vtx_cnt; i++ )
     {
         if ( i != 0 ) s += " ";
-        s += std::to_string( xy_scale*vtx[i].c[0] + x_off );
+        s += std::to_string( vtx[i].c[0] );
         s += ",";
-        s += std::to_string( xy_scale*vtx[i].c[1] + y_off );
+        s += std::to_string( vtx[i].c[1] );
     }
-    s += "\" style=\"fill:" + color + "; fill-opacity:0.5; stroke-width:1\" />";
+    s += "' transform='translate(" + std::to_string(x_off) + " " + std::to_string(y_off) + 
+          ") scale(" + std::to_string(xy_scale) + " " + std::to_string(xy_scale) + ")' fill='" + 
+          color + "' fill-opacity='0.5' stroke-width='1'/>\n";
     return s;
 }
 
