@@ -555,7 +555,7 @@ private:
     void    bah_add( uint leaf_i, uint layer, CONFLICT_POLICY conflict_policy );
     void    bah_insert( uint bah_i, const AABR& brect, uint leaf_i, const AABR& leaf_brect, CONFLICT_POLICY conflict_policy, std::string indent_str="" );
     bool    bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uint li2, bool& is_exact ); 
-
+public:
     real2 *     polygon_alloc( uint vtx_cnt );
     real2 *     polygon_alloc( const Node& xy_node, uint& vtx_cnt );
     real2 *     polygon_alloc( const AABR& brect, uint& vtx_cnt );
@@ -1789,12 +1789,12 @@ inline bool Layout::real2::lines_intersection( const real2& p2, const real2& p3,
     real determinant = a1*b2 - a2*b1; 
   
     if ( determinant == 0 ) {
-        ldout << " lines do not intersect\n";
+        ldout << " lines_intersect=NONE";
         return false;   // parallel
     } else {
         ip.c[0] = (b2*c1 - b1*c2) / determinant; 
         ip.c[1] = (a1*c2 - a2*c1) / determinant; 
-        ldout << " lines intersect at " << ip << "\n";
+        ldout << " lines_intersection=" << ip;
         return true;
     } 
 }
@@ -1804,11 +1804,24 @@ inline bool Layout::real2::segments_intersection( const real2& p2, const real2& 
 {
     const real2& p1 = *this;
 
-    ldout << "checking intersection of segment [" << p1 << ", " << p2 << "] against [" << p3 << ", " << p4 << "]:";
+    ldout << "checking intersection of segment p1=[" << p1 << ", p2=" << p2 << "] against p3=[" << p3 << ", p4=" << p4 << 
+                        "] include_p1_p2_endpoints=" << include_p1_p2 << " include_p3_p4_endpoints=" << include_p3_p4 << ": ";
 
-    return p1.lines_intersection( p2, p3, p4, ip ) &&
-           ip.is_on_segment( p1, p2, include_p1_p2 ) && 
-           ip.is_on_segment( p3, p4, include_p3_p4 );
+    if ( p1.lines_intersection( p2, p3, p4, ip ) ) {
+        if ( ip.is_on_segment( p1, p2, include_p1_p2 ) ) {
+            ldout << ", on_p1_p2=true";
+            if ( ip.is_on_segment( p3, p4, include_p3_p4 ) ) {
+                ldout << ", on_p3_p4=true => INTERSECTION\n";
+                return true;
+            } else {
+                ldout << ", on_p3_p4=false";
+            }
+        } else {
+            ldout << ", on_p1_p2=false";
+        }
+    }
+    ldout << "\n";
+    return false;
 }
 
 void Layout::real2::pad_segment( const real2& p2, real pad, real2& p1_new, real2& p2_new ) const
@@ -3887,6 +3900,9 @@ void Layout::polygon_dealloc( real2 * vtx_array )
 Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, 
                                                     uint& vtx_cnt )
 {
+    ldout << "polygon_merge_or_intersect: do_merge=" << do_merge << " poly1=" << polygon_str( vtx1, vtx1_cnt, "red" ) <<
+                                                                    " poly2=" << polygon_str( vtx2, vtx2_cnt, "green" ) << "\n";
+
     //------------------------------------------------------------
     // First find any intersection point between the two polygons.
     // We check all pairs of line segments.
@@ -3950,7 +3966,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         uint          other_s1_i     = j2;
         for( ;; ) 
         {
-            ldout << "curr polygon: " << curr << "\n";
+            ldout << " curr polygon: " << curr << "\n";
             lassert( vtx_cnt != (vtx1_cnt + vtx2_cnt), "vtx array grew bigger than expected" );
             if ( have_ip ) {
                 //------------------------------------------------------------
@@ -3975,6 +3991,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
                 ldout << "curr_seg:  [ " << curr_s0  << ", " << curr_s1  << " ]\n";
                 ldout << "other_seg: [ " << other_s0 << ", " << other_s1 << " ]\n";
 
+                // TODO: add more prints here to see better
                 bool use_other_s0 = (is_ccw == do_merge) ? other_s0.is_left_of_segment(  curr_s0, curr_s1 ) :
                                                            other_s0.is_right_of_segment( curr_s0, curr_s1 );
                 bool use_other_s1 = (is_ccw == do_merge) ? other_s1.is_left_of_segment(  curr_s0, curr_s1 ) :
@@ -4043,6 +4060,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         }
     }    
 
+    ldout << "polygon_merge_or_intersect: result=" << polygon_str( vtx, vtx_cnt, "blue" ) << "\n";
     return vtx;
 }
 
