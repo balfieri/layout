@@ -3991,13 +3991,16 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
                 ldout << "curr_seg:  [ " << curr_s0  << ", " << curr_s1  << " ]\n";
                 ldout << "other_seg: [ " << other_s0 << ", " << other_s1 << " ]\n";
 
-                // TODO: add more prints here to see better
-                bool use_other_s0 = (is_ccw == do_merge) ? other_s0.is_left_of_segment(  curr_s0, curr_s1 ) :
-                                                           other_s0.is_right_of_segment( curr_s0, curr_s1 );
-                bool use_other_s1 = (is_ccw == do_merge) ? other_s1.is_left_of_segment(  curr_s0, curr_s1 ) :
-                                                           other_s1.is_right_of_segment( curr_s0, curr_s1 );
-                ldout << "use_other_s0=" << use_other_s0 << " use_other_s1=" << use_other_s1 << 
-                         " is_ccw=" << is_ccw << " do_merge=" << do_merge << "\n";
+                bool other_s0_is_left  = other_s0.is_left_of_segment(  curr_s0, curr_s1 );
+                bool other_s0_is_right = other_s0.is_right_of_segment( curr_s0, curr_s1 );
+                bool other_s1_is_left  = other_s1.is_left_of_segment(  curr_s0, curr_s1 );
+                bool other_s1_is_right = other_s1.is_right_of_segment( curr_s0, curr_s1 );
+                bool use_other_s0 = (is_ccw == do_merge) ? other_s0_is_left : other_s0_is_right;
+                bool use_other_s1 = (is_ccw == do_merge) ? other_s1_is_left : other_s1_is_right;
+                ldout << "other_s0_is_left=" << other_s0_is_left << " other_s0_is_right=" << other_s0_is_right <<
+                        " other_s1_is_left=" << other_s1_is_left << " other_s1_is_right=" << other_s1_is_right <<
+                        " is_ccw=" << is_ccw << " do_merge=" << do_merge << 
+                        " use_other_s0=" << use_other_s0 << " use_other_s1=" << use_other_s1 << "\n"; 
                 lassert( use_other_s0 || use_other_s1, "neither other segment endpoint is inside the current polygon - investigate" );
 
                 //------------------------------------------------------------
