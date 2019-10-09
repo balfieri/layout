@@ -1801,7 +1801,7 @@ inline bool Layout::real2::lines_intersection( const real2& p2, const real2& p3,
     real determinant = a1*b2 - a2*b1; 
   
     if ( determinant == 0 ) {
-        ldout << " lines_intersect=NONE";
+        ldout << " lines_intersection=NONE";
         return false;   // parallel
     } else {
         ip.c[0] = (b2*c1 - b1*c2) / determinant; 
@@ -3916,8 +3916,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
                                                                     " poly2=" << polygon_str( vtx2, vtx2_cnt, "green" ) << "\n";
 
     //------------------------------------------------------------
-    // First find any intersection point between the two polygons.
-    // We check all pairs of line segments.
+    // First find any intersection point between the two polygons, 
+    // excluding segment endpoints.
     //------------------------------------------------------------
     uint i, i2, j, j2;
     real2 ip;
@@ -3927,13 +3927,15 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         for( j = 0; j < vtx2_cnt; j++ )
         {
             j2 = (j + 1) % vtx2_cnt;
-            if ( vtx1[i].segments_intersection( vtx1[i2], vtx2[j], vtx2[j2], ip, true, true ) ) break;
+            if ( vtx1[i].segments_intersection( vtx1[i2], vtx2[j], vtx2[j2], ip, false, false ) ) break;
         }
         if ( j != vtx2_cnt ) break;
     }   
 
     real2 * vtx;
     if ( i == vtx1_cnt ) {
+        ldout << "no proper intersection, checking for complete containment...\n";
+
         //------------------------------------------------------------
         // NO INTERSECTION
         //
@@ -3944,17 +3946,20 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         lassert( j == vtx2_cnt, "something is wrong" );
         AABR brect1 = polygon_brect( vtx1, vtx1_cnt ); 
         AABR brect2 = polygon_brect( vtx2, vtx2_cnt ); 
-        if ( brect1.encloses( brect2 ) ) {
+        if ( brect1.encloses( brect2 ) == do_merge ) {
             vtx_cnt = vtx1_cnt;
-            return polygon_copy( vtx1, vtx1_cnt );
-        }
-        if ( brect2.encloses( brect1 ) ) {
+            vtx = polygon_copy( vtx1, vtx1_cnt );
+            ldout << "using polygon1\n";
+        } else if ( brect2.encloses( brect1 ) ) {
             vtx_cnt = vtx2_cnt;
-            return polygon_copy( vtx2, vtx2_cnt );
+            vtx = polygon_copy( vtx2, vtx2_cnt );
+            ldout << "using polygon2\n";
+        } else {
+            // they don't overlap at all 
+            ldout << "no overlap at all\n";
+            vtx = nullptr;  
+            vtx_cnt = 0;
         }
-        // they don't overlap at all 
-        vtx = nullptr;  
-        vtx_cnt = 0;
 
     } else {
         //------------------------------------------------------------
