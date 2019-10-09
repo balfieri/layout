@@ -3946,17 +3946,33 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         lassert( j == vtx2_cnt, "something is wrong" );
         AABR brect1 = polygon_brect( vtx1, vtx1_cnt ); 
         AABR brect2 = polygon_brect( vtx2, vtx2_cnt ); 
-        if ( brect1.encloses( brect2 ) == do_merge ) {
-            vtx_cnt = vtx1_cnt;
-            vtx = polygon_copy( vtx1, vtx1_cnt );
-            ldout << "using polygon1\n";
-        } else if ( brect2.encloses( brect1 ) ) {
-            vtx_cnt = vtx2_cnt;
-            vtx = polygon_copy( vtx2, vtx2_cnt );
-            ldout << "using polygon2\n";
+        bool brect1_encloses = brect1.encloses( brect2 );
+        bool brect2_encloses = !brect1_encloses && brect2.encloses( brect1 );
+        if ( brect1_encloses || brect2_encloses ) {
+            if ( brect1_encloses ) {
+                if ( do_merge ) {
+                    vtx_cnt = vtx1_cnt;
+                    vtx = polygon_copy( vtx1, vtx1_cnt );
+                    ldout << "using polygon1 for merge\n";
+                } else {
+                    vtx_cnt = vtx2_cnt;
+                    vtx = polygon_copy( vtx2, vtx2_cnt );
+                    ldout << "using polygon2 for intersection\n";
+                }
+            } else {
+                if ( do_merge ) {
+                    vtx_cnt = vtx2_cnt;
+                    vtx = polygon_copy( vtx2, vtx2_cnt );
+                    ldout << "using polygon2 for merge\n";
+                } else {
+                    vtx_cnt = vtx1_cnt;
+                    vtx = polygon_copy( vtx1, vtx1_cnt );
+                    ldout << "using polygon1 for intersection\n";
+                }
+            }
         } else {
             // they don't overlap at all 
-            ldout << "no overlap at all\n";
+            ldout << "neither contains the other\n";
             vtx = nullptr;  
             vtx_cnt = 0;
         }
