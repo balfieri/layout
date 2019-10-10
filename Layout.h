@@ -166,7 +166,8 @@ public:
         real2& operator *= ( const real s );
         real2& operator /= ( const real2 &v2 );
         real2& operator /= ( const real s );
-        bool   operator == ( const real2 &v2 ); 
+        bool   operator == ( const real2 &v2 ) const; 
+        bool   operator != ( const real2 &v2 ) const; 
     };
 
     // Axis-Aligned Bounding Rectangle (2D)
@@ -206,6 +207,7 @@ public:
         Matrix operator + ( const Matrix& m ) const;    // add two matrices
         Matrix operator - ( const Matrix& m ) const;    // subtract two matrices
         bool   operator == ( const Matrix& m ) const;   // return true if matrices are equal
+        bool   operator != ( const Matrix& m ) const;   // return true if matrices are unequal
 
         void   multiply(    double s );                 // multiply this matrix by scalar
 
@@ -1722,13 +1724,9 @@ inline bool Layout::real2::is_on_segment( const real2& p2, const real2& p3, bool
 {
     const real2& p1 = *this;
 
-    if ( include_endpoints ) {
-        return p1.c[0] <= std::max( p2.c[0], p3.c[0] ) && p1.c[0] >= std::min( p2.c[0], p3.c[0] ) &&
-               p1.c[1] <= std::max( p2.c[1], p3.c[1] ) && p1.c[1] >= std::min( p2.c[1], p3.c[1] );
-    } else {
-        return p1.c[0] <  std::max( p2.c[0], p3.c[0] ) && p1.c[0] >  std::min( p2.c[0], p3.c[0] ) &&
-               p1.c[1] <  std::max( p2.c[1], p3.c[1] ) && p1.c[1] >  std::min( p2.c[1], p3.c[1] );
-    }
+    bool on_segment = p1.c[0] <= std::max( p2.c[0], p3.c[0] ) && p1.c[0] >= std::min( p2.c[0], p3.c[0] ) &&
+                      p1.c[1] <= std::max( p2.c[1], p3.c[1] ) && p1.c[1] >= std::min( p2.c[1], p3.c[1] );
+    return on_segment && (include_endpoints || (p1 != p2 && p1 != p3));
 }
 
 inline bool Layout::real2::is_left_of_segment( const real2& p2, const real2& p3 ) const
@@ -1959,9 +1957,14 @@ inline Layout::real2& Layout::real2::operator /= ( const Layout::real s )
     return *this;
 }
 
-inline bool Layout::real2::operator == ( const Layout::real2 &v2 )
+inline bool Layout::real2::operator == ( const Layout::real2 &v2 ) const
 {
     return c[0] == v2.c[0] && c[1] == v2.c[1];  
+}
+
+inline bool Layout::real2::operator != ( const Layout::real2 &v2 ) const
+{
+    return c[0] != v2.c[0] || c[1] != v2.c[1];  
 }
 
 inline void Layout::Matrix::identity( void )
@@ -2073,6 +2076,18 @@ inline bool Layout::Matrix::operator == ( const Matrix& m ) const
         }
     }
     return true;
+}
+
+inline bool Layout::Matrix::operator != ( const Matrix& m ) const
+{
+    for( uint i = 0; i < 4; i++ )
+    {
+        for( uint j = 0; j < 4; j++ )
+        {
+            if ( this->m[i][j] != m.m[i][j] ) return true;
+        }
+    }
+    return false;
 }
 
 inline void Layout::Matrix::multiply( double s ) 
