@@ -558,14 +558,15 @@ private:
     void    bah_insert( uint bah_i, const AABR& brect, uint leaf_i, const AABR& leaf_brect, CONFLICT_POLICY conflict_policy, std::string indent_str="" );
     bool    bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uint li2, bool& is_exact ); 
 public:
-    real2 *     polygon_alloc( uint vtx_cnt );
-    real2 *     polygon_alloc( const Node& xy_node, uint& vtx_cnt );
-    real2 *     polygon_alloc( const AABR& brect, uint& vtx_cnt );
-    real2 *     polygon_copy( const real2 * other, uint other_cnt );
-    void        polygon_dealloc( real2 * vtx_array );
-    real2 *     polygon_merge_or_intersect( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt );
+    real2 *     polygon_alloc( uint vtx_cnt ) const;
+    real2 *     polygon_alloc( const Node& xy_node, uint& vtx_cnt ) const;
+    real2 *     polygon_alloc( const AABR& brect, uint& vtx_cnt ) const;
+    real2 *     polygon_copy( const real2 * other, uint other_cnt ) const;
+    void        polygon_dealloc( real2 * vtx_array ) const;
+    real2 *     polygon_merge_or_intersect( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt ) const;
     AABR        polygon_brect( const real2 * vtx, uint vtx_cnt ) const;
     std::string polygon_str( const real2 * vtx, uint vtx_cnt, std::string color, real xy_scale=4.0, real x_off=100.0, real y_off=100.0 ) const;
+    bool        polygon_eq( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt ) const;
 
     // FILL
     void fill_dielectric_rect( uint layer_i, const AABR& rect );
@@ -3858,7 +3859,7 @@ bool Layout::bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uin
     return vtx != nullptr; 
 }
 
-Layout::real2 * Layout::polygon_alloc( uint vtx_cnt )
+Layout::real2 * Layout::polygon_alloc( uint vtx_cnt ) const
 {
     //------------------------------------------------------------
     // Later, we'll cache these.
@@ -3866,7 +3867,7 @@ Layout::real2 * Layout::polygon_alloc( uint vtx_cnt )
     return new real2[vtx_cnt];
 }
 
-Layout::real2 * Layout::polygon_alloc( const Node& xy_node, uint& vtx_cnt )
+Layout::real2 * Layout::polygon_alloc( const Node& xy_node, uint& vtx_cnt ) const
 {
     //------------------------------------------------------------
     // First count number of vertices.
@@ -3898,7 +3899,7 @@ Layout::real2 * Layout::polygon_alloc( const Node& xy_node, uint& vtx_cnt )
     return vtx_array;
 }
 
-Layout::real2 * Layout::polygon_alloc( const AABR& brect, uint& vtx_cnt )
+Layout::real2 * Layout::polygon_alloc( const AABR& brect, uint& vtx_cnt ) const
 {
     vtx_cnt = 5;        
     real2 * vtx_array = new real2[vtx_cnt];
@@ -3912,20 +3913,20 @@ Layout::real2 * Layout::polygon_alloc( const AABR& brect, uint& vtx_cnt )
     return vtx_array;
 }
 
-Layout::real2 * Layout::polygon_copy( const real2 * other, uint other_cnt )
+Layout::real2 * Layout::polygon_copy( const real2 * other, uint other_cnt ) const
 {
     real2 * vtx = polygon_alloc( other_cnt );
     memcpy( vtx, other, other_cnt * sizeof( real2 ) );
     return vtx;
 }
 
-void Layout::polygon_dealloc( real2 * vtx_array )
+void Layout::polygon_dealloc( real2 * vtx_array ) const
 {
     delete[] vtx_array;
 }
 
 Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, 
-                                                    uint& vtx_cnt )
+                                                    uint& vtx_cnt ) const
 {
     ldout << "polygon_merge_or_intersect: do_merge=" << do_merge << " poly1=" << polygon_str( vtx1, vtx1_cnt, "red" ) <<
                                                                     " poly2=" << polygon_str( vtx2, vtx2_cnt, "green" ) << "\n";
@@ -4016,18 +4017,21 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         {
             ldout << "\ncurr polygon:  " << polygon_str( vtxn[curr],  vtxn_cnt[curr],  "blue" ) << "\n";
             ldout << "other polygon: " << polygon_str( vtxn[other], vtxn_cnt[other], "green" ) << "\n";
-            ldout << "merge/intersection polygon so far: " << polygon_str( vtx, vtx_cnt, "orange" ) << "\n";
             lassert( vtx_cnt != (vtx1_cnt + vtx2_cnt), "vtx array grew bigger than expected" );
             if ( have_ip ) {
                 //------------------------------------------------------------
-                // Record the intersection point, ip.
+                // Record the new intersection point, ip.
                 //------------------------------------------------------------
                 vtx[vtx_cnt++] = ip;
+                ldout << "merge/intersection polygon so far after new ip=" << ip << "\n";
 
                 //------------------------------------------------------------
                 // If we're back at the first intersection point, we are done.
                 //------------------------------------------------------------
-                if ( vtx_cnt != 1 && vtx[vtx_cnt-1] == vtx[0] ) break;
+                if ( vtx_cnt != 1 && vtx[vtx_cnt-1] == vtx[0] ) { 
+                    ldout << "back at first intersection point, so done, vtx[0]=" << vtx[0] << " vtx[last]=" << vtx[vtx_cnt-1] << "\n";
+                    break;
+                }
 
                 //------------------------------------------------------------
                 // For merge,        head outside the current polygon.
@@ -4066,14 +4070,11 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
 
             } else {
                 //------------------------------------------------------------
-                // Record the endpoint (curr_s1_i) of whatever segment we are on.
+                // Record the endpoint (curr_s1_i) of the current segment.
                 // Then make that the curr_s0_i and calculate the next curr_s1_i 
                 // based on our current direction (ccw or cw).
-                // If we're back at the first intersection point, we are done.
                 //------------------------------------------------------------
                 ip = vtxn[curr][curr_s1_i];
-                vtx[vtx_cnt++] = ip;
-                if ( vtx_cnt != 1 && vtx[vtx_cnt-1] == vtx[0] ) break;
 
                 curr_s0_i = curr_s1_i;
                 curr_s1_i = (curr_s0_i + (is_ccw ? 1 : (vtxn_cnt[curr]-1))) % vtxn_cnt[curr];
@@ -4144,6 +4145,16 @@ std::string Layout::polygon_str( const real2 * vtx, uint vtx_cnt, std::string co
           ") scale(" + std::to_string(xy_scale) + " " + std::to_string(xy_scale) + ")' fill='" + 
           color + "' fill-opacity='0.5' stroke-width='1'/>";
     return s;
+}
+
+bool Layout::polygon_eq( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt ) const
+{
+    if ( vtx1_cnt != vtx2_cnt ) return false;
+    for( uint i = 0; i < vtx1_cnt; i++ )
+    {
+        if ( vtx1[i] != vtx2[i] ) return false;
+    }
+    return true;
 }
 
 bool Layout::layout_read( std::string layout_path )
