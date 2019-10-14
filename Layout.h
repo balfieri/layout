@@ -4018,13 +4018,12 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     uint          other_s1_i     = j2;
     for( ;; ) 
     {
-        ldout << "current start point: " << ip << "\n";
         lassert( vtx_cnt != (vtx1_cnt + vtx2_cnt), "vtx array grew bigger than expected" );
         if ( have_ip ) {
             //------------------------------------------------------------
             // Record the new intersection point, ip.
             //------------------------------------------------------------
-            ldout << "save start point as intersection point\n";
+            ldout << "save start point as next vertex in result: " << ip << "\n";
             vtx[vtx_cnt++] = ip;
 
             //------------------------------------------------------------
@@ -4043,8 +4042,6 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             const real2& curr_s1  = vtxn[curr][curr_s1_i];
             const real2& other_s0 = vtxn[other][other_s0_i];
             const real2& other_s1 = vtxn[other][other_s1_i];
-            ldout << " curr_seg:  [ " << curr_s0  << ", " << curr_s1  << " ]\n";
-            ldout << " other_seg: [ " << other_s0 << ", " << other_s1 << " ]\n";
 
             bool other_s0_is_left  = other_s0.is_left_of_segment(  curr_s0, curr_s1 );
             bool other_s0_is_right = other_s0.is_right_of_segment( curr_s0, curr_s1 );
@@ -4066,7 +4063,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             //------------------------------------------------------------
             curr_s0_i = use_other_s0 ? other_s0_i : other_s1_i;
             curr_s1_i = use_other_s0 ? other_s1_i : other_s0_i;
-            is_ccw    = use_other_s1;      
+            //is_ccw    = use_other_s1;      
             curr      = other;
             other     = 1 - curr;
         } else {
@@ -4076,11 +4073,13 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             // based on our current direction (ccw or cw).
             //------------------------------------------------------------
             ip = vtxn[curr][curr_s1_i];
+            ldout << "save endpoint as next vertex in result: " << ip << " is_ccw=" << is_ccw << "\n";
+            vtx[vtx_cnt++] = ip;
 
             curr_s0_i = curr_s1_i;
             curr_s1_i = (curr_s0_i + (is_ccw ? 1 : (vtxn_cnt[curr]-1))) % vtxn_cnt[curr];
         }
-        ldout << " new curr_seg:  [ " << ip << ", " << vtxn[curr][curr_s1_i] << " ]\n";
+        ldout << "\nnew curr_seg:  [ " << ip << ", " << vtxn[curr][curr_s1_i] << " ] curr=" << curr << " curr_s1_i=" << curr_s1_i << "\n";
 
         //------------------------------------------------------------
         // See if there's an intersection point along (ip, curr_s1) with
@@ -4094,7 +4093,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             uint k2 = (k + 1) % vtxn_cnt[other];
             real2 this_ip;
             const real2 curr_s1 = vtxn[curr][curr_s1_i];
-            if ( vtxn[other][k].segments_intersection( vtxn[other][k2], ip, curr_s1, this_ip, true, false ) ) {
+            if ( ip.segments_intersection( curr_s1, vtxn[other][k], vtxn[other][k2], this_ip, true, true ) && this_ip != ip ) {
                 real this_ip_dist = (ip - vtxn[other][k]).length();     
                 if ( best_k == NULL_I || this_ip_dist < best_dist ) {
                     best_k    = k;
@@ -4112,9 +4111,9 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             // Set the new ip to best_ip and go back to the top of the loop.
             //------------------------------------------------------------
             ip = best_ip;
-            ldout << " closest intersection point along segment: " << ip << "\n";
+            ldout << " closest intersection point along curr_seg: " << ip << "\n";
         } else {
-            ldout << " no intersection point before end of segment\n";
+            ldout << " no intersection point before end of curr_seg\n";
         }
     }    
 
