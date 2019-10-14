@@ -3993,127 +3993,128 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             vtx_cnt = 0;
         }
 
-    } else {
-        //------------------------------------------------------------
-        // INTERSECTION
-        //
-        // Allocate a vtx array for the resultant polygon.
-        // Start with the intersection point from above.
-        //------------------------------------------------------------
-        vtx = new real2[vtx1_cnt + vtx2_cnt];
-        vtx_cnt = 0;                
+        ldout << "polygon_merge_or_intersect: result=" << polygon_str( vtx, vtx_cnt, "blue" ) << "\n";
+        return vtx;
+    }
 
-        uint          curr           = 0;                       // current polygon index
-        uint          other          = 1;                       // other   polygon index
-        const real2 * vtxn[2]        = { vtx1, vtx2 };
-        const uint    vtxn_cnt[2]    = { vtx1_cnt, vtx2_cnt };  
-        bool          is_ccw         = true;                    // current direction is ccw?
-        bool          have_ip        = true;
-        uint          curr_s0_i      = i;
-        uint          curr_s1_i      = i2;
-        uint          other_s0_i     = j;
-        uint          other_s1_i     = j2;
-        for( ;; ) 
+    //------------------------------------------------------------
+    // INTERSECTION
+    //
+    // Allocate a vtx array for the resultant polygon.
+    // Start with the intersection point from above.
+    //------------------------------------------------------------
+    vtx = new real2[vtx1_cnt + vtx2_cnt];
+    vtx_cnt = 0;                
+
+    uint          curr           = 0;                       // current polygon index
+    uint          other          = 1;                       // other   polygon index
+    const real2 * vtxn[2]        = { vtx1, vtx2 };
+    const uint    vtxn_cnt[2]    = { vtx1_cnt, vtx2_cnt };  
+    bool          is_ccw         = true;                    // current direction is ccw?
+    bool          have_ip        = true;
+    uint          curr_s0_i      = i;
+    uint          curr_s1_i      = i2;
+    uint          other_s0_i     = j;
+    uint          other_s1_i     = j2;
+    for( ;; ) 
+    {
+        ldout << "current start point: " << ip << "\n";
+        lassert( vtx_cnt != (vtx1_cnt + vtx2_cnt), "vtx array grew bigger than expected" );
+        if ( have_ip ) {
+            //------------------------------------------------------------
+            // Record the new intersection point, ip.
+            //------------------------------------------------------------
+            ldout << "save start point as intersection point\n";
+            vtx[vtx_cnt++] = ip;
+
+            //------------------------------------------------------------
+            // If we're back at the first intersection point, we are done.
+            //------------------------------------------------------------
+            if ( vtx_cnt != 1 && vtx[vtx_cnt-1] == vtx[0] ) { 
+                ldout << "back at first intersection point, so done, vtx[0]=" << vtx[0] << " vtx[last]=" << vtx[vtx_cnt-1] << "\n";
+                break;
+            }
+
+            //------------------------------------------------------------
+            // For merge,        head outside the current polygon.
+            // For intersection, head inside  the current polygon.
+            //------------------------------------------------------------
+            const real2& curr_s0  = vtxn[curr][curr_s0_i];
+            const real2& curr_s1  = vtxn[curr][curr_s1_i];
+            const real2& other_s0 = vtxn[other][other_s0_i];
+            const real2& other_s1 = vtxn[other][other_s1_i];
+            ldout << " curr_seg:  [ " << curr_s0  << ", " << curr_s1  << " ]\n";
+            ldout << " other_seg: [ " << other_s0 << ", " << other_s1 << " ]\n";
+
+            bool other_s0_is_left  = other_s0.is_left_of_segment(  curr_s0, curr_s1 );
+            bool other_s0_is_right = other_s0.is_right_of_segment( curr_s0, curr_s1 );
+            bool other_s1_is_left  = other_s1.is_left_of_segment(  curr_s0, curr_s1 );
+            bool other_s1_is_right = other_s1.is_right_of_segment( curr_s0, curr_s1 );
+            bool use_other_s0 = (is_ccw == do_merge) ? other_s0_is_left : other_s0_is_right;
+            bool use_other_s1 = (is_ccw == do_merge) ? other_s1_is_left : other_s1_is_right;
+            ldout << " other_s0_is_left=" << other_s0_is_left << " other_s0_is_right=" << other_s0_is_right <<
+                    " other_s1_is_left=" << other_s1_is_left << " other_s1_is_right=" << other_s1_is_right <<
+                    " is_ccw=" << is_ccw << " do_merge=" << do_merge << 
+                    " use_other_s0=" << use_other_s0 << " use_other_s1=" << use_other_s1 << "\n"; 
+            lassert( use_other_s0 || use_other_s1, "neither other segment endpoint is inside the current polygon - investigate" );
+
+            //------------------------------------------------------------
+            // Set curr_s0_i = other's chosen s0 or s1
+            // Set curr_s1_i = other's not-chosen s0 or s1
+            // Switch to the other polygon.
+            // Follow (ip, curr_s1).
+            //------------------------------------------------------------
+            curr_s0_i = use_other_s0 ? other_s0_i : other_s1_i;
+            curr_s1_i = use_other_s0 ? other_s1_i : other_s0_i;
+            is_ccw    = use_other_s1;      
+            curr      = other;
+            other     = 1 - curr;
+        } else {
+            //------------------------------------------------------------
+            // Record the endpoint (curr_s1_i) of the current segment.
+            // Then make that the curr_s0_i and calculate the next curr_s1_i 
+            // based on our current direction (ccw or cw).
+            //------------------------------------------------------------
+            ip = vtxn[curr][curr_s1_i];
+
+            curr_s0_i = curr_s1_i;
+            curr_s1_i = (curr_s0_i + (is_ccw ? 1 : (vtxn_cnt[curr]-1))) % vtxn_cnt[curr];
+        }
+        ldout << " new curr_seg:  [ " << ip << ", " << vtxn[curr][curr_s1_i] << " ]\n";
+
+        //------------------------------------------------------------
+        // See if there's an intersection point along (ip, curr_s1) with
+        // the (new) other segment.  Choose the one that is closest to ip.
+        //------------------------------------------------------------
+        uint  best_k = NULL_I;
+        real  best_dist = 1e100;
+        real2 best_ip;
+        for( uint k = 0; k < vtxn_cnt[other]; k++ )
         {
-            ldout << "\ncurr polygon:  " << polygon_str( vtxn[curr],  vtxn_cnt[curr],  "blue" ) << "\n";
-            ldout << "other polygon: " << polygon_str( vtxn[other], vtxn_cnt[other], "green" ) << "\n";
-            lassert( vtx_cnt != (vtx1_cnt + vtx2_cnt), "vtx array grew bigger than expected" );
-            if ( have_ip ) {
-                //------------------------------------------------------------
-                // Record the new intersection point, ip.
-                //------------------------------------------------------------
-                vtx[vtx_cnt++] = ip;
-                ldout << "merge/intersection polygon so far after new ip=" << ip << "\n";
-
-                //------------------------------------------------------------
-                // If we're back at the first intersection point, we are done.
-                //------------------------------------------------------------
-                if ( vtx_cnt != 1 && vtx[vtx_cnt-1] == vtx[0] ) { 
-                    ldout << "back at first intersection point, so done, vtx[0]=" << vtx[0] << " vtx[last]=" << vtx[vtx_cnt-1] << "\n";
-                    break;
-                }
-
-                //------------------------------------------------------------
-                // For merge,        head outside the current polygon.
-                // For intersection, head inside  the current polygon.
-                //------------------------------------------------------------
-                const real2& curr_s0  = vtxn[curr][curr_s0_i];
-                const real2& curr_s1  = vtxn[curr][curr_s1_i];
-                const real2& other_s0 = vtxn[other][other_s0_i];
-                const real2& other_s1 = vtxn[other][other_s1_i];
-                ldout << " curr_seg:  [ " << curr_s0  << ", " << curr_s1  << " ]\n";
-                ldout << " other_seg: [ " << other_s0 << ", " << other_s1 << " ]\n";
-
-                bool other_s0_is_left  = other_s0.is_left_of_segment(  curr_s0, curr_s1 );
-                bool other_s0_is_right = other_s0.is_right_of_segment( curr_s0, curr_s1 );
-                bool other_s1_is_left  = other_s1.is_left_of_segment(  curr_s0, curr_s1 );
-                bool other_s1_is_right = other_s1.is_right_of_segment( curr_s0, curr_s1 );
-                bool use_other_s0 = (is_ccw == do_merge) ? other_s0_is_left : other_s0_is_right;
-                bool use_other_s1 = (is_ccw == do_merge) ? other_s1_is_left : other_s1_is_right;
-                ldout << " other_s0_is_left=" << other_s0_is_left << " other_s0_is_right=" << other_s0_is_right <<
-                        " other_s1_is_left=" << other_s1_is_left << " other_s1_is_right=" << other_s1_is_right <<
-                        " is_ccw=" << is_ccw << " do_merge=" << do_merge << 
-                        " use_other_s0=" << use_other_s0 << " use_other_s1=" << use_other_s1 << "\n"; 
-                lassert( use_other_s0 || use_other_s1, "neither other segment endpoint is inside the current polygon - investigate" );
-
-                //------------------------------------------------------------
-                // Set curr_s0_i = other's chosen s0 or s1
-                // Set curr_s1_i = other's not-chosen s0 or s1
-                // Switch to the other polygon.
-                // Follow (ip, curr_s1).
-                //------------------------------------------------------------
-                curr_s0_i = use_other_s0 ? other_s0_i : other_s1_i;
-                curr_s1_i = use_other_s0 ? other_s1_i : other_s0_i;
-                is_ccw    = use_other_s1;      
-                curr      = other;
-                other     = 1 - curr;
-
-            } else {
-                //------------------------------------------------------------
-                // Record the endpoint (curr_s1_i) of the current segment.
-                // Then make that the curr_s0_i and calculate the next curr_s1_i 
-                // based on our current direction (ccw or cw).
-                //------------------------------------------------------------
-                ip = vtxn[curr][curr_s1_i];
-
-                curr_s0_i = curr_s1_i;
-                curr_s1_i = (curr_s0_i + (is_ccw ? 1 : (vtxn_cnt[curr]-1))) % vtxn_cnt[curr];
-                ldout << " curr_seg:  [ " << vtxn[curr][curr_s0_i] << ", " << vtxn[curr][curr_s1_i] << " ]\n";
-            }
-
-            //------------------------------------------------------------
-            // See if there's an intersection point along (ip, curr_s1) with
-            // the (new) other segment.  Choose the one that is closest to ip.
-            //------------------------------------------------------------
-            uint  best_k = NULL_I;
-            real  best_dist = 1e100;
-            real2 best_ip;
-            for( uint k = 0; k < vtxn_cnt[other]; k++ )
-            {
-                uint k2 = (k + 1) % vtxn_cnt[other];
-                real2 this_ip;
-                const real2 curr_s1 = vtxn[curr][curr_s1_i];
-                if ( vtxn[other][k].segments_intersection( vtxn[other][k2], ip, curr_s1, this_ip, true, false ) ) {
-                    real this_ip_dist = (ip - vtxn[other][k]).length();     
-                    if ( best_k == NULL_I || this_ip_dist < best_dist ) {
-                        best_k    = k;
-                        best_dist = this_ip_dist;
-                        best_ip   = this_ip;
-                    }
+            uint k2 = (k + 1) % vtxn_cnt[other];
+            real2 this_ip;
+            const real2 curr_s1 = vtxn[curr][curr_s1_i];
+            if ( vtxn[other][k].segments_intersection( vtxn[other][k2], ip, curr_s1, this_ip, true, false ) ) {
+                real this_ip_dist = (ip - vtxn[other][k]).length();     
+                if ( best_k == NULL_I || this_ip_dist < best_dist ) {
+                    best_k    = k;
+                    best_dist = this_ip_dist;
+                    best_ip   = this_ip;
+                    ldout << " new best_ip=" << best_ip << " best_dist=" << best_dist << "\n";
                 }
             }
+        }
 
-            have_ip = best_k != NULL_I;
-            if ( have_ip ) {
-                //------------------------------------------------------------
-                // There was an intersection.
-                // Set the new ip to best_ip and go back to the top of the loop.
-                //------------------------------------------------------------
-                ip = best_ip;
-                ldout << " new intersection point: " << ip << "\n";
-            } else {
-                ldout << " no intersection point\n";
-            }
+        have_ip = best_k != NULL_I;
+        if ( have_ip ) {
+            //------------------------------------------------------------
+            // There was an intersection.
+            // Set the new ip to best_ip and go back to the top of the loop.
+            //------------------------------------------------------------
+            ip = best_ip;
+            ldout << " closest intersection point along segment: " << ip << "\n";
+        } else {
+            ldout << " no intersection point before end of segment\n";
         }
     }    
 
