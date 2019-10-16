@@ -4024,7 +4024,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             const real2& other_s0 = vtxn[other][other_s0_i];
             const real2& other_s1 = vtxn[other][other_s1_i];
             ldout << "\n";
-            ldout << "curr_seg: [ " << ip << ", " << curr_s1 << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << "\n";
+            ldout << "curr_seg: [ " << curr_s0 << ", " << ip << ", " << curr_s1 << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << "\n";
             ldout << "other_seg:[ " << other_s0 << ", " << other_s1 << " ] other=" << other << " other_s0_i=" << other_s0_i << " other_s1_i=" << other_s1_i << "\n";
 
             //------------------------------------------------------------
@@ -4049,12 +4049,12 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             bool other_s0_is_right = other_s0.is_right_of_segment( curr_s0, curr_s1 );
             bool other_s1_is_left  = other_s1.is_left_of_segment(  curr_s0, curr_s1 );
             bool other_s1_is_right = other_s1.is_right_of_segment( curr_s0, curr_s1 );
-            bool use_other_s0 = do_merge ? other_s0_is_right : other_s0_is_left;
-            bool use_other_s1 = do_merge ? other_s1_is_right : other_s1_is_left;
+            bool use_other_s0_for_s0 = do_merge ? other_s0_is_right : other_s0_is_left;
+            bool use_other_s1_for_s0 = do_merge ? other_s1_is_right : other_s1_is_left;
             ldout << "other_s0_is_left=" << other_s0_is_left << " other_s0_is_right=" << other_s0_is_right <<
                     " other_s1_is_left=" << other_s1_is_left << " other_s1_is_right=" << other_s1_is_right <<
-                    " do_merge=" << do_merge << " use_other_s0=" << use_other_s0 << " use_other_s1=" << use_other_s1 << "\n"; 
-            lassert( use_other_s0 || use_other_s1, "neither other segment endpoint is inside the current polygon - investigate" );
+                    " do_merge=" << do_merge << " use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n"; 
+            lassert( use_other_s0_for_s0 || use_other_s1_for_s0, "neither other segment endpoint is inside the current polygon - investigate" );
 
             //------------------------------------------------------------
             // Set curr_s0_i = other's chosen s0 or s1
@@ -4062,24 +4062,26 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             // Switch to the other polygon.
             // Follow (ip, curr_s1).
             //------------------------------------------------------------
-            curr_s0_i = use_other_s0 ? other_s0_i : other_s1_i;
-            curr_s1_i = use_other_s0 ? other_s1_i : other_s0_i;
+            curr_s0_i = use_other_s0_for_s0 ? other_s0_i : other_s1_i;
+            curr_s1_i = use_other_s1_for_s0 ? other_s0_i : other_s1_i;
             curr      = other;
             other     = 1 - curr;
         } else {
             //------------------------------------------------------------
             // Record the endpoint (curr_s1_i) of the current segment.
             // Then make that the curr_s0_i and calculate the next curr_s1_i 
-            // based on our current direction (ccw or cw).
+            // based on our current direction.
             //------------------------------------------------------------
             ip = vtxn[curr][curr_s1_i];
             ldout << "save endpoint as next vertex in result: " << ip << "\n";
             vtx[vtx_cnt++] = ip;
 
+            bool is_forward = ((curr_s0_i+1) % vtxn_cnt[curr]) == curr_s1_i;
+            ldout << "is_forward=" << is_forward << "\n";
             curr_s0_i = curr_s1_i;
-            curr_s1_i = (curr_s0_i + 1) % vtxn_cnt[curr];
+            curr_s1_i = (curr_s0_i + (is_forward ? 1 : (vtxn_cnt[curr]-1))) % vtxn_cnt[curr];
         }
-        ldout << "new curr_seg: [ " << ip << ", " << vtxn[curr][curr_s1_i] << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << "\n";
+        ldout << "new curr_seg: [ " << vtxn[curr][curr_s0_i] << ", " << ip << ", " << vtxn[curr][curr_s1_i] << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << "\n";
 
         //------------------------------------------------------------
         // See if there's an intersection point along (ip, curr_s1) with
