@@ -4020,10 +4020,18 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     {
         lassert( vtx_cnt != (vtx1_cnt + vtx2_cnt), "vtx array grew bigger than expected" );
         if ( have_ip ) {
+            const real2& curr_s0  = vtxn[curr][curr_s0_i];
+            const real2& curr_s1  = vtxn[curr][curr_s1_i];
+            const real2& other_s0 = vtxn[other][other_s0_i];
+            const real2& other_s1 = vtxn[other][other_s1_i];
+            ldout << "\n";
+            ldout << "curr_seg: [ " << ip << ", " << curr_s1 << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << "\n";
+            ldout << "other_seg:[ " << other_s0 << ", " << other_s1 << " ] other=" << other << " other_s0_i=" << other_s0_i << " other_s1_i=" << other_s1_i << "\n";
+
             //------------------------------------------------------------
             // Record the new intersection point, ip.
             //------------------------------------------------------------
-            ldout << "save start point as next vertex in result: " << ip << "\n";
+            ldout << "save intersection point as next vertex in result: " << ip << "\n";
             vtx[vtx_cnt++] = ip;
 
             //------------------------------------------------------------
@@ -4038,18 +4046,13 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             // For merge,        head outside the current polygon.
             // For intersection, head inside  the current polygon.
             //------------------------------------------------------------
-            const real2& curr_s0  = vtxn[curr][curr_s0_i];
-            const real2& curr_s1  = vtxn[curr][curr_s1_i];
-            const real2& other_s0 = vtxn[other][other_s0_i];
-            const real2& other_s1 = vtxn[other][other_s1_i];
-
             bool other_s0_is_left  = other_s0.is_left_of_segment(  curr_s0, curr_s1 );
             bool other_s0_is_right = other_s0.is_right_of_segment( curr_s0, curr_s1 );
             bool other_s1_is_left  = other_s1.is_left_of_segment(  curr_s0, curr_s1 );
             bool other_s1_is_right = other_s1.is_right_of_segment( curr_s0, curr_s1 );
             bool use_other_s0 = (is_ccw == do_merge) ? other_s0_is_left : other_s0_is_right;
             bool use_other_s1 = (is_ccw == do_merge) ? other_s1_is_left : other_s1_is_right;
-            ldout << " other_s0_is_left=" << other_s0_is_left << " other_s0_is_right=" << other_s0_is_right <<
+            ldout << "other_s0_is_left=" << other_s0_is_left << " other_s0_is_right=" << other_s0_is_right <<
                     " other_s1_is_left=" << other_s1_is_left << " other_s1_is_right=" << other_s1_is_right <<
                     " is_ccw=" << is_ccw << " do_merge=" << do_merge << 
                     " use_other_s0=" << use_other_s0 << " use_other_s1=" << use_other_s1 << "\n"; 
@@ -4079,12 +4082,13 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             curr_s0_i = curr_s1_i;
             curr_s1_i = (curr_s0_i + (is_ccw ? 1 : (vtxn_cnt[curr]-1))) % vtxn_cnt[curr];
         }
-        ldout << "\nnew curr_seg:  [ " << ip << ", " << vtxn[curr][curr_s1_i] << " ] curr=" << curr << " curr_s1_i=" << curr_s1_i << "\n";
+        ldout << "new curr_seg: [ " << ip << ", " << vtxn[curr][curr_s1_i] << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << "\n";
 
         //------------------------------------------------------------
         // See if there's an intersection point along (ip, curr_s1) with
         // the (new) other segment.  Choose the one that is closest to ip.
         //------------------------------------------------------------
+        ldout << "checking for intersection between new curr_seg and other_seg...\n";
         uint  best_k = NULL_I;
         real  best_dist = 1e100;
         real2 best_ip;
@@ -4093,13 +4097,13 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             uint k2 = (k + 1) % vtxn_cnt[other];
             real2 this_ip;
             const real2 curr_s1 = vtxn[curr][curr_s1_i];
-            if ( ip.segments_intersection( curr_s1, vtxn[other][k], vtxn[other][k2], this_ip, true, true ) && this_ip != ip ) {
+            if ( ip.segments_intersection( curr_s1, vtxn[other][k], vtxn[other][k2], this_ip, true, false ) && this_ip != ip ) {
                 real this_ip_dist = (ip - vtxn[other][k]).length();     
                 if ( best_k == NULL_I || this_ip_dist < best_dist ) {
                     best_k    = k;
                     best_dist = this_ip_dist;
                     best_ip   = this_ip;
-                    ldout << " new best_ip=" << best_ip << " best_dist=" << best_dist << "\n";
+                    ldout << "new best_ip=" << best_ip << " best_dist=" << best_dist << "\n";
                 }
             }
         }
@@ -4111,9 +4115,9 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             // Set the new ip to best_ip and go back to the top of the loop.
             //------------------------------------------------------------
             ip = best_ip;
-            ldout << " closest intersection point along curr_seg: " << ip << "\n";
+            ldout << " closest intersection point along new curr_seg: " << ip << "\n";
         } else {
-            ldout << " no intersection point before end of curr_seg\n";
+            ldout << " no intersection point before end of new curr_seg\n";
         }
     }    
 
