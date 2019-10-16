@@ -4090,6 +4090,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         //------------------------------------------------------------
         ldout << "checking for intersection between new curr_seg and other_seg...\n";
         uint  best_k = NULL_I;
+        uint  best_k2 = NULL_I;
         real  best_dist = 1e100;
         real2 best_ip;
         for( uint k = 0; k < vtxn_cnt[other]; k++ )
@@ -4101,6 +4102,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
                 real this_ip_dist = (ip - vtxn[other][k]).length();     
                 if ( best_k == NULL_I || this_ip_dist < best_dist ) {
                     best_k    = k;
+                    best_k2   = k2;
                     best_dist = this_ip_dist;
                     best_ip   = this_ip;
                     ldout << "new best_ip=" << best_ip << " best_dist=" << best_dist << "\n";
@@ -4116,6 +4118,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             //------------------------------------------------------------
             ip = best_ip;
             ldout << " closest intersection point along new curr_seg: " << ip << "\n";
+            other_s0_i = best_k;
+            other_s1_i = best_k2;
         } else {
             ldout << " no intersection point before end of new curr_seg\n";
         }
