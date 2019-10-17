@@ -4049,8 +4049,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             bool other_s0_is_right = other_s0.is_right_of_segment( curr_s0, curr_s1 );
             bool other_s1_is_left  = other_s1.is_left_of_segment(  curr_s0, curr_s1 );
             bool other_s1_is_right = other_s1.is_right_of_segment( curr_s0, curr_s1 );
-            bool use_other_s0_for_s0 = do_merge ? other_s0_is_right : other_s0_is_left;
-            bool use_other_s1_for_s0 = do_merge ? other_s1_is_right : other_s1_is_left;
+            bool use_other_s0_for_s0 = do_merge ? other_s0_is_left : other_s0_is_left;
+            bool use_other_s1_for_s0 = do_merge ? other_s1_is_left : other_s1_is_left;
             ldout << "other_s0_is_left=" << other_s0_is_left << " other_s0_is_right=" << other_s0_is_right <<
                     " other_s1_is_left=" << other_s1_is_left << " other_s1_is_right=" << other_s1_is_right <<
                     " do_merge=" << do_merge << " use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n"; 
@@ -4079,7 +4079,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             bool is_forward = ((curr_s0_i+1) % vtxn_cnt[curr]) == curr_s1_i;
             ldout << "is_forward=" << is_forward << "\n";
             curr_s0_i = curr_s1_i;
-            curr_s1_i = (curr_s0_i + (is_forward ? 1 : (vtxn_cnt[curr]-1))) % vtxn_cnt[curr];
+            curr_s1_i = (curr_s0_i + (is_forward ? 1 : (vtxn_cnt[curr]-2))) % vtxn_cnt[curr];
         }
         ldout << "new curr_seg: [ " << vtxn[curr][curr_s0_i] << ", " << ip << ", " << vtxn[curr][curr_s1_i] << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << "\n";
 
