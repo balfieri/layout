@@ -185,6 +185,7 @@ public:
         void expand( const real2& p );
         void intersect( const AABR& other );
         bool encloses( const AABR& other ) const;
+        bool encloses( const real2& p ) const;
         bool intersects( const AABR& other ) const;
         AABR quadrant( uint i, uint j ) const;
         AABR enclosing_square( real scale_factor=1.0 ) const;
@@ -567,6 +568,7 @@ public:
     AABR        polygon_brect( const real2 * vtx, uint vtx_cnt ) const;
     std::string polygon_str( const real2 * vtx, uint vtx_cnt, std::string color, real xy_scale=4.0, real x_off=100.0, real y_off=100.0 ) const;
     bool        polygon_eq( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt ) const;
+    bool        polygon_encloses( const real2 * vtx, uint vtx_cnt, const real2& p ) const;
 
     // FILL
     void fill_dielectric_rect( uint layer_i, const AABR& rect );
@@ -2630,6 +2632,14 @@ inline bool Layout::AABR::encloses( const AABR& other ) const
            max.c[1] >= other.max.c[1];
 }
 
+inline bool Layout::AABR::encloses( const real2& p ) const
+{
+    return min.c[0] <= p.c[0] &&
+           min.c[1] <= p.c[1] &&
+           max.c[0] >= p.c[0] &&
+           max.c[1] >= p.c[1];
+}
+
 inline void Layout::AABR::intersect( const Layout::AABR& other )
 {
     for( uint i = 0; i < 2; i++ )
@@ -4163,6 +4173,12 @@ bool Layout::polygon_eq( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, 
         if ( vtx1[i] != vtx2[i] ) return false;
     }
     return true;
+}
+
+bool Layout::polygon_encloses( const real2 * vtx, uint vtx_cnt, const real2& p ) const
+{
+    AABR brect = polygon_brect( vtx, vtx_cnt );
+    return brect.encloses( p );
 }
 
 bool Layout::layout_read( std::string layout_path )
