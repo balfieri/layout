@@ -4078,8 +4078,9 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
 
             bool is_forward = ((curr_s0_i+1) % vtxn_cnt[curr]) == curr_s1_i;
             ldout << "is_forward=" << is_forward << "\n";
+            int prev_s0_i = curr_s0_i;
             curr_s0_i = curr_s1_i;
-            curr_s1_i = (curr_s0_i + (is_forward ? 1 : (vtxn_cnt[curr]-2))) % vtxn_cnt[curr];
+            curr_s1_i = (is_forward ? (curr_s0_i+1) : (curr_s0_i+vtxn_cnt[curr]-1)) % vtxn_cnt[curr];
         }
         ldout << "new curr_seg: [ " << vtxn[curr][curr_s0_i] << ", " << ip << ", " << vtxn[curr][curr_s1_i] << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << "\n";
 
