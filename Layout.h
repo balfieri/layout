@@ -4015,6 +4015,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     uint          curr_s1_i      = i2;
     uint          other_s0_i     = j;
     uint          other_s1_i     = j2;
+    bool          is_forward     = true;
     for( ;; ) 
     {
         lassert( vtx_cnt != (vtx1_cnt + vtx2_cnt), "vtx array grew bigger than expected" );
@@ -4062,10 +4063,11 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             // Switch to the other polygon.
             // Follow (ip, curr_s1).
             //------------------------------------------------------------
-            curr_s0_i = use_other_s0_for_s0 ? other_s0_i : other_s1_i;
-            curr_s1_i = use_other_s1_for_s0 ? other_s0_i : other_s1_i;
-            curr      = other;
-            other     = 1 - curr;
+            curr_s0_i  = use_other_s0_for_s0 ? other_s0_i : other_s1_i;
+            curr_s1_i  = use_other_s1_for_s0 ? other_s0_i : other_s1_i;
+            is_forward = use_other_s0_for_s0;
+            curr       = other;
+            other      = 1 - curr;
         } else {
             //------------------------------------------------------------
             // Record the endpoint (curr_s1_i) of the current segment.
@@ -4073,14 +4075,12 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             // based on our current direction.
             //------------------------------------------------------------
             ip = vtxn[curr][curr_s1_i];
-            ldout << "save endpoint as next vertex in result: " << ip << "\n";
+            ldout << "save endpoint as next vertex in result: " << ip << " is_forward=" << is_forward << "\n";
             vtx[vtx_cnt++] = ip;
 
-            bool is_forward = ((curr_s0_i+1) % vtxn_cnt[curr]) == curr_s1_i;
-            ldout << "is_forward=" << is_forward << "\n";
             int prev_s0_i = curr_s0_i;
             curr_s0_i = curr_s1_i;
-            curr_s1_i = (is_forward ? (curr_s0_i+1) : (curr_s0_i+vtxn_cnt[curr]-1)) % vtxn_cnt[curr];
+            curr_s1_i = (is_forward ? (curr_s0_i+1) : (curr_s0_i+vtxn_cnt[curr]-2)) % (vtxn_cnt[curr]-1);
         }
         ldout << "new curr_seg: [ " << vtxn[curr][curr_s0_i] << ", " << ip << ", " << vtxn[curr][curr_s1_i] << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << "\n";
 
