@@ -100,6 +100,7 @@ public:
         real4& operator *= ( const real s );
         real4& operator /= ( const real4 &v2 );
         real4& operator /= ( const real s );
+        std::string str( void ) const;
     };
 
     class real3
@@ -128,6 +129,7 @@ public:
         real3& operator *= ( const real s );
         real3& operator /= ( const real3 &v2 );
         real3& operator /= ( const real s );
+        std::string str( void ) const;
     };
 
     class real2
@@ -168,6 +170,7 @@ public:
         real2& operator /= ( const real s );
         bool   operator == ( const real2 &v2 ) const; 
         bool   operator != ( const real2 &v2 ) const; 
+        std::string str( void ) const;
     };
 
     // Axis-Aligned Bounding Rectangle (2D)
@@ -1557,6 +1560,11 @@ inline Layout::real4& Layout::real4::operator /= ( const Layout::real s )
     return *this;
 }
 
+inline std::string Layout::real4::str( void ) const
+{
+    return "[" + std::to_string(c[0]) + "," + std::to_string(c[1]) + "," + std::to_string(c[2]) + "," + std::to_string(c[3]) + "]";
+}
+
 inline Layout::real Layout::real3::dot( const Layout::real3 &v2 ) const
 {
     return c[0] * v2.c[0] + c[1] * v2.c[1] + c[2] * v2.c[2];
@@ -1695,6 +1703,11 @@ inline Layout::real3& Layout::real3::operator /= ( const Layout::real s )
     c[1] /= s;
     c[2] /= s;
     return *this;
+}
+
+inline std::string Layout::real3::str( void ) const
+{
+    return "[" + std::to_string(c[0]) + "," + std::to_string(c[1]) + "," + std::to_string(c[2]) + "]";
 }
 
 inline Layout::real Layout::real2::dot( const Layout::real2 &v2 ) const
@@ -1968,6 +1981,11 @@ inline bool Layout::real2::operator == ( const Layout::real2 &v2 ) const
 inline bool Layout::real2::operator != ( const Layout::real2 &v2 ) const
 {
     return c[0] != v2.c[0] || c[1] != v2.c[1];  
+}
+
+inline std::string Layout::real2::str( void ) const
+{
+    return "[" + std::to_string(c[0]) + "," + std::to_string(c[1]) + "]";
 }
 
 inline void Layout::Matrix::identity( void )
