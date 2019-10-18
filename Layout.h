@@ -145,6 +145,8 @@ public:
         real   length_sqr( void ) const;
         real2& normalize( void );
         real2  normalized( void ) const;
+        real2  normalized_sqr( void ) const;
+        bool   is_same_dir( const real2& v2 ) const;
         bool   is_on_segment( const real2& p2, const real2& p3, bool include_endpoints ) const;  // returns true if this point is on line segment (p2, p3)
         bool   is_left_of_segment( const real2& p2, const real2& p3 ) const;  // returns true if this point is to the left  of segment (p2, p3)
         bool   is_right_of_segment( const real2& p2, const real2& p3 ) const; // returns true if this point is to the right of segment (p2, p3)
@@ -1737,6 +1739,16 @@ inline Layout::real2 Layout::real2::normalized( void ) const
     return *this / length();
 }
 
+inline Layout::real2 Layout::real2::normalized_sqr( void ) const
+{
+    return *this / length_sqr();
+}
+
+inline bool Layout::real2::is_same_dir( const Layout::real2& v2 ) const
+{
+    return normalized_sqr() == v2.normalized_sqr();
+}
+
 inline bool Layout::real2::is_on_segment( const real2& p2, const real2& p3, bool include_endpoints ) const
 {
     const real2& p1 = *this;
@@ -1850,14 +1862,23 @@ inline bool Layout::real2::segments_intersection( const real2& p2, const real2& 
         bool p3_on_p1_p2 = p3.is_on_segment( p1, p2, false ) || p3 == p2;
         bool p4_on_p1_p2 = p4.is_on_segment( p1, p2, false ) || p4 == p2;
         if ( p3_on_p1_p2 != p4_on_p1_p2 ) {
+            real2 other;
             if ( p3_on_p1_p2 ) {
                 ip = p3;
-                ldout << ", p3_on_p1_p2=true => INTERSECTION\n";
-                return true;
+                other = p4;
+                ldout << ", p3_on_p1_p2=true";
             } else if ( p4_on_p1_p2 ) {
                 ip = p4;
-                ldout << ", p4_on_p1_p2=true => INTERSECTION\n";
+                other = p3;
+                ldout << ", p4_on_p1_p2=true";
+            }
+            real2 p1_p2_dir    = p2 - p1;
+            real2 ip_other_dir = other - ip;
+            if ( p1_p2_dir.is_same_dir( ip_other_dir ) ) {
+                ldout << " => INTERSECTION\n";
                 return true;
+            } else {
+                ldout << ", but wrong dir";
             }
         } else {
             ldout << ", p3_on_p1_p2=" << p3_on_p1_p2 << " p4_on_p1_p2=" << p4_on_p1_p2;
