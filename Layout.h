@@ -572,6 +572,7 @@ public:
     std::string polygon_str( const real2 * vtx, uint vtx_cnt, std::string color, real xy_scale=4.0, real x_off=100.0, real y_off=100.0 ) const;
     bool        polygon_eq( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt ) const;
     bool        polygon_encloses( const real2 * vtx, uint vtx_cnt, const real2& p ) const;
+    bool        polygon_includes( const real2 * vtx, uint vtx_cnt, const real2& v ) const;  // v is already in the vtx list?
 
     // FILL
     void fill_dielectric_rect( uint layer_i, const AABR& rect );
@@ -1846,8 +1847,8 @@ inline bool Layout::real2::segments_intersection( const real2& p2, const real2& 
             ldout << ", on_p1_p2=false";
         }
     } else if ( include_colinear ) {
-        bool p3_on_p1_p2 = p3.is_on_segment( p1, p2, false );
-        bool p4_on_p1_p2 = p4.is_on_segment( p1, p2, false );
+        bool p3_on_p1_p2 = p3.is_on_segment( p1, p2, false ) || p3 == p2;
+        bool p4_on_p1_p2 = p4.is_on_segment( p1, p2, false ) || p4 == p2;
         real p1_p3_dist  = (p1 - p3).length();
         real p1_p4_dist  = (p1 - p4).length();
         if ( p3_on_p1_p2 && (!p4_on_p1_p2 || p1_p3_dist <= p1_p4_dist) ) {
@@ -4084,6 +4085,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
                 break;
             }
 
+            lassert( !polygon_includes( vtx, vtx_cnt-1, ip ), "intersection point should not already be on the vtx[] list" );
+
             //------------------------------------------------------------
             // For merge,        head outside the current polygon.
             // For intersection, head inside  the current polygon.
@@ -4097,7 +4100,12 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             ldout << "other_s0_is_left=" << other_s0_is_left << " other_s0_is_right=" << other_s0_is_right <<
                     " other_s1_is_left=" << other_s1_is_left << " other_s1_is_right=" << other_s1_is_right <<
                     " do_merge=" << do_merge << " use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n"; 
-            lassert( use_other_s0_for_s0 || use_other_s1_for_s0, "neither other segment endpoint is inside the current polygon - investigate" );
+            if ( use_other_s0_for_s0 || use_other_s1_for_s0 ) {
+                lassert( use_other_s0_for_s0 != use_other_s1_for_s0, "use_other_s0_for_s0 and use_other_s1_for_s0 can't both be set" );
+            } else {
+                use_other_s0_for_s0 = !other_s0.is_on_segment( curr_s0, curr_s1, true );
+                use_other_s1_for_s0 = !use_other_s0_for_s0;
+            }
 
             //------------------------------------------------------------
             // Set curr_s0_i = other's chosen s0 or s1
@@ -4118,6 +4126,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             //------------------------------------------------------------
             ip = vtxn[curr][curr_s1_i];
             ldout << "save endpoint as next vertex in result: " << ip << " is_forward=" << is_forward << "\n";
+            lassert( !polygon_includes( vtx, vtx_cnt, ip ), "intersection point should not already be on the vtx[] list" );
             vtx[vtx_cnt++] = ip;
 
             int prev_s0_i = curr_s0_i;
@@ -4211,6 +4220,15 @@ bool Layout::polygon_encloses( const real2 * vtx, uint vtx_cnt, const real2& p )
 {
     AABR brect = polygon_brect( vtx, vtx_cnt );
     return brect.encloses( p );
+}
+
+bool Layout::polygon_includes( const real2 * vtx, uint vtx_cnt, const real2& v ) const
+{
+    for( uint i = 0; i < vtx_cnt; i++ )
+    {
+        if ( v == vtx[i] ) return true;
+    }
+    return false;
 }
 
 bool Layout::layout_read( std::string layout_path )
