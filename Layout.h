@@ -1845,6 +1845,20 @@ inline bool Layout::real2::segments_intersection( const real2& p2, const real2& 
         } else {
             ldout << ", on_p1_p2=false";
         }
+    } else if ( include_p3_p4 ) {
+        bool p3_on_p1_p2 = p3.is_on_segment( p1, p2, include_p1_p2 );
+        bool p4_on_p1_p2 = p4.is_on_segment( p1, p2, include_p1_p2 );
+        real p1_p3_dist  = (p1 - p3).length();
+        real p1_p4_dist  = (p1 - p4).length();
+        if ( p3_on_p1_p2 && (!p4_on_p1_p2 || p1_p3_dist <= p1_p4_dist) ) {
+            ip = p3;
+            ldout << ", p3_on_p1_p2=true => INTERSECTION\n";
+            return true;
+        } else if ( p4_on_p1_p2 ) {
+            ip = p4;
+            ldout << ", p4_on_p1_p2=true => INTERSECTION\n";
+            return true;
+        }
     }
     ldout << "\n";
     return false;
@@ -4133,7 +4147,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
                     best_k2   = k2;
                     best_dist = this_ip_dist;
                     best_ip   = this_ip;
-                    ldout << "new best_ip=" << best_ip << " best_dist=" << best_dist << "\n";
+                    ldout << " new best_ip=" << best_ip << " best_dist=" << best_dist << "\n";
                 }
             }
         }
