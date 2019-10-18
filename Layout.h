@@ -1849,16 +1849,21 @@ inline bool Layout::real2::segments_intersection( const real2& p2, const real2& 
     } else if ( include_colinear ) {
         bool p3_on_p1_p2 = p3.is_on_segment( p1, p2, false ) || p3 == p2;
         bool p4_on_p1_p2 = p4.is_on_segment( p1, p2, false ) || p4 == p2;
-        real p1_p3_dist  = (p1 - p3).length();
-        real p1_p4_dist  = (p1 - p4).length();
-        if ( p3_on_p1_p2 && (!p4_on_p1_p2 || p1_p3_dist <= p1_p4_dist) ) {
-            ip = p3;
-            ldout << ", p3_on_p1_p2=true => INTERSECTION\n";
-            return true;
-        } else if ( p4_on_p1_p2 ) {
-            ip = p4;
-            ldout << ", p4_on_p1_p2=true => INTERSECTION\n";
-            return true;
+        if ( p3_on_p1_p2 != p4_on_p1_p2 ) {
+            //real p1_p3_dist = (p1 - p3).length();
+            //real p1_p4_dist = (p1 - p4).length();
+            //if ( p3_on_p1_p2 && (!p4_on_p1_p2 || p1_p3_dist <= p1_p4_dist) ) {
+            if ( p3_on_p1_p2 ) {
+                ip = p3;
+                ldout << ", p3_on_p1_p2=true => INTERSECTION\n";
+                return true;
+            } else if ( p4_on_p1_p2 ) {
+                ip = p4;
+                ldout << ", p4_on_p1_p2=true => INTERSECTION\n";
+                return true;
+            }
+        } else {
+            ldout << ", p3_on_p1_p2=" << p3_on_p1_p2 << " p4_on_p1_p2=" << p4_on_p1_p2;
         }
     }
     ldout << "\n";
@@ -4103,8 +4108,9 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             if ( use_other_s0_for_s0 || use_other_s1_for_s0 ) {
                 lassert( use_other_s0_for_s0 != use_other_s1_for_s0, "use_other_s0_for_s0 and use_other_s1_for_s0 can't both be set" );
             } else {
-                use_other_s0_for_s0 = !other_s0.is_on_segment( curr_s0, curr_s1, true );
+                use_other_s0_for_s0 = other_s0.is_on_segment( curr_s0, curr_s1, true );
                 use_other_s1_for_s0 = !use_other_s0_for_s0;
+                ldout << "colinear case: use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n";
             }
 
             //------------------------------------------------------------
