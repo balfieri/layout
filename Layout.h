@@ -4078,8 +4078,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             bool other_s0_is_right = other_s0.is_right_of_segment( curr_s0, curr_s1 );
             bool other_s1_is_left  = other_s1.is_left_of_segment(  curr_s0, curr_s1 );
             bool other_s1_is_right = other_s1.is_right_of_segment( curr_s0, curr_s1 );
-            bool use_other_s0_for_s0 = do_merge ? other_s0_is_left : other_s0_is_left;
-            bool use_other_s1_for_s0 = do_merge ? other_s1_is_left : other_s1_is_left;
+            bool use_other_s0_for_s0 = do_merge ? other_s0_is_left : other_s1_is_left;
+            bool use_other_s1_for_s0 = do_merge ? other_s1_is_left : other_s0_is_left;
             ldout << "other_s0_is_left=" << other_s0_is_left << " other_s0_is_right=" << other_s0_is_right <<
                     " other_s1_is_left=" << other_s1_is_left << " other_s1_is_right=" << other_s1_is_right <<
                     " do_merge=" << do_merge << " use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n"; 
