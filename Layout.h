@@ -152,7 +152,7 @@ public:
         bool   lines_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const;
         bool   segments_intersect( const real2& p2, const real2& p3, const real2& p4, bool include_endpoints ) const;
         bool   segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip, 
-                                      bool include_p1_p2, bool include_p3_p4 ) const;
+                                      bool include_p1_p2, bool include_p3_p4, bool include_colinear ) const;
         void   pad_segment( const real2& p2, real pad, real2& p1_new, real2& p2_new ) const;       // (p1_new, p2_new) are new endpoints
         void   perpendicular_segment( const real2& p2, real length, real2& p3, real2& p4 ) const;  // (p2, p3) will pass through p1
         void   parallel_segment( const real2& p2, real dist, real2& p1_new, real2& p2_new ) const; // (p1_new, p2_new) are new endpoints
@@ -1826,7 +1826,7 @@ inline bool Layout::real2::lines_intersection( const real2& p2, const real2& p3,
 }
 
 inline bool Layout::real2::segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip, 
-                                                  bool include_p1_p2, bool include_p3_p4 ) const
+                                                  bool include_p1_p2, bool include_p3_p4, bool include_colinear ) const
 {
     const real2& p1 = *this;
 
@@ -1845,9 +1845,9 @@ inline bool Layout::real2::segments_intersection( const real2& p2, const real2& 
         } else {
             ldout << ", on_p1_p2=false";
         }
-    } else if ( include_p3_p4 ) {
-        bool p3_on_p1_p2 = p3.is_on_segment( p1, p2, include_p1_p2 );
-        bool p4_on_p1_p2 = p4.is_on_segment( p1, p2, include_p1_p2 );
+    } else if ( include_colinear ) {
+        bool p3_on_p1_p2 = p3.is_on_segment( p1, p2, false );
+        bool p4_on_p1_p2 = p4.is_on_segment( p1, p2, false );
         real p1_p3_dist  = (p1 - p3).length();
         real p1_p4_dist  = (p1 - p4).length();
         if ( p3_on_p1_p2 && (!p4_on_p1_p2 || p1_p3_dist <= p1_p4_dist) ) {
@@ -3985,7 +3985,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         for( j = 0; j < vtx2_cnt; j++ )
         {
             j2 = (j + 1) % vtx2_cnt;
-            if ( vtx1[i].segments_intersection( vtx1[i2], vtx2[j], vtx2[j2], ip, false, false ) ) break;
+            if ( vtx1[i].segments_intersection( vtx1[i2], vtx2[j], vtx2[j2], ip, false, false, false ) ) break;
         }
         if ( j != vtx2_cnt ) break;
     }   
@@ -4140,7 +4140,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             uint k2 = (k + 1) % vtxn_cnt[other];
             real2 this_ip;
             const real2 curr_s1 = vtxn[curr][curr_s1_i];
-            if ( ip.segments_intersection( curr_s1, vtxn[other][k], vtxn[other][k2], this_ip, true, false ) && this_ip != ip ) {
+            if ( ip.segments_intersection( curr_s1, vtxn[other][k], vtxn[other][k2], this_ip, true, false, true ) && this_ip != ip ) {
                 real this_ip_dist = (ip - vtxn[other][k]).length();     
                 if ( best_k == NULL_I || this_ip_dist < best_dist ) {
                     best_k    = k;
