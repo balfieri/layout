@@ -4064,7 +4064,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     // Allocate a vtx array for the resultant polygon.
     // Start with the intersection point from above.
     //------------------------------------------------------------
-    vtx = new real2[vtx1_cnt + vtx2_cnt];
+    int vtx_cnt_max = 2*(vtx1_cnt + vtx2_cnt);
+    vtx = new real2[vtx_cnt_max];
     vtx_cnt = 0;                
 
     uint          curr           = 0;                       // current polygon index
@@ -4076,17 +4077,17 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     uint          curr_s1_i      = i2;
     uint          other_s0_i     = j;
     uint          other_s1_i     = j2;
-    bool          is_forward     = true;
+    bool          is_ccw     = true;
     for( ;; ) 
     {
-        lassert( vtx_cnt != (vtx1_cnt + vtx2_cnt), "vtx array grew bigger than expected" );
+        lassert( vtx_cnt != vtx_cnt_max, "vtx array grew bigger than expected" );
         if ( have_ip ) {
             const real2& curr_s0  = vtxn[curr][curr_s0_i];
             const real2& curr_s1  = vtxn[curr][curr_s1_i];
             const real2& other_s0 = vtxn[other][other_s0_i];
             const real2& other_s1 = vtxn[other][other_s1_i];
             ldout << "\n";
-            ldout << "curr_seg: [ " << curr_s0 << ", " << ip << ", " << curr_s1 << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << "\n";
+            ldout << "curr_seg: [ " << curr_s0 << ", " << ip << ", " << curr_s1 << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << " is_ccw=" << is_ccw << "\n";
             ldout << "other_seg:[ " << other_s0 << ", " << other_s1 << " ] other=" << other << " other_s0_i=" << other_s0_i << " other_s1_i=" << other_s1_i << "\n";
 
             //------------------------------------------------------------
@@ -4113,11 +4114,11 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             bool other_s0_is_right = other_s0.is_right_of_segment( curr_s0, curr_s1 );
             bool other_s1_is_left  = other_s1.is_left_of_segment(  curr_s0, curr_s1 );
             bool other_s1_is_right = other_s1.is_right_of_segment( curr_s0, curr_s1 );
-            bool use_other_s0_for_s0 = do_merge ? other_s0_is_left : other_s1_is_left;
-            bool use_other_s1_for_s0 = do_merge ? other_s1_is_left : other_s0_is_left;
+            bool use_other_s0_for_s0 = (do_merge == is_ccw) ? other_s0_is_left : other_s1_is_left;
+            bool use_other_s1_for_s0 = (do_merge == is_ccw) ? other_s1_is_left : other_s0_is_left;
             ldout << "other_s0_is_left=" << other_s0_is_left << " other_s0_is_right=" << other_s0_is_right <<
                     " other_s1_is_left=" << other_s1_is_left << " other_s1_is_right=" << other_s1_is_right <<
-                    " do_merge=" << do_merge << " use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n"; 
+                    " is_ccw=" << is_ccw << " do_merge=" << do_merge << " use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n"; 
             if ( use_other_s0_for_s0 || use_other_s1_for_s0 ) {
                 lassert( use_other_s0_for_s0 != use_other_s1_for_s0, "use_other_s0_for_s0 and use_other_s1_for_s0 can't both be set" );
             } else {
@@ -4134,7 +4135,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             //------------------------------------------------------------
             curr_s0_i  = use_other_s0_for_s0 ? other_s0_i : other_s1_i;
             curr_s1_i  = use_other_s1_for_s0 ? other_s0_i : other_s1_i;
-            is_forward = use_other_s0_for_s0;
+            is_ccw     = use_other_s0_for_s0;
             curr       = other;
             other      = 1 - curr;
         } else {
@@ -4144,13 +4145,13 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             // based on our current direction.
             //------------------------------------------------------------
             ip = vtxn[curr][curr_s1_i];
-            ldout << "save endpoint as next vertex in result: " << ip << " is_forward=" << is_forward << "\n";
+            ldout << "save endpoint as next vertex in result: " << ip << " is_ccw=" << is_ccw << "\n";
             lassert( !polygon_includes( vtx, vtx_cnt, ip ), "intersection point should not already be on the vtx[] list" );
             vtx[vtx_cnt++] = ip;
 
             int prev_s0_i = curr_s0_i;
             curr_s0_i = curr_s1_i;
-            curr_s1_i = (is_forward ? (curr_s0_i+1) : (curr_s0_i+vtxn_cnt[curr]-2)) % (vtxn_cnt[curr]-1);
+            curr_s1_i = (is_ccw ? (curr_s0_i+1) : (curr_s0_i+vtxn_cnt[curr]-2)) % (vtxn_cnt[curr]-1);
         }
         ldout << "new curr_seg: [ " << vtxn[curr][curr_s0_i] << ", " << ip << ", " << vtxn[curr][curr_s1_i] << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << "\n";
 
