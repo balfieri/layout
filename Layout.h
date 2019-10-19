@@ -3036,15 +3036,12 @@ Layout::AABR Layout::bounding_rect( uint layer_first, uint layer_last ) const
             brect.expand( layers[i].bah_brect );
         }
     }
-#ifdef DO_BAH
     lassert( have_one, "found no bounding area hierarchy (BAH) so could not determine bounding rectangle" );
-#endif
     return brect;
 }
 
 void Layout::fill_dielectrics( const AABR& brect, uint layer_first, uint layer_last )
 {
-#ifdef DO_BAH
     //-----------------------------------------------------
     // For each layer that is not part of previous layer:
     //-----------------------------------------------------
@@ -3090,7 +3087,6 @@ void Layout::fill_dielectrics( const AABR& brect, uint layer_first, uint layer_l
         // We'll fill empty space at each leaf.
         //-----------------------------------------------------
     }
-#endif
 }
 
 void Layout::fill_dielectric_rect( uint layer_i, const AABR& rect )
@@ -3626,7 +3622,6 @@ void Layout::node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, C
         prev_i = child_i;
     }
 
-#ifdef DO_BAH
     if ( copy_kind == COPY_KIND::FLATTEN ) {
         //-----------------------------------------------------
         // The parent should be an expanded element.
@@ -3644,7 +3639,6 @@ void Layout::node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, C
 
         bah_add( bah_layer_i, leaf_i, conflict_policy );
     }
-#endif
 }
 
 uint Layout::bah_node_alloc( void )
