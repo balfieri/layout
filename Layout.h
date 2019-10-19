@@ -3903,6 +3903,7 @@ bool Layout::bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uin
         //       extends beyonmd this quadrant, so can't do that until
         //       we fix that.
         //------------------------------------------------------------
+        assert(false);
     }
 
     //------------------------------------------------------------
