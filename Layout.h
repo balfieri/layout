@@ -567,6 +567,7 @@ public:
     real2 *     polygon_alloc( const Node& xy_node, uint& vtx_cnt ) const;
     real2 *     polygon_alloc( const AABR& brect, uint& vtx_cnt ) const;
     real2 *     polygon_copy( const real2 * other, uint other_cnt ) const;
+    real2 *     polygon_reversed( const real2 * other, uint other_cnt ) const;
     void        polygon_dealloc( real2 * vtx_array ) const;
     real2 *     polygon_merge_or_intersect( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt ) const;
     AABR        polygon_brect( const real2 * vtx, uint vtx_cnt ) const;
@@ -574,6 +575,8 @@ public:
     bool        polygon_eq( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt ) const;
     bool        polygon_encloses( const real2 * vtx, uint vtx_cnt, const real2& p ) const;
     bool        polygon_includes( const real2 * vtx, uint vtx_cnt, const real2& v ) const;  // v is already in the vtx list?
+    bool        polygon_is_ccw( const real2 * vtx, uint vtx_cnt ) const;        // are vertices in counterclockwise winding order?
+    real2 *     polygon_ccw( const real2 * vtx, uint vtx_cnt ) const;           // reverses vertices if they are in clockwise winding order, else just a copy
 
     // FILL
     void fill_dielectric_rect( uint layer_i, const AABR& rect );
@@ -3981,6 +3984,16 @@ Layout::real2 * Layout::polygon_copy( const real2 * other, uint other_cnt ) cons
     return vtx;
 }
 
+Layout::real2 * Layout::polygon_reversed( const real2 * other, uint other_cnt ) const
+{
+    real2 * vtx = polygon_alloc( other_cnt );
+    for( uint i = 0; i < other_cnt; i++ )
+    {
+        vtx[i] = other[other_cnt-1-i];
+    }
+    return vtx;
+}
+
 void Layout::polygon_dealloc( real2 * vtx_array ) const
 {
     delete[] vtx_array;
@@ -4249,6 +4262,23 @@ bool Layout::polygon_includes( const real2 * vtx, uint vtx_cnt, const real2& v )
         if ( v == vtx[i] ) return true;
     }
     return false;
+}
+
+bool Layout::polygon_is_ccw( const real2 * vtx, uint vtx_cnt ) const
+{
+    real sum = 0.0;
+    for( uint i = 0; i < vtx_cnt; i++ ) 
+    {
+        const real2& v1 = vtx[i];
+        const real2& v2 = vtx[(i+1) % vtx_cnt];
+        sum += (v2.c[0] - v1.c[0]) * (v2.c[1] + v1.c[1]);
+    }
+    return sum < 0.0;
+}
+
+Layout::real2 * Layout::polygon_ccw( const real2 * vtx, uint vtx_cnt ) const
+{
+    return polygon_is_ccw( vtx, vtx_cnt ) ? polygon_copy( vtx, vtx_cnt ) : polygon_reversed( vtx, vtx_cnt );
 }
 
 bool Layout::layout_read( std::string layout_path )
