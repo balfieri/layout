@@ -226,10 +226,9 @@ public:
 
     enum class CONFLICT_POLICY
     {
-        MERGE_NONE_KEEP_ALL,                            // keep any conflict w/o merging
         MERGE_NONE_ALLOW_NONE,                          // abort if any conflict is encountered
         MERGE_EXACT_ONLY,                               // merge exact overlaps only; abort partial overlaps
-        MERGE_ALL,                                      // merge any conflict, including partial overlaps (not implemented yet)
+        MERGE_ALL,                                      // merge any conflict, including partial overlaps
     };
 
     // instancing of other layouts
@@ -476,7 +475,7 @@ public:
     uint        node_alloc_real( real r );                      // allocate REAL node
     uint        node_alloc_str( std::string s );                // allocate STR node
     uint        node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND copy_kind, 
-                           CONFLICT_POLICY conflict_policy=CONFLICT_POLICY::MERGE_NONE_KEEP_ALL, const Matrix& M = Matrix(), bool in_flatten=false );
+                           CONFLICT_POLICY conflict_policy=CONFLICT_POLICY::MERGE_NONE_ALLOW_NONE, const Matrix& M = Matrix(), bool in_flatten=false );
     void        node_timestamp( Node& node );                   // adds timestamp fields to node
 
     struct TopInstInfo
@@ -3759,29 +3758,19 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, const AABR& le
                         if ( is_exact ) {
                             //------------------------------------------------------------
                             // Exact duplicates are not added to the BAH.
-                            // But are they allowed and should they be left in the node tree?
+                            // If they are allowed, discard this new node.
                             //------------------------------------------------------------
                             lassert( conflict_policy != CONFLICT_POLICY::MERGE_NONE_ALLOW_NONE, 
                                      "overlapping elements are not allowed by confict_policy MERGE_NONE_ALLOW_NONE" );
-                            if ( conflict_policy != CONFLICT_POLICY::MERGE_NONE_KEEP_ALL ) {
-                                //------------------------------------------------------------
-                                // TODO: Remove the element from the node tree.
-                                //------------------------------------------------------------
-                            }
                         } else {
-                            if ( conflict_policy != CONFLICT_POLICY::MERGE_NONE_KEEP_ALL ) {
-                                //------------------------------------------------------------
-                                // Partial intersections are not yet supported.
-                                //------------------------------------------------------------
-                                lassert( conflict_policy == CONFLICT_POLICY::MERGE_ALL,
-                                         "merging partially overlapping elements is allowed only by conflict_policy MERGE_ALL" );
-                                lassert( false, "sorry, can't do MERGE_ALL on partially overlapped elements" );
-                            }
+                            //------------------------------------------------------------
+                            // Partial intersections are allowed only with MERGE_ALL
+                            // and the merge was already done by bah_leaf_nodes_intersect().
+                            //------------------------------------------------------------
+                            lassert( conflict_policy == CONFLICT_POLICY::MERGE_ALL,
+                                     "merging partially overlapping elements is allowed only by conflict_policy MERGE_ALL" );
+                            lassert( false, "sorry, can't do MERGE_ALL on partially overlapped elements" );
                         }
-
-                        //------------------------------------------------------------
-                        // TODO: Add other cases to the BAH
-                        //------------------------------------------------------------
                     } else {
                         //------------------------------------------------------------
                         // We have to add a BAH_Node as the new child, then
