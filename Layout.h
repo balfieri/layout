@@ -4036,7 +4036,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         // completely contains the other.  We can use the bounding boxes 
         // to determine this.  One will contain the other.
         //------------------------------------------------------------
-        lassert( j == vtx2_cnt, "something is wrong" );
+        lassert( j == vtx2_cnt, "j should be vtx2_cnt at this point" );
         AABR brect1 = polygon_brect( vtx1, vtx1_cnt ); 
         AABR brect2 = polygon_brect( vtx2, vtx2_cnt ); 
         bool brect1_encloses = brect1.encloses( brect2 );
@@ -4554,7 +4554,7 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
 
         default:
         {
-            lassert( false, "something is wrong" );
+            lassert( false, "unexpected datatype" );
             break;
         }
     }
