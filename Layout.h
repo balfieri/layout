@@ -4014,6 +4014,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     //------------------------------------------------------------
     uint i, i2, j, j2;
     real2 ip;
+    j = vtx2_cnt;
     for( i = 0; i < vtx1_cnt; i++ )
     {
         i2 = (i + 1) % vtx1_cnt;
