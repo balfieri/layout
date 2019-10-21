@@ -456,6 +456,7 @@ public:
     uint        node_width( const Node& node ) const;           // find WIDTH value for node 
     uint        node_bah_layer( const Node& node ) const;       // find LAYER value for flattened node and get layer to use for BAH
     uint        node_xy_i( const Node& node ) const;            // find index of XY node within node
+    void        node_xy_replace_polygon( const real2 * vtx, uint vtx_cnt ); // replace X,Y children from new set of vertices
     uint        node_pathtype( const Node& node ) const;        // find PATHTYPE for node and return number (default: 0)
     uint        node_datatype( const Node& node ) const;        // find DATATYPE for node and return number (default: 0)
 
@@ -2573,6 +2574,24 @@ inline uint Layout::node_xy_i( const Node& node ) const
     return NULL_I;
 }
 
+void Layout::node_xy_replace_polygon( const real2 * vtx, uint vtx_cnt ) // replace X,Y children from new set of vertices
+{
+    uint dst_xy_prev_i = NULL_I;
+    for( uint v = 0; v < vtx_cnt; v++ )
+    {
+        uint dst_x_i = node_alloc_int( vtx[v].c[0] / gdsii_units_user );        
+        if ( dst_xy_prev_i == NULL_I ) {
+            nodes[dst_x_i].u.child_first_i = dst_x_i;
+        } else {
+            nodes[dst_xy_prev_i].sibling_i = dst_x_i;
+        } 
+        
+        uint dst_y_i = node_alloc_int( vtx[v].c[1] / gdsii_units_user );
+        nodes[dst_x_i].sibling_i = dst_y_i;
+        dst_xy_prev_i = dst_y_i;
+    }
+}
+
 inline uint Layout::node_pathtype( const Node& node ) const
 {
     if ( node.kind == NODE_KIND::PATHTYPE ) {
@@ -3769,7 +3788,6 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, const AABR& le
                             //------------------------------------------------------------
                             lassert( conflict_policy == CONFLICT_POLICY::MERGE_ALL,
                                      "merging partially overlapping elements is allowed only by conflict_policy MERGE_ALL" );
-                            lassert( false, "sorry, can't do MERGE_ALL on partially overlapped elements" );
                         }
                     } else {
                         //------------------------------------------------------------
@@ -3867,7 +3885,7 @@ bool Layout::bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uin
     ldout << polygon_str( vtxr, vtxr_cnt, "yellow" ) << "\n";
 
     //------------------------------------------------------------
-    // Intersect both leaf polygons with the brect polygon.
+    // Intersect both leaf polygons with the quadrant brect polygon.
     //------------------------------------------------------------
     uint vtx1r_cnt;
     uint vtx2r_cnt;
@@ -3880,19 +3898,15 @@ bool Layout::bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uin
     //------------------------------------------------------------
     // Merge the resultant polygons to get the final merged polygon.  
     // If nullptr is returned, that means that the two didn't really intersect
-    // at all and nothing should be changed.
+    // at all in this quadrant and nothing should be changed.
     //------------------------------------------------------------
     uint vtx_cnt;
     real2 * vtx = polygon_merge_or_intersect( true, vtx1r, vtx1r_cnt, vtx2r, vtx2r_cnt, vtx_cnt );
     if ( vtx != nullptr ) {
         //------------------------------------------------------------
-        // Replace the two leaf nodes with one leaf node with the final
-        // polygon. 
-        // TODO: need to deal with the fact that the leaf at this point
-        //       extends beyonmd this quadrant, so can't do that until
-        //       we fix that.
+        // Replace the 2nd leaf node's polygon with the merged polygon.
         //------------------------------------------------------------
-        assert(false);
+        node_xy_replace_polygon( vtx, vtx_cnt );
     }
 
     //------------------------------------------------------------
