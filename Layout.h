@@ -150,7 +150,7 @@ public:
         bool   is_left_of_segment( const real2& p2, const real2& p3 ) const;  // returns true if this point is to the left  of segment (p2, p3)
         bool   is_right_of_segment( const real2& p2, const real2& p3 ) const; // returns true if this point is to the right of segment (p2, p3)
         int    orientation( const real2& p2, const real2& p3 ) const;         // returns: 0=colinear, 1=clockwise, 2=counterclockwise
-        bool   lines_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const;
+        bool   lines_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip, real epsilon=0.000001 ) const;
         bool   segments_intersect( const real2& p2, const real2& p3, const real2& p4, bool include_endpoints ) const;
         bool   segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip, 
                                       bool include_p1_p2, bool include_p3_p4, bool include_colinear ) const;
@@ -171,7 +171,7 @@ public:
         real2& operator /= ( const real s );
         bool   operator == ( const real2 &v2 ) const; 
         bool   operator != ( const real2 &v2 ) const; 
-        bool   nearly_equal( const real2 &v2, real epsilon=0.0000001 ) const;
+        bool   nearly_equal( const real2 &v2, real epsilon=0.000001 ) const;
         std::string str( void ) const;
     };
 
@@ -1814,7 +1814,7 @@ inline bool Layout::real2::segments_intersect( const real2& p2, const real2& p3,
     return false; 
 }
 
-inline bool Layout::real2::lines_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip ) const
+inline bool Layout::real2::lines_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip, real epsilon ) const
 {
     const real2& p1 = *this;
 
@@ -1830,13 +1830,13 @@ inline bool Layout::real2::lines_intersection( const real2& p2, const real2& p3,
   
     real determinant = a1*b2 - a2*b1; 
   
-    if ( determinant == 0 ) {
+    if ( determinant >= -epsilon && determinant <= epsilon ) {
         ldout << " lines_intersection=NONE";
         return false;   // parallel
     } else {
         ip.c[0] = (b2*c1 - b1*c2) / determinant; 
         ip.c[1] = (a1*c2 - a2*c1) / determinant; 
-        ldout << " lines_intersection=" << ip;
+        ldout << " lines_intersection ip=" << ip << " determinant=" << determinant;
         return true;
     } 
 }
@@ -2027,8 +2027,7 @@ inline bool Layout::real2::operator != ( const Layout::real2 &v2 ) const
 bool Layout::real2::nearly_equal( const real2 &v2, real epsilon ) const
 {
     real2 diff = *this - v2;
-    const real e = 0.000001;
-    return diff.c[0] >= -e && diff.c[0] <= e && diff.c[1] >= -e && diff.c[1] <= e;
+    return diff.c[0] >= -epsilon && diff.c[0] <= epsilon && diff.c[1] >= -epsilon && diff.c[1] <= epsilon;
 }
 
 inline std::string Layout::real2::str( void ) const
@@ -4208,8 +4207,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             real2 this_ip;
             const real2 curr_s1 = vtxn[curr][curr_s1_i];
             if ( ip.segments_intersection( curr_s1, vtxn[other][k], vtxn[other][k2], this_ip, true, false, true ) ) {
-                if ( this_ip.nearly_equal( ip ) ) {
-                    real this_ip_dist = (ip - vtxn[other][k]).length();     
+                if ( !this_ip.nearly_equal( ip ) ) {
+                    real this_ip_dist = (this_ip - ip).length();     
                     if ( best_k == NULL_I || this_ip_dist < best_dist ) {
                         best_k    = k;
                         best_k2   = k2;
