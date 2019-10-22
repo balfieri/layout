@@ -171,6 +171,7 @@ public:
         real2& operator /= ( const real s );
         bool   operator == ( const real2 &v2 ) const; 
         bool   operator != ( const real2 &v2 ) const; 
+        bool   nearly_equal( const real2 &v2, real epsilon=0.0000001 ) const;
         std::string str( void ) const;
     };
 
@@ -1751,8 +1752,12 @@ inline bool Layout::real2::is_on_segment( const real2& p2, const real2& p3, bool
 {
     const real2& p1 = *this;
 
-    bool on_segment = p1.c[0] <= std::max( p2.c[0], p3.c[0] ) && p1.c[0] >= std::min( p2.c[0], p3.c[0] ) &&
-                      p1.c[1] <= std::max( p2.c[1], p3.c[1] ) && p1.c[1] >= std::min( p2.c[1], p3.c[1] );
+    real2 min( std::min( p2.c[0], p3.c[0] ), std::min( p2.c[1], p3.c[1] ) );
+    real2 max( std::max( p2.c[0], p3.c[0] ), std::max( p2.c[1], p3.c[1] ) );
+    const real e = 0.000001;
+    bool on_segment = (p1.c[0]+e) >= min.c[0] && (p1.c[0]-e) <= max.c[0] &&
+                      (p1.c[1]+e) >= min.c[1] && (p1.c[1]-e) <= max.c[1];
+    ldout << " min=" << min << " max=" << max << " on_segment=" << on_segment;
     return on_segment && (include_endpoints || (p1 != p2 && p1 != p3));
 }
 
@@ -2017,6 +2022,13 @@ inline bool Layout::real2::operator == ( const Layout::real2 &v2 ) const
 inline bool Layout::real2::operator != ( const Layout::real2 &v2 ) const
 {
     return c[0] != v2.c[0] || c[1] != v2.c[1];  
+}
+
+bool Layout::real2::nearly_equal( const real2 &v2, real epsilon ) const
+{
+    real2 diff = *this - v2;
+    const real e = 0.000001;
+    return diff.c[0] >= -e && diff.c[0] <= e && diff.c[1] >= -e && diff.c[1] <= e;
 }
 
 inline std::string Layout::real2::str( void ) const
@@ -4118,7 +4130,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             //------------------------------------------------------------
             // If we're back at the first intersection point, we are done.
             //------------------------------------------------------------
-            if ( vtx_cnt != 1 && vtx[vtx_cnt-1] == vtx[0] ) { 
+            if ( vtx_cnt != 1 && vtx[vtx_cnt-1].nearly_equal( vtx[0] ) ) { 
                 ldout << "back at first intersection point, so done, vtx[0]=" << vtx[0] << " vtx[last]=" << vtx[vtx_cnt-1] << "\n";
                 break;
             }
@@ -4133,8 +4145,15 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             bool other_s0_is_right = other_s0.is_right_of_segment( curr_s0, curr_s1 );
             bool other_s1_is_left  = other_s1.is_left_of_segment(  curr_s0, curr_s1 );
             bool other_s1_is_right = other_s1.is_right_of_segment( curr_s0, curr_s1 );
-            bool use_other_s0_for_s0 = (do_merge == is_ccw) ? other_s0_is_left : other_s1_is_left;
-            bool use_other_s1_for_s0 = (do_merge == is_ccw) ? other_s1_is_left : other_s0_is_left;
+            bool use_other_s0_for_s0;
+            bool use_other_s1_for_s0;
+            if ( is_ccw ) {
+                use_other_s0_for_s0 = do_merge ? other_s0_is_left : other_s1_is_left;
+                use_other_s1_for_s0 = do_merge ? other_s1_is_left : other_s0_is_left;
+            } else {
+                use_other_s0_for_s0 = do_merge ? other_s0_is_right : other_s1_is_right;
+                use_other_s1_for_s0 = do_merge ? other_s1_is_right : other_s0_is_right;
+            }
             ldout << "other_s0_is_left=" << other_s0_is_left << " other_s0_is_right=" << other_s0_is_right <<
                     " other_s1_is_left=" << other_s1_is_left << " other_s1_is_right=" << other_s1_is_right <<
                     " is_ccw=" << is_ccw << " do_merge=" << do_merge << " use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n"; 
@@ -4183,19 +4202,23 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         uint  best_k2 = NULL_I;
         real  best_dist = 1e100;
         real2 best_ip;
-        for( uint k = 0; k < vtxn_cnt[other]; k++ )
+        for( uint k = 0; k < (vtxn_cnt[other]-1); k++ )
         {
-            uint k2 = (k + 1) % vtxn_cnt[other];
+            uint k2 = k + 1;
             real2 this_ip;
             const real2 curr_s1 = vtxn[curr][curr_s1_i];
-            if ( ip.segments_intersection( curr_s1, vtxn[other][k], vtxn[other][k2], this_ip, true, false, true ) && this_ip != ip ) {
-                real this_ip_dist = (ip - vtxn[other][k]).length();     
-                if ( best_k == NULL_I || this_ip_dist < best_dist ) {
-                    best_k    = k;
-                    best_k2   = k2;
-                    best_dist = this_ip_dist;
-                    best_ip   = this_ip;
-                    ldout << " new best_ip=" << best_ip << " best_dist=" << best_dist << "\n";
+            if ( ip.segments_intersection( curr_s1, vtxn[other][k], vtxn[other][k2], this_ip, true, false, true ) ) {
+                if ( this_ip.nearly_equal( ip ) ) {
+                    real this_ip_dist = (ip - vtxn[other][k]).length();     
+                    if ( best_k == NULL_I || this_ip_dist < best_dist ) {
+                        best_k    = k;
+                        best_k2   = k2;
+                        best_dist = this_ip_dist;
+                        best_ip   = this_ip;
+                        ldout << " ip=" << ip << " this_ip=" << this_ip << " best_ip=" << best_ip << " best_dist=" << best_dist << "\n";
+                    }
+                } else {
+                        ldout << " REJECTED\n";
                 }
             }
         }
