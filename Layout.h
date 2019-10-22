@@ -4241,6 +4241,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     ldout << "polygon_merge_or_intersect: result=" << polygon_str( vtx, vtx_cnt, "blue" ) << "\n";
     polygon_dealloc( vtx1 );
     polygon_dealloc( vtx2 );
+    lassert( vtx_cnt == 0 || vtx_cnt >= 4, "polygon_merge_or_intersect: not a polygon vtx_cnt=" + std::to_string(vtx_cnt) );
     return vtx;
 }
 
