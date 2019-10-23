@@ -146,9 +146,9 @@ public:
         real2& normalize( void );
         real2  normalized( void ) const;
         bool   colinear_is_same_dir( const real2& v2 ) const;
-        bool   is_on_segment( const real2& p2, const real2& p3, bool include_endpoints ) const;  // returns true if this point is on line segment (p2, p3)
-        bool   is_left_of_segment( const real2& p2, const real2& p3 ) const;  // returns true if this point is to the left  of segment (p2, p3)
-        bool   is_right_of_segment( const real2& p2, const real2& p3 ) const; // returns true if this point is to the right of segment (p2, p3)
+        bool   is_on_segment( const real2& p2, const real2& p3, bool include_endpoints, real epsilon=0.000001 ) const;  // returns true if this point is on line segment (p2, p3)
+        bool   is_left_of_segment( const real2& p2, const real2& p3, real epsilon=0.000001 ) const;  // returns true if this point is to the left  of segment (p2, p3)
+        bool   is_right_of_segment( const real2& p2, const real2& p3, real epsilon=0.000001 ) const; // returns true if this point is to the right of segment (p2, p3)
         int    orientation( const real2& p2, const real2& p3 ) const;         // returns: 0=colinear, 1=clockwise, 2=counterclockwise
         bool   lines_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip, real epsilon=0.000001 ) const;
         bool   segments_intersect( const real2& p2, const real2& p3, const real2& p4, bool include_endpoints ) const;
@@ -1748,27 +1748,28 @@ inline bool Layout::real2::colinear_is_same_dir( const Layout::real2& v2 ) const
            std::signbit( c[1] ) == std::signbit( v2.c[1] );
 }
 
-inline bool Layout::real2::is_on_segment( const real2& p2, const real2& p3, bool include_endpoints ) const
+inline bool Layout::real2::is_on_segment( const real2& p2, const real2& p3, bool include_endpoints, real epsilon ) const
 {
     const real2& p1 = *this;
 
     real2 min( std::min( p2.c[0], p3.c[0] ), std::min( p2.c[1], p3.c[1] ) );
     real2 max( std::max( p2.c[0], p3.c[0] ), std::max( p2.c[1], p3.c[1] ) );
-    const real e = 0.000001;
-    bool on_segment = (p1.c[0]+e) >= min.c[0] && (p1.c[0]-e) <= max.c[0] &&
-                      (p1.c[1]+e) >= min.c[1] && (p1.c[1]-e) <= max.c[1];
+    bool on_segment = (p1.c[0]+epsilon) >= min.c[0] && (p1.c[0]-epsilon) <= max.c[0] &&
+                      (p1.c[1]+epsilon) >= min.c[1] && (p1.c[1]-epsilon) <= max.c[1];
     ldout << " min=" << min << " max=" << max << " on_segment=" << on_segment;
     return on_segment && (include_endpoints || (p1 != p2 && p1 != p3));
 }
 
-inline bool Layout::real2::is_left_of_segment( const real2& p2, const real2& p3 ) const
+inline bool Layout::real2::is_left_of_segment( const real2& p2, const real2& p3, real epsilon ) const
 {
-    return (p3.c[0] - p2.c[0])*(c[1] - p2.c[1]) > (p3.c[1] - p2.c[1])*(c[0] - p2.c[0]);
+    return (p3.c[0] - p2.c[0])*(c[1] - p2.c[1]) > (p3.c[1] - p2.c[1])*(c[0] - p2.c[0]) &&
+           !is_on_segment( p2, p3, false, epsilon );
 }
 
-inline bool Layout::real2::is_right_of_segment( const real2& p2, const real2& p3 ) const
+inline bool Layout::real2::is_right_of_segment( const real2& p2, const real2& p3, real epsilon ) const
 {
-    return (p3.c[0] - p2.c[0])*(c[1] - p2.c[1]) < (p3.c[1] - p2.c[1])*(c[0] - p2.c[0]);
+    return (p3.c[0] - p2.c[0])*(c[1] - p2.c[1]) < (p3.c[1] - p2.c[1])*(c[0] - p2.c[0]) &&
+           !is_on_segment( p2, p3, false, epsilon );
 }
 
 inline int Layout::real2::orientation( const real2& p2, const real2& p3 ) const
