@@ -4017,8 +4017,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     //------------------------------------------------------------
     real2 * vtx1 = polygon_ccw( _vtx1, vtx1_cnt );
     real2 * vtx2 = polygon_ccw( _vtx2, vtx2_cnt );
-    ldout << "polygon_merge_or_intersect: do_merge=" << do_merge << " ccw_poly1=" << polygon_str( vtx1, vtx1_cnt, "red" ) <<
-                                                                    " ccw_poly2=" << polygon_str( vtx2, vtx2_cnt, "green" ) << "\n";
+    ldout << "\npolygon_merge_or_intersect: do_merge=" << do_merge << " ccw_poly1=" << polygon_str( vtx1, vtx1_cnt, "red" ) <<
+                                                                      " ccw_poly2=" << polygon_str( vtx2, vtx2_cnt, "green" ) << "\n";
 
     //------------------------------------------------------------
     // First find any intersection point between the two polygons, 
@@ -4124,7 +4124,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             //------------------------------------------------------------
             // Record the new intersection point, ip.
             //------------------------------------------------------------
-            ldout << "save intersection point as next vertex in result: " << ip << "\n";
+            ldout << "save intersection point as next vertex in result: " << ip << "\n\n0";
             vtx[vtx_cnt++] = ip;
 
             //------------------------------------------------------------
@@ -4183,7 +4183,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             // based on our current direction.
             //------------------------------------------------------------
             ip = vtxn[curr][curr_s1_i];
-            ldout << "save endpoint as next vertex in result: " << ip << " is_ccw=" << is_ccw << "\n";
+            ldout << "save endpoint as next vertex in result: " << ip << " is_ccw=" << is_ccw << "\n\n";
             lassert( !polygon_includes( vtx, vtx_cnt, ip ), "intersection point should not already be on the vtx[] list" );
             vtx[vtx_cnt++] = ip;
 
@@ -4291,7 +4291,7 @@ bool Layout::polygon_includes( const real2 * vtx, uint vtx_cnt, const real2& v )
 {
     for( uint i = 0; i < vtx_cnt; i++ )
     {
-        if ( v == vtx[i] ) return true;
+        if ( v.nearly_equal( vtx[i] ) ) return true;
     }
     return false;
 }
