@@ -1757,7 +1757,7 @@ inline bool Layout::real2::is_on_segment( const real2& p2, const real2& p3, bool
     bool on_segment = (p1.c[0]+epsilon) >= min.c[0] && (p1.c[0]-epsilon) <= max.c[0] &&
                       (p1.c[1]+epsilon) >= min.c[1] && (p1.c[1]-epsilon) <= max.c[1];
     ldout << " min=" << min << " max=" << max << " on_segment=" << on_segment;
-    return on_segment && (include_endpoints || (p1 != p2 && p1 != p3));
+    return on_segment && (include_endpoints || (!p1.nearly_equal( p2 ) && !p1.nearly_equal( p3 )));
 }
 
 inline bool Layout::real2::is_left_of_segment( const real2& p2, const real2& p3, real epsilon ) const
