@@ -153,7 +153,7 @@ public:
         bool   lines_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip, real epsilon=0.000001 ) const;
         bool   segments_intersect( const real2& p2, const real2& p3, const real2& p4, bool include_endpoints ) const;
         bool   segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip, 
-                                      bool include_p1_p2, bool include_p3_p4, bool include_colinear, bool& reverse ) const;
+                                      bool include_p1_p2, bool include_p3_p4, bool include_colinear, bool& colinear, bool& reverse ) const;
         void   pad_segment( const real2& p2, real pad, real2& p1_new, real2& p2_new ) const;       // (p1_new, p2_new) are new endpoints
         void   perpendicular_segment( const real2& p2, real length, real2& p3, real2& p4 ) const;  // (p2, p3) will pass through p1
         void   parallel_segment( const real2& p2, real dist, real2& p1_new, real2& p2_new ) const; // (p1_new, p2_new) are new endpoints
@@ -1851,7 +1851,7 @@ inline bool Layout::real2::lines_intersection( const real2& p2, const real2& p3,
 }
 
 inline bool Layout::real2::segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip, 
-                                                  bool include_p1_p2, bool include_p3_p4, bool include_colinear, bool& reverse ) const
+                                                  bool include_p1_p2, bool include_p3_p4, bool include_colinear, bool& colinear, bool& reverse ) const
 {
     const real2& p1 = *this;
 
@@ -1859,6 +1859,7 @@ inline bool Layout::real2::segments_intersection( const real2& p2, const real2& 
                         "] include_p1_p2_endpoints=" << include_p1_p2 << " include_p3_p4_endpoints=" << include_p3_p4 << 
                         " include_colinear=" << include_colinear << ": ";
 
+    colinear = false;
     reverse = false;
     if ( p1.lines_intersection( p2, p3, p4, ip ) ) {
         if ( ip.is_on_segment( p1, p2, include_p1_p2 ) ) {
@@ -1893,6 +1894,7 @@ inline bool Layout::real2::segments_intersection( const real2& p2, const real2& 
             real2 ip_other_dir = other - ip;
             if ( p1_p2_dir.colinear_is_same_dir( ip_other_dir ) ) {
                 ldout << ", reverse=" << reverse << " => INTERSECTION (colinear same dir)\n";
+                colinear = true;
                 return true;
             } else {
                 ldout << ", but wrong dir";
@@ -4047,8 +4049,9 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         for( j = 0; j < vtx2_cnt; j++ )
         {
             j2 = (j + 1) % vtx2_cnt;
+            bool colinear_unused;
             bool reverse_unused;
-            if ( vtx1[i].segments_intersection( vtx1[i2], vtx2[j], vtx2[j2], ip, false, false, false, reverse_unused ) ) break;
+            if ( vtx1[i].segments_intersection( vtx1[i2], vtx2[j], vtx2[j2], ip, false, false, false, colinear_unused, reverse_unused ) ) break;
         }
         if ( j != vtx2_cnt ) break;
     }   
@@ -4119,6 +4122,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     const real2 * vtxn[2]        = { vtx1, vtx2 };
     const uint    vtxn_cnt[2]    = { vtx1_cnt, vtx2_cnt };  
     bool          have_ip        = true;
+    bool          have_colinear_ip = false;
     uint          curr_s0_i      = i;
     uint          curr_s1_i      = i2;
     uint          other_s0_i     = j;
@@ -4127,7 +4131,27 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     for( ;; ) 
     {
         lassert( vtx_cnt != vtx_cnt_max, "vtx array grew bigger than expected" );
-        if ( have_ip ) {
+        if ( have_colinear_ip ) {
+            //------------------------------------------------------------
+            // Record the new intersection point, ip.
+            //------------------------------------------------------------
+            ldout << "save colinear intersection point as next vertex in result: " << ip.str() << " is_ccw=" << is_ccw << "\n\n";
+            vtx[vtx_cnt++] = ip;
+
+            //------------------------------------------------------------
+            // If we're back at the first intersection point, we are done.
+            // However, make sure the last vertex is an exact copy of the first.
+            //------------------------------------------------------------
+            if ( vtx_cnt != 1 && vtx[vtx_cnt-1].nearly_equal( vtx[0] ) ) { 
+                vtx[vtx_cnt-1] = vtx[0];  // exact copy to ensure polygon is water-tight
+                ldout << "back at first intersection point, so done, vtx[0]=" << vtx[0] << " vtx[last]=" << vtx[vtx_cnt-1] << "\n";
+                break;
+            }
+
+            curr_s0_i  = other_s0_i;
+            curr_s1_i  = other_s1_i;
+
+        } else if ( have_ip ) {
             const real2& curr_s0  = vtxn[curr][curr_s0_i];
             const real2& curr_s1  = vtxn[curr][curr_s1_i];
             const real2& other_s0 = vtxn[other][other_s0_i];
@@ -4193,6 +4217,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             is_ccw     = use_other_s0_for_s0;
             curr       = other;
             other      = 1 - curr;
+
         } else {
             //------------------------------------------------------------
             // Record the endpoint (curr_s1_i) of the current segment.
@@ -4204,7 +4229,6 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             lassert( !polygon_includes( vtx, vtx_cnt, ip ), "intersection point should not already be on the vtx[] list" );
             vtx[vtx_cnt++] = ip;
 
-            int prev_s0_i = curr_s0_i;
             curr_s0_i = curr_s1_i;
             curr_s1_i = (is_ccw ? (curr_s0_i+1) : (curr_s0_i+vtxn_cnt[curr]-2)) % (vtxn_cnt[curr]-1);
         }
@@ -4216,10 +4240,11 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         // See if there's an intersection point along (ip, curr_s1) with
         // the (new) other segment.  Choose the one that is closest to ip.
         //------------------------------------------------------------
-        ldout << "checking for intersection between new curr_seg and other_seg...\n";
+        ldout << "checking for intersection between new curr_seg and some other_seg...\n";
         uint  best_k = NULL_I;
         uint  best_k2 = NULL_I;
-        uint  best_reverse = false;
+        bool  best_colinear = false;
+        bool  best_reverse = false;
         real  best_dist = 1e100;
         real2 best_ip;
         for( uint k = 0; k < (vtxn_cnt[other]-1); k++ )
@@ -4227,17 +4252,20 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             uint k2 = k + 1;
             real2 this_ip;
             const real2 curr_s1 = vtxn[curr][curr_s1_i];
+            bool colinear = false;
             bool reverse = false;
-            if ( ip.segments_intersection( curr_s1, vtxn[other][k], vtxn[other][k2], this_ip, true, false, true, reverse ) ) {
+            if ( ip.segments_intersection( curr_s1, vtxn[other][k], vtxn[other][k2], this_ip, true, false, true, colinear, reverse ) ) {
                 if ( !this_ip.nearly_equal( ip ) ) {
                     real this_ip_dist = (this_ip - ip).length();     
                     if ( best_k == NULL_I || this_ip_dist < best_dist ) {
                         best_k       = k;
                         best_k2      = k2;
+                        best_colinear = colinear;
                         best_reverse = reverse;
                         best_dist    = this_ip_dist;
                         best_ip      = this_ip;
-                        ldout << " ip=" << ip << " this_ip=" << this_ip << " best_ip=" << best_ip << " best_dist=" << best_dist << " best_reverse=" << reverse << "\n";
+                        ldout << " ip=" << ip << " this_ip=" << this_ip << " best_ip=" << best_ip << " best_dist=" << best_dist << 
+                                 " best_colinear=" << best_colinear << " best_reverse=" << best_reverse << "\n";
                     }
                 } else {
                         ldout << " REJECTED\n";
@@ -4252,7 +4280,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             // Set the new ip to best_ip and go back to the top of the loop.
             //------------------------------------------------------------
             ip = best_ip;
-            ldout << " closest intersection point along new curr_seg: " << ip << "\n";
+            ldout << " closest intersection point along new curr_seg: " << ip << " colinear=" << best_colinear << " reverse=" << best_reverse << "\n";
+            have_colinear_ip = best_colinear;
             other_s0_i = best_reverse ? best_k2 : best_k;
             other_s1_i = best_reverse ? best_k  : best_k2;
         } else {
