@@ -153,7 +153,7 @@ public:
         bool   lines_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip, real epsilon=0.000001 ) const;
         bool   segments_intersect( const real2& p2, const real2& p3, const real2& p4, bool include_endpoints ) const;
         bool   segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip, 
-                                      bool include_p1_p2, bool include_p3_p4, bool include_colinear ) const;
+                                      bool include_p1_p2, bool include_p3_p4, bool include_colinear, bool& reverse ) const;
         void   pad_segment( const real2& p2, real pad, real2& p1_new, real2& p2_new ) const;       // (p1_new, p2_new) are new endpoints
         void   perpendicular_segment( const real2& p2, real length, real2& p3, real2& p4 ) const;  // (p2, p3) will pass through p1
         void   parallel_segment( const real2& p2, real dist, real2& p1_new, real2& p2_new ) const; // (p1_new, p2_new) are new endpoints
@@ -1764,7 +1764,7 @@ inline bool Layout::real2::is_on_segment( const real2& p2, const real2& p3, bool
     real2 max( std::max( p2.c[0], p3.c[0] ), std::max( p2.c[1], p3.c[1] ) );
     bool on_segment = (p1.c[0]+epsilon) >= min.c[0] && (p1.c[0]-epsilon) <= max.c[0] &&
                       (p1.c[1]+epsilon) >= min.c[1] && (p1.c[1]-epsilon) <= max.c[1];
-    ldout << " min=" << min << " max=" << max << " on_segment=" << on_segment;
+    ldout << ", min=" << min << " max=" << max << " on_segment=" << on_segment;
     return on_segment && (include_endpoints || (!p1.nearly_equal( p2 ) && !p1.nearly_equal( p3 )));
 }
 
@@ -1851,13 +1851,15 @@ inline bool Layout::real2::lines_intersection( const real2& p2, const real2& p3,
 }
 
 inline bool Layout::real2::segments_intersection( const real2& p2, const real2& p3, const real2& p4, real2& ip, 
-                                                  bool include_p1_p2, bool include_p3_p4, bool include_colinear ) const
+                                                  bool include_p1_p2, bool include_p3_p4, bool include_colinear, bool& reverse ) const
 {
     const real2& p1 = *this;
 
     ldout << " checking intersection of segment p1=[" << p1 << ", p2=" << p2 << "] against p3=[" << p3 << ", p4=" << p4 << 
-                        "] include_p1_p2_endpoints=" << include_p1_p2 << " include_p3_p4_endpoints=" << include_p3_p4 << ": ";
+                        "] include_p1_p2_endpoints=" << include_p1_p2 << " include_p3_p4_endpoints=" << include_p3_p4 << 
+                        " include_colinear=" << include_colinear << ": ";
 
+    reverse = false;
     if ( p1.lines_intersection( p2, p3, p4, ip ) ) {
         if ( ip.is_on_segment( p1, p2, include_p1_p2 ) ) {
             ldout << ", on_p1_p2=true";
@@ -1871,23 +1873,26 @@ inline bool Layout::real2::segments_intersection( const real2& p2, const real2& 
             ldout << ", on_p1_p2=false";
         }
     } else if ( include_colinear ) {
-        bool p3_on_p1_p2 = p3.is_on_segment( p1, p2, false ) || p3 == p2;
-        bool p4_on_p1_p2 = p4.is_on_segment( p1, p2, false ) || p4 == p2;
+        bool p3_on_p1_p2_proper = p3.is_on_segment( p1, p2, false );
+        bool p4_on_p1_p2_proper = p4.is_on_segment( p1, p2, false );
+        bool p3_on_p1_p2 = p3_on_p1_p2_proper || (include_p3_p4 && p3.nearly_equal( p2 ));
+        bool p4_on_p1_p2 = p4_on_p1_p2_proper || (include_p3_p4 && p4.nearly_equal( p2 ));
+        ldout << ", p3_on_p1_p2=" << p3_on_p1_p2_proper << "," << p3_on_p1_p2 << 
+                  " p4_on_p1_p2=" << p4_on_p1_p2_proper << "," << p4_on_p1_p2;
         if ( p3_on_p1_p2 != p4_on_p1_p2 ) {
             real2 other;
             if ( p3_on_p1_p2 ) {
                 ip = p3;
                 other = p4;
-                ldout << ", p3_on_p1_p2=true";
             } else if ( p4_on_p1_p2 ) {
                 ip = p4;
                 other = p3;
-                ldout << ", p4_on_p1_p2=true";
+                reverse = true;
             }
             real2 p1_p2_dir    = p2 - p1;
             real2 ip_other_dir = other - ip;
             if ( p1_p2_dir.colinear_is_same_dir( ip_other_dir ) ) {
-                ldout << " => INTERSECTION\n";
+                ldout << ", reverse=" << reverse << " => INTERSECTION (colinear same dir)\n";
                 return true;
             } else {
                 ldout << ", but wrong dir";
@@ -4041,7 +4046,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         for( j = 0; j < vtx2_cnt; j++ )
         {
             j2 = (j + 1) % vtx2_cnt;
-            if ( vtx1[i].segments_intersection( vtx1[i2], vtx2[j], vtx2[j2], ip, false, false, false ) ) break;
+            bool reverse_unused;
+            if ( vtx1[i].segments_intersection( vtx1[i2], vtx2[j], vtx2[j2], ip, false, false, false, reverse_unused ) ) break;
         }
         if ( j != vtx2_cnt ) break;
     }   
@@ -4132,7 +4138,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             //------------------------------------------------------------
             // Record the new intersection point, ip.
             //------------------------------------------------------------
-            ldout << "save intersection point as next vertex in result: " << ip.str() << "\n\n0";
+            ldout << "save intersection point as next vertex in result: " << ip.str() << " is_ccw=" << is_ccw << "\n\n";
             vtx[vtx_cnt++] = ip;
 
             //------------------------------------------------------------
@@ -4201,7 +4207,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             curr_s0_i = curr_s1_i;
             curr_s1_i = (is_ccw ? (curr_s0_i+1) : (curr_s0_i+vtxn_cnt[curr]-2)) % (vtxn_cnt[curr]-1);
         }
-        ldout << "new curr_seg: [ " << vtxn[curr][curr_s0_i] << ", " << ip << ", " << vtxn[curr][curr_s1_i] << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << "\n";
+        ldout << "new curr_seg: [ " << vtxn[curr][curr_s0_i] << ", " << ip << ", " << vtxn[curr][curr_s1_i] << " ] curr=" << curr << 
+                 " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << " is_ccw=" << is_ccw << "\n";
 
         //------------------------------------------------------------
         // See if there's an intersection point along (ip, curr_s1) with
@@ -4210,6 +4217,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         ldout << "checking for intersection between new curr_seg and other_seg...\n";
         uint  best_k = NULL_I;
         uint  best_k2 = NULL_I;
+        uint  best_reverse = false;
         real  best_dist = 1e100;
         real2 best_ip;
         for( uint k = 0; k < (vtxn_cnt[other]-1); k++ )
@@ -4217,15 +4225,17 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             uint k2 = k + 1;
             real2 this_ip;
             const real2 curr_s1 = vtxn[curr][curr_s1_i];
-            if ( ip.segments_intersection( curr_s1, vtxn[other][k], vtxn[other][k2], this_ip, true, false, true ) ) {
+            bool reverse;
+            if ( ip.segments_intersection( curr_s1, vtxn[other][k], vtxn[other][k2], this_ip, true, false, true, reverse ) ) {
                 if ( !this_ip.nearly_equal( ip ) ) {
                     real this_ip_dist = (this_ip - ip).length();     
                     if ( best_k == NULL_I || this_ip_dist < best_dist ) {
-                        best_k    = k;
-                        best_k2   = k2;
-                        best_dist = this_ip_dist;
-                        best_ip   = this_ip;
-                        ldout << " ip=" << ip << " this_ip=" << this_ip << " best_ip=" << best_ip << " best_dist=" << best_dist << "\n";
+                        best_k       = k;
+                        best_k2      = k2;
+                        best_reverse = reverse;
+                        best_dist    = this_ip_dist;
+                        best_ip      = this_ip;
+                        ldout << " ip=" << ip << " this_ip=" << this_ip << " best_ip=" << best_ip << " best_dist=" << best_dist << " best_reverse=" << reverse << "\n";
                     }
                 } else {
                         ldout << " REJECTED\n";
