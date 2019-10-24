@@ -4036,6 +4036,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     //------------------------------------------------------------
     // First find any intersection point between the two polygons, 
     // excluding segment endpoints.
+    // TODO: not correct, can still have polygons that overlap and meet only at common endpoints
     //------------------------------------------------------------
     uint i, i2, j, j2;
     real2 ip;
@@ -4209,6 +4210,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
         }
         ldout << "new curr_seg: [ " << vtxn[curr][curr_s0_i] << ", " << ip << ", " << vtxn[curr][curr_s1_i] << " ] curr=" << curr << 
                  " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << " is_ccw=" << is_ccw << "\n";
+        lassert( !ip.nearly_equal( vtxn[curr][curr_s1_i] ), "curr_seg is a point" );
 
         //------------------------------------------------------------
         // See if there's an intersection point along (ip, curr_s1) with
@@ -4225,7 +4227,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             uint k2 = k + 1;
             real2 this_ip;
             const real2 curr_s1 = vtxn[curr][curr_s1_i];
-            bool reverse;
+            bool reverse = false;
             if ( ip.segments_intersection( curr_s1, vtxn[other][k], vtxn[other][k2], this_ip, true, false, true, reverse ) ) {
                 if ( !this_ip.nearly_equal( ip ) ) {
                     real this_ip_dist = (this_ip - ip).length();     
@@ -4251,8 +4253,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             //------------------------------------------------------------
             ip = best_ip;
             ldout << " closest intersection point along new curr_seg: " << ip << "\n";
-            other_s0_i = best_k;
-            other_s1_i = best_k2;
+            other_s0_i = best_reverse ? best_k2 : best_k;
+            other_s1_i = best_reverse ? best_k  : best_k2;
         } else {
             ldout << " no intersection point before end of new curr_seg\n";
         }
