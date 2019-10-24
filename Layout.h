@@ -4135,7 +4135,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             //------------------------------------------------------------
             // Record the new intersection point, ip.
             //------------------------------------------------------------
-            ldout << "save colinear intersection point as next vertex in result: " << ip.str() << " is_ccw=" << is_ccw << "\n\n";
+            ldout << "\nsave colinear intersection point as next vertex in result: " << ip.str() << " is_ccw=" << is_ccw << "\n\n";
             vtx[vtx_cnt++] = ip;
 
             //------------------------------------------------------------
@@ -4150,6 +4150,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
 
             curr_s0_i  = other_s0_i;
             curr_s1_i  = other_s1_i;
+            curr       = other;
+            other      = 1 - curr;
 
         } else if ( have_ip ) {
             const real2& curr_s0  = vtxn[curr][curr_s0_i];
@@ -4198,13 +4200,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             ldout << " other_s0_is_left=" << other_s0_is_left << " other_s0_is_right=" << other_s0_is_right <<
                      " other_s1_is_left=" << other_s1_is_left << " other_s1_is_right=" << other_s1_is_right <<
                      " is_ccw=" << is_ccw << " do_merge=" << do_merge << " use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n"; 
-            if ( use_other_s0_for_s0 || use_other_s1_for_s0 ) {
-                lassert( use_other_s0_for_s0 != use_other_s1_for_s0, "use_other_s0_for_s0 and use_other_s1_for_s0 can't both be set" );
-            } else {
-                use_other_s0_for_s0 = other_s0.is_on_segment( curr_s0, curr_s1, true );
-                use_other_s1_for_s0 = !use_other_s0_for_s0;
-                ldout << " colinear case: use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n";
-            }
+            lassert( use_other_s0_for_s0 != use_other_s1_for_s0, "use_other_s0_for_s0 and use_other_s1_for_s0 can't both be set" );
 
             //------------------------------------------------------------
             // Set curr_s0_i = other's chosen s0 or s1
@@ -4285,6 +4281,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             other_s0_i = best_reverse ? best_k2 : best_k;
             other_s1_i = best_reverse ? best_k  : best_k2;
         } else {
+            have_colinear_ip = false;
             ldout << " no intersection point before end of new curr_seg\n";
         }
     }    
