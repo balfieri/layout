@@ -1845,7 +1845,7 @@ inline bool Layout::real2::lines_intersection( const real2& p2, const real2& p3,
     } else {
         ip.c[0] = (b2*c1 - b1*c2) / determinant; 
         ip.c[1] = (a1*c2 - a2*c1) / determinant; 
-        ldout << " lines_intersection ip=" << ip << " determinant=" << determinant;
+        ldout << " lines_intersection ip=" << ip.str() << " determinant=" << ::str(determinant);
         return true;
     } 
 }
@@ -4126,13 +4126,13 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             const real2& other_s0 = vtxn[other][other_s0_i];
             const real2& other_s1 = vtxn[other][other_s1_i];
             ldout << "\n";
-            ldout << "curr_seg: [ " << curr_s0 << ", " << ip << ", " << curr_s1 << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << " is_ccw=" << is_ccw << "\n";
-            ldout << "other_seg:[ " << other_s0 << ", " << other_s1 << " ] other=" << other << " other_s0_i=" << other_s0_i << " other_s1_i=" << other_s1_i << "\n";
+            ldout << "curr_seg: [ " << curr_s0.str() << ", " << ip.str() << ", " << curr_s1.str() << " ] curr=" << curr << " curr_s0_i=" << curr_s0_i << " curr_s1_i=" << curr_s1_i << " is_ccw=" << is_ccw << "\n";
+            ldout << "other_seg:[ " << other_s0.str() << ", " << other_s1.str() << " ] other=" << other << " other_s0_i=" << other_s0_i << " other_s1_i=" << other_s1_i << "\n";
 
             //------------------------------------------------------------
             // Record the new intersection point, ip.
             //------------------------------------------------------------
-            ldout << "save intersection point as next vertex in result: " << ip << "\n\n0";
+            ldout << "save intersection point as next vertex in result: " << ip.str() << "\n\n0";
             vtx[vtx_cnt++] = ip;
 
             //------------------------------------------------------------
@@ -4193,7 +4193,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             // based on our current direction.
             //------------------------------------------------------------
             ip = vtxn[curr][curr_s1_i];
-            ldout << "save endpoint as next vertex in result: " << ip << " is_ccw=" << is_ccw << "\n\n";
+            ldout << "save endpoint as next vertex in result: " << ip.str() << " is_ccw=" << is_ccw << "\n\n";
             lassert( !polygon_includes( vtx, vtx_cnt, ip ), "intersection point should not already be on the vtx[] list" );
             vtx[vtx_cnt++] = ip;
 
