@@ -4129,8 +4129,10 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
 
             //------------------------------------------------------------
             // If we're back at the first intersection point, we are done.
+            // However, make sure the last vertex is an exact copy of the first.
             //------------------------------------------------------------
             if ( vtx_cnt != 1 && vtx[vtx_cnt-1].nearly_equal( vtx[0] ) ) { 
+                vtx[vtx_cnt-1] = vtx[0];  // exact copy to ensure polygon is water-tight
                 ldout << "back at first intersection point, so done, vtx[0]=" << vtx[0] << " vtx[last]=" << vtx[vtx_cnt-1] << "\n";
                 break;
             }
