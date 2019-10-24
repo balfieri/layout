@@ -4164,15 +4164,15 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
                 use_other_s0_for_s0 = do_merge ? other_s0_is_right : other_s1_is_right;
                 use_other_s1_for_s0 = do_merge ? other_s1_is_right : other_s0_is_right;
             }
-            ldout << "other_s0_is_left=" << other_s0_is_left << " other_s0_is_right=" << other_s0_is_right <<
-                    " other_s1_is_left=" << other_s1_is_left << " other_s1_is_right=" << other_s1_is_right <<
-                    " is_ccw=" << is_ccw << " do_merge=" << do_merge << " use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n"; 
+            ldout << " other_s0_is_left=" << other_s0_is_left << " other_s0_is_right=" << other_s0_is_right <<
+                     " other_s1_is_left=" << other_s1_is_left << " other_s1_is_right=" << other_s1_is_right <<
+                     " is_ccw=" << is_ccw << " do_merge=" << do_merge << " use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n"; 
             if ( use_other_s0_for_s0 || use_other_s1_for_s0 ) {
                 lassert( use_other_s0_for_s0 != use_other_s1_for_s0, "use_other_s0_for_s0 and use_other_s1_for_s0 can't both be set" );
             } else {
                 use_other_s0_for_s0 = other_s0.is_on_segment( curr_s0, curr_s1, true );
                 use_other_s1_for_s0 = !use_other_s0_for_s0;
-                ldout << "colinear case: use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n";
+                ldout << " colinear case: use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n";
             }
 
             //------------------------------------------------------------
