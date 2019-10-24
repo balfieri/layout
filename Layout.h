@@ -33,6 +33,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <cstdio>
 
 #include <errno.h>
 #include <stdlib.h>
@@ -49,7 +50,6 @@ public:
     typedef uint32_t uint;                  // by default, we use 32-bit integers
     typedef int32_t  _int;                  // by default, we use 32-bit integers
     typedef double   real;
-
     static const uint NULL_I = -1;                 // null index into an array
 
     // FILE PATHS
@@ -667,6 +667,14 @@ public:
 
 // these are done as macros to avoid evaluating msg (it makes a big difference)
 #define lassert( bool, msg ) if ( !(bool) ) { std::cout << "ERROR: " << std::string(msg) << "\n"; exit( 1 ); }
+
+static inline std::string str( Layout::real r, int n = 30 )
+{
+    std::ostringstream out;
+    out.precision( n );
+    out << std::fixed << r;
+    return out.str();
+}
 
 std::string Layout::str( Layout::NODE_KIND kind )
 {
@@ -1568,7 +1576,7 @@ inline Layout::real4& Layout::real4::operator /= ( const Layout::real s )
 
 inline std::string Layout::real4::str( void ) const
 {
-    return "[" + std::to_string(c[0]) + "," + std::to_string(c[1]) + "," + std::to_string(c[2]) + "," + std::to_string(c[3]) + "]";
+    return "[" + ::str(c[0]) + "," + ::str(c[1]) + "," + ::str(c[2]) + "," + ::str(c[3]) + "]";
 }
 
 inline Layout::real Layout::real3::dot( const Layout::real3 &v2 ) const
@@ -1713,7 +1721,7 @@ inline Layout::real3& Layout::real3::operator /= ( const Layout::real s )
 
 inline std::string Layout::real3::str( void ) const
 {
-    return "[" + std::to_string(c[0]) + "," + std::to_string(c[1]) + "," + std::to_string(c[2]) + "]";
+    return "[" + ::str(c[0]) + "," + ::str(c[1]) + "," + ::str(c[2]) + "]";
 }
 
 inline Layout::real Layout::real2::dot( const Layout::real2 &v2 ) const
@@ -2033,7 +2041,7 @@ bool Layout::real2::nearly_equal( const real2 &v2, real epsilon ) const
 
 inline std::string Layout::real2::str( void ) const
 {
-    return "[" + std::to_string(c[0]) + "," + std::to_string(c[1]) + "]";
+    return "[" + ::str(c[0]) + "," + ::str(c[1]) + "]";
 }
 
 inline void Layout::Matrix::identity( void )
@@ -4263,13 +4271,13 @@ std::string Layout::polygon_str( const real2 * vtx, uint vtx_cnt, std::string co
     for( uint i = 0; i < vtx_cnt; i++ )
     {
         if ( i != 0 ) s += " ";
-        s += std::to_string( vtx[i].c[0] );
+        s += ::str( vtx[i].c[0] );
         s += ",";
-        s += std::to_string( vtx[i].c[1] );
+        s += ::str( vtx[i].c[1] );
     }
-    s += "' transform='translate(" + std::to_string(x_off) + " " + std::to_string(y_off) + 
-          ") scale(" + std::to_string(xy_scale) + " " + std::to_string(xy_scale) + ")' fill='" + 
-          color + "' fill-opacity='0.5' stroke-width='1'/>";
+    s += "' transform='translate(" + ::str(x_off) + " " + ::str(y_off) + 
+          ") scale(" + ::str(xy_scale) + " " + ::str(xy_scale) + ")' fill='" + 
+          color + "' fill-opacity='0.5' ::stroke-width='1'/>";
     return s;
 }
 
