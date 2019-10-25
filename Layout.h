@@ -581,7 +581,9 @@ public:
 
     // FILL
     void fill_dielectric_rect( uint layer_i, const AABR& rect );
-    void fill_dielectric_bvh( uint layer_i, uint bvh_i );
+    void fill_dielectric_bah( uint layer_i, uint bah_i, const AABR& rect );
+    void fill_dielectric_leaf_empty( uint layer_i, uint bah_i, uint x, uint y, const AABR& rect );
+    void fill_dielectric_leaf_nonempty( uint layer_i, uint bah_i, uint x, uint y, const AABR& rect );
 
     // LAYOUT I/O
     bool layout_read( std::string file_path );          // .layout
@@ -3131,6 +3133,7 @@ void Layout::fill_dielectrics( const AABR& brect, uint layer_first, uint layer_l
         // Next, walk the entire BAH for this layer.
         // We'll fill empty space at each leaf.
         //-----------------------------------------------------
+        fill_dielectric_bah( i, layers[i].bah_root_i, layers[i].bah_brect );
     }
 }
 
@@ -3141,12 +3144,46 @@ void Layout::fill_dielectric_rect( uint layer_i, const AABR& rect )
     //-----------------------------------------------------
 }
 
-void Layout::fill_dielectric_bvh( uint layer_i, uint bvh_i )
+void Layout::fill_dielectric_bah( uint layer_i, uint bah_i, const AABR& rect )
 {
     //-----------------------------------------------------
     // Fill each quadrant.
     //-----------------------------------------------------
-    lassert( bvh_i != NULL_I, "bvh_i should be non-null" );
+    lassert( bah_i != NULL_I, "fill_dielectric_bah: bah_i should not be NULL_I" );
+    const BAH_Node& node = bah_nodes[bah_i];
+    AABR crect;
+    real2 mid( (rect.min.c[0] + rect.max.c[0]) / 2.0, (rect.min.c[1] + rect.max.c[1]) / 2.0 );
+    for( uint x = 0; x < 2; x++ ) 
+    {
+        crect.min.c[0] = (x == 0) ? rect.min.c[0] : mid.c[0];
+        crect.max.c[0] = (x == 0) ? mid.c[0]      : rect.max.c[0];
+        for( uint y = 0; y < 2; y++ ) 
+        {
+            crect.min.c[1] = (y == 0) ? rect.min.c[1] : mid.c[1];
+            crect.max.c[1] = (y == 0) ? mid.c[1]      : rect.max.c[1];
+            if ( node.child_i[x][y] == NULL_I ) {
+                // create rectangle in leaf
+                fill_dielectric_leaf_empty( layer_i, bah_i, x, y, crect );
+            } else if ( node.child_is_leaf[x][y] ) {
+                // assume leaf is not empty
+                fill_dielectric_leaf_empty( layer_i, bah_i, x, y, crect );
+            } else {
+                // recurse to child bah node
+                fill_dielectric_bah( layer_i, node.child_i[x][y], crect );
+            }
+        }
+    }
+}
+
+void Layout::fill_dielectric_leaf_empty( uint layer_i, uint bah_i, uint x, uint y, const AABR& rect )
+{
+    //-----------------------------------------------------
+    // Fill each quadrant.
+    //-----------------------------------------------------
+}
+
+void Layout::fill_dielectric_leaf_nonempty( uint layer_i, uint bah_i, uint x, uint y, const AABR& rect )
+{
 }
 
 inline uint Layout::node_alloc( NODE_KIND kind )
