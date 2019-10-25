@@ -582,8 +582,7 @@ public:
     // FILL
     void fill_dielectric_rect( uint layer_i, const AABR& rect );
     void fill_dielectric_bah( uint layer_i, uint bah_i, const AABR& rect );
-    void fill_dielectric_leaf_empty( uint layer_i, uint bah_i, uint x, uint y, const AABR& rect );
-    void fill_dielectric_leaf_nonempty( uint layer_i, uint bah_i, uint x, uint y, const AABR& rect );
+    void fill_dielectric_leaf( uint layer_i, uint bah_i, uint x, uint y, const AABR& rect );
 
     // LAYOUT I/O
     bool layout_read( std::string file_path );          // .layout
@@ -3140,7 +3139,8 @@ void Layout::fill_dielectrics( const AABR& brect, uint layer_first, uint layer_l
 void Layout::fill_dielectric_rect( uint layer_i, const AABR& rect )
 {
     //-----------------------------------------------------
-    // Add a rectangular boundary on the given layer.
+    // Add a dielectric rectangle on the given layer.
+    // The caller must ensure that it doesn't overlap anything.
     //-----------------------------------------------------
 }
 
@@ -3161,12 +3161,9 @@ void Layout::fill_dielectric_bah( uint layer_i, uint bah_i, const AABR& rect )
         {
             crect.min.c[1] = (y == 0) ? rect.min.c[1] : mid.c[1];
             crect.max.c[1] = (y == 0) ? mid.c[1]      : rect.max.c[1];
-            if ( node.child_i[x][y] == NULL_I ) {
-                // create rectangle in leaf
-                fill_dielectric_leaf_empty( layer_i, bah_i, x, y, crect );
-            } else if ( node.child_is_leaf[x][y] ) {
-                // assume leaf is not empty
-                fill_dielectric_leaf_empty( layer_i, bah_i, x, y, crect );
+            if ( node.child_is_leaf[x][y] ) {
+                // leaf could be empty or nonempty
+                fill_dielectric_leaf( layer_i, bah_i, x, y, crect );
             } else {
                 // recurse to child bah node
                 fill_dielectric_bah( layer_i, node.child_i[x][y], crect );
@@ -3175,15 +3172,87 @@ void Layout::fill_dielectric_bah( uint layer_i, uint bah_i, const AABR& rect )
     }
 }
 
-void Layout::fill_dielectric_leaf_empty( uint layer_i, uint bah_i, uint x, uint y, const AABR& rect )
+void Layout::fill_dielectric_leaf( uint layer_i, uint bah_i, uint x, uint y, const AABR& rect )
 {
+    uint li = bah_nodes[bah_i].child_i[x][y];
     //-----------------------------------------------------
-    // Fill each quadrant.
+    // Add an element for the dielectric with an empty XY.
     //-----------------------------------------------------
-}
 
-void Layout::fill_dielectric_leaf_nonempty( uint layer_i, uint bah_i, uint x, uint y, const AABR& rect )
-{
+    uint vtx2_cnt;
+    real2 * vtx2;
+    uint v2 = 0;
+    if ( li == NULL_I ) {
+        //-----------------------------------------------------
+        // Allocate polygon for simple rectangle.
+        // The rectangle is constructed below.
+        //-----------------------------------------------------
+        vtx2_cnt = 5;
+        vtx2 = polygon_alloc( vtx2_cnt );
+    } else {
+        //-----------------------------------------------------
+        // Look up XY node in leaf's node.
+        // Convert it to simple polygon format.
+        //-----------------------------------------------------
+        Leaf_Node& leaf = leaf_nodes[li];
+        const Node& node = nodes[leaf.node_i];
+        lassert( node_is_element( node ), "leaf is not an element" );    
+        uint xy_i = node_xy_i( node );
+        lassert( xy_i != NULL_I, "leaf has no XY node" );
+        const Node& xy = nodes[xy_i];
+        uint vtx_cnt;
+        real2 * vtx = polygon_alloc( xy, vtx_cnt );
+
+        //-----------------------------------------------------
+        // Find the vertex in the polygon that is closest to 
+        // our rect.min corner.  
+        //-----------------------------------------------------
+        uint best_v = 0;
+        real best_dist_sqr = 1e100;
+        for( uint v = 0; v < (vtx_cnt-1); v++ ) 
+        {
+            real this_dist_sqr = (rect.min - vtx[v]).length_sqr();
+            if ( this_dist_sqr < best_dist_sqr ) {
+                best_v = v;
+                best_dist_sqr = this_dist_sqr;
+            }
+        }
+
+        //-----------------------------------------------------
+        // Start with a line segment from the min corner to 
+        // the closest vertex.  Then go all the way around the polygon
+        // back to the same vertex, then back to the min corner.
+        //-----------------------------------------------------
+        vtx2_cnt = vtx_cnt + 5;  
+        vtx2 = polygon_alloc( vtx2_cnt );
+        uint v2 = 0;
+        vtx2[v2++] = rect.min;
+        for( uint i = 0; i < (vtx_cnt-1); i++ )
+        {
+            uint v3 = (best_v + i) % (vtx_cnt-1);
+            vtx2[v2++] = vtx[v3];
+        }
+        vtx2[v2++] = rect.min;
+
+        delete[] vtx;
+    }
+
+    //-----------------------------------------------------
+    // Now trace the outer rectangle starting with rect.min.
+    //-----------------------------------------------------
+    vtx2[v2++] = rect.min;
+    vtx2[v2++] = real2( rect.min.c[0], rect.max.c[1] );
+    vtx2[v2++] = rect.max;
+    vtx2[v2++] = real2( rect.max.c[0], rect.min.c[1] );
+    vtx2[v2++] = rect.min;
+    lassert( v2 == vtx2_cnt, "something is wrong" );
+
+    //-----------------------------------------------------
+    // Replace empty XY with new dielectric polygon.
+    //-----------------------------------------------------
+    node_xy_replace_polygon( vtx2, vtx2_cnt );
+
+    delete[] vtx2;
 }
 
 inline uint Layout::node_alloc( NODE_KIND kind )
