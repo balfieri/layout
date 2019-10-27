@@ -244,7 +244,7 @@ public:
     AABR bounding_rect( uint layer_first=0, uint layer_last=0xffffffff ) const;
      
     // fill of dielectrics or arbitrary material
-    void fill_dielectrics( const AABR& brect, uint layer_first=0, uint layer_last=0xffffffff );
+    uint fill_dielectrics( uint parent_i, const AABR& brect, uint layer_first=0, uint layer_last=0xffffffff );
 
     // PUBLIC DATA STRUCTURES
     //
@@ -450,6 +450,7 @@ public:
     bool        node_is_name( const Node& node ) const;         // return true if node is a name node
     bool        node_is_hier( const Node& node ) const;         // return true if node is a hierarchy
     bool        node_is_ref( const Node& node ) const;          // return true if node is an AREF or SREF
+    uint        node_last_i( const Node& node ) const;          // find node index of last child, else NULL_I if none
     uint        node_last_scalar_i( const Node& node ) const;   // find node index of last scalar child, else NULL_I if none
     uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
     std::string node_name( const Node& node ) const;            // find name for node
@@ -580,9 +581,9 @@ public:
     real2 *     polygon_ccw( const real2 * vtx, uint vtx_cnt ) const;           // reverses vertices if they are in clockwise winding order, else just a copy
 
     // FILL
-    void fill_dielectric_rect( uint layer_i, const AABR& rect );
-    void fill_dielectric_bah( uint layer_i, uint bah_i, const AABR& rect );
-    void fill_dielectric_leaf( uint layer_i, uint bah_i, uint x, uint y, const AABR& rect );
+    uint fill_dielectric_rect( uint parent_i, uint last_i, uint layer_i, const AABR& rect );
+    uint fill_dielectric_bah( uint parent_i, uint last_i, uint layer_i, uint bah_i, const AABR& rect );
+    uint fill_dielectric_leaf( uint parent_i, uint last_i, uint layer_i, uint bah_i, uint x, uint y, const AABR& rect );
 
     // LAYOUT I/O
     bool layout_read( std::string file_path );          // .layout
@@ -2426,6 +2427,19 @@ inline bool Layout::node_is_ref( const Node& node ) const
     }
 }
 
+inline uint Layout::node_last_i( const Node& node ) const
+{
+    lassert( node_is_parent( node ), "node_last_i: node is not a parent" );    
+    uint last_i = NULL_I;
+    for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
+    {
+        if ( nodes[child_i].sibling_i == NULL_I ) break;
+
+        last_i = child_i;
+    }
+    return last_i;
+}
+
 inline uint Layout::node_last_scalar_i( const Node& node ) const
 {
     lassert( node_is_parent( node ), "node_last_scalar_i: node is not a parent" );    
@@ -3086,16 +3100,18 @@ Layout::AABR Layout::bounding_rect( uint layer_first, uint layer_last ) const
     return brect;
 }
 
-void Layout::fill_dielectrics( const AABR& brect, uint layer_first, uint layer_last )
+uint Layout::fill_dielectrics( uint parent_i, const AABR& brect, uint layer_first, uint layer_last )
 {
     //-----------------------------------------------------
     // For each layer that is not part of previous layer:
     //-----------------------------------------------------
+    lassert( nodes[parent_i].kind == NODE_KIND::BGNSTR, "fill_dielectrics first argument should be index of BGNSTR to fill" );
+    uint last_i = node_last_i( nodes[parent_i] );
     layer_last = std::min( layer_last, hdr->layer_cnt-1 );
     for( uint32_t i = layer_first; i <= layer_last; i++ )
     {
         if ( layers[i].same_zoffset_as_prev ) continue;
-        lassert( layers[i].bah_root_i != NULL_I, "layer " + std::to_string(i) + " has no bounding area hierarchy (BAH)" );
+        lassert( layers[i].bah_root_i != NULL_I, "layer " + std::to_string(i) + " has no bounding area hierarchy (BAH); is it flattened?" );
 
         //-----------------------------------------------------
         // First, fill any space that's inside the overall brect but
@@ -3105,46 +3121,48 @@ void Layout::fill_dielectrics( const AABR& brect, uint layer_first, uint layer_l
             // left
             AABR rect = brect;
             rect.max.c[0] = layers[i].bah_brect.min.c[0];
-            fill_dielectric_rect( i, rect );
+            last_i = fill_dielectric_rect( parent_i, last_i, i, rect );
         }
         if ( brect.max.c[0] > layers[i].bah_brect.max.c[0] ) {
             // right
             AABR rect = brect;
             rect.min.c[0] = layers[i].bah_brect.max.c[0];
-            fill_dielectric_rect( i, rect );
+            last_i = fill_dielectric_rect( parent_i, last_i, i, rect );
         }
         if ( brect.min.c[1] < layers[i].bah_brect.min.c[1] ) {
             // top
             AABR rect = layers[i].bah_brect;
             rect.min.c[1] = brect.min.c[1];
             rect.max.c[1] = layers[i].bah_brect.min.c[1];
-            fill_dielectric_rect( i, rect );
+            last_i = fill_dielectric_rect( parent_i, last_i, i, rect );
         }
         if ( brect.max.c[1] > layers[i].bah_brect.max.c[1] ) {
             // bottom
             AABR rect = layers[i].bah_brect;
             rect.min.c[1] = layers[i].bah_brect.max.c[1];
             rect.max.c[1] = brect.max.c[1];
-            fill_dielectric_rect( i, rect );
+            last_i = fill_dielectric_rect( parent_i, last_i, i, rect );
         }
 
         //-----------------------------------------------------
         // Next, walk the entire BAH for this layer.
         // We'll fill empty space at each leaf.
         //-----------------------------------------------------
-        fill_dielectric_bah( i, layers[i].bah_root_i, layers[i].bah_brect );
+        last_i = fill_dielectric_bah( parent_i, last_i, i, layers[i].bah_root_i, layers[i].bah_brect );
     }
+    return last_i;
 }
 
-void Layout::fill_dielectric_rect( uint layer_i, const AABR& rect )
+uint Layout::fill_dielectric_rect( uint parent_i, uint last_i, uint layer_i, const AABR& rect )
 {
     //-----------------------------------------------------
     // Add a dielectric rectangle on the given layer.
     // The caller must ensure that it doesn't overlap anything.
     //-----------------------------------------------------
+    return last_i;
 }
 
-void Layout::fill_dielectric_bah( uint layer_i, uint bah_i, const AABR& rect )
+uint Layout::fill_dielectric_bah( uint parent_i, uint last_i, uint layer_i, uint bah_i, const AABR& rect )
 {
     //-----------------------------------------------------
     // Fill each quadrant.
@@ -3163,16 +3181,17 @@ void Layout::fill_dielectric_bah( uint layer_i, uint bah_i, const AABR& rect )
             crect.max.c[1] = (y == 0) ? mid.c[1]      : rect.max.c[1];
             if ( node.child_is_leaf[x][y] ) {
                 // leaf could be empty or nonempty
-                fill_dielectric_leaf( layer_i, bah_i, x, y, crect );
+                last_i = fill_dielectric_leaf( parent_i, last_i, layer_i, bah_i, x, y, crect );
             } else {
                 // recurse to child bah node
-                fill_dielectric_bah( layer_i, node.child_i[x][y], crect );
+                last_i = fill_dielectric_bah( parent_i, last_i, layer_i, node.child_i[x][y], crect );
             }
         }
     }
+    return last_i;
 }
 
-void Layout::fill_dielectric_leaf( uint layer_i, uint bah_i, uint x, uint y, const AABR& rect )
+uint Layout::fill_dielectric_leaf( uint parent_i, uint last_i, uint layer_i, uint bah_i, uint x, uint y, const AABR& rect )
 {
     uint li = bah_nodes[bah_i].child_i[x][y];
     //-----------------------------------------------------
@@ -3253,6 +3272,7 @@ void Layout::fill_dielectric_leaf( uint layer_i, uint bah_i, uint x, uint y, con
     node_xy_replace_polygon( vtx2, vtx2_cnt );
 
     delete[] vtx2;
+    return last_i;
 }
 
 inline uint Layout::node_alloc( NODE_KIND kind )
