@@ -309,8 +309,8 @@ public:
     {
     public:
         uint        name_i;                 	// index of layer name in strings[]
-        uint        gdsii_num;              	// layer number of main material in GDSII file
-        uint        dielectric_gdsii_num;   	// layer number of dielectric material in GDSII file
+        uint        gdsii_num;              	// layer number of main material in (input) GDSII file
+        uint        dielectric_gdsii_num;   	// layer number of dielectric material in (output) GDSII file
         uint        gdsii_datatype;         	// which datatype to use - NULL_I means all
         uint        dielectric_gdsii_datatype; 	// which datatype to use - NULL_I means all
         bool        same_zoffset_as_prev;   	// starts at same zoffset as previous layer in stackkup?
