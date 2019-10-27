@@ -458,7 +458,7 @@ public:
     uint        node_width( const Node& node ) const;           // find WIDTH value for node 
     uint        node_bah_layer( const Node& node ) const;       // find LAYER value for flattened node and get layer to use for BAH
     uint        node_xy_i( const Node& node ) const;            // find index of XY node within node
-    void        node_xy_replace_polygon( const real2 * vtx, uint vtx_cnt ); // replace X,Y children from new set of vertices
+    void        node_xy_replace_polygon( Node& node, const real2 * vtx, uint vtx_cnt ); // replace X,Y children from new set of vertices
     uint        node_pathtype( const Node& node ) const;        // find PATHTYPE for node and return number (default: 0)
     uint        node_datatype( const Node& node ) const;        // find DATATYPE for node and return number (default: 0)
 
@@ -581,9 +581,10 @@ public:
     real2 *     polygon_ccw( const real2 * vtx, uint vtx_cnt ) const;           // reverses vertices if they are in clockwise winding order, else just a copy
 
     // FILL
-    uint fill_dielectric_rect( uint parent_i, uint last_i, uint layer_i, const AABR& rect );
     uint fill_dielectric_bah( uint parent_i, uint last_i, uint layer_i, uint bah_i, const AABR& rect );
     uint fill_dielectric_leaf( uint parent_i, uint last_i, uint layer_i, uint bah_i, uint x, uint y, const AABR& rect );
+    uint fill_dielectric_rect( uint parent_i, uint last_i, uint layer_i, const AABR& rect );
+    uint fill_dielectric_polygon( uint parent_i, uint last_i, uint layer_i, const real2 * vtx, uint vtx_cnt );
 
     // LAYOUT I/O
     bool layout_read( std::string file_path );          // .layout
@@ -2616,14 +2617,15 @@ inline uint Layout::node_xy_i( const Node& node ) const
     return NULL_I;
 }
 
-void Layout::node_xy_replace_polygon( const real2 * vtx, uint vtx_cnt ) // replace X,Y children from new set of vertices
+void Layout::node_xy_replace_polygon( Node& node, const real2 * vtx, uint vtx_cnt ) // replace X,Y children from new set of vertices
 {
+    lassert( node.kind == NODE_KIND::XY, "node_xy_replace_polygon() not called with XY node" );
     uint dst_xy_prev_i = NULL_I;
     for( uint v = 0; v < vtx_cnt; v++ )
     {
         uint dst_x_i = node_alloc_int( vtx[v].c[0] / gdsii_units_user );        
         if ( dst_xy_prev_i == NULL_I ) {
-            nodes[dst_x_i].u.child_first_i = dst_x_i;
+            node.u.child_first_i = dst_x_i;
         } else {
             nodes[dst_xy_prev_i].sibling_i = dst_x_i;
         } 
@@ -3153,15 +3155,6 @@ uint Layout::fill_dielectrics( uint parent_i, const AABR& brect, uint layer_firs
     return last_i;
 }
 
-uint Layout::fill_dielectric_rect( uint parent_i, uint last_i, uint layer_i, const AABR& rect )
-{
-    //-----------------------------------------------------
-    // Add a dielectric rectangle on the given layer.
-    // The caller must ensure that it doesn't overlap anything.
-    //-----------------------------------------------------
-    return last_i;
-}
-
 uint Layout::fill_dielectric_bah( uint parent_i, uint last_i, uint layer_i, uint bah_i, const AABR& rect )
 {
     //-----------------------------------------------------
@@ -3194,20 +3187,11 @@ uint Layout::fill_dielectric_bah( uint parent_i, uint last_i, uint layer_i, uint
 uint Layout::fill_dielectric_leaf( uint parent_i, uint last_i, uint layer_i, uint bah_i, uint x, uint y, const AABR& rect )
 {
     uint li = bah_nodes[bah_i].child_i[x][y];
-    //-----------------------------------------------------
-    // Add an element for the dielectric with an empty XY.
-    //-----------------------------------------------------
-
-    uint vtx2_cnt;
-    real2 * vtx2;
-    uint v2 = 0;
     if ( li == NULL_I ) {
         //-----------------------------------------------------
-        // Allocate polygon for simple rectangle.
-        // The rectangle is constructed below.
+        // Add new rectangular element.
         //-----------------------------------------------------
-        vtx2_cnt = 5;
-        vtx2 = polygon_alloc( vtx2_cnt );
+        last_i = fill_dielectric_rect( parent_i, last_i, layer_i, rect );
     } else {
         //-----------------------------------------------------
         // Look up XY node in leaf's node.
@@ -3218,7 +3202,7 @@ uint Layout::fill_dielectric_leaf( uint parent_i, uint last_i, uint layer_i, uin
         lassert( node_is_element( node ), "leaf is not an element" );    
         uint xy_i = node_xy_i( node );
         lassert( xy_i != NULL_I, "leaf has no XY node" );
-        const Node& xy = nodes[xy_i];
+        Node& xy = nodes[xy_i];
         uint vtx_cnt;
         real2 * vtx = polygon_alloc( xy, vtx_cnt );
 
@@ -3242,8 +3226,8 @@ uint Layout::fill_dielectric_leaf( uint parent_i, uint last_i, uint layer_i, uin
         // the closest vertex.  Then go all the way around the polygon
         // back to the same vertex, then back to the min corner.
         //-----------------------------------------------------
-        vtx2_cnt = vtx_cnt + 5;  
-        vtx2 = polygon_alloc( vtx2_cnt );
+        uint vtx2_cnt = vtx_cnt + 5;  
+        real2 * vtx2 = polygon_alloc( vtx2_cnt );
         uint v2 = 0;
         vtx2[v2++] = rect.min;
         for( uint i = 0; i < (vtx_cnt-1); i++ )
@@ -3254,24 +3238,45 @@ uint Layout::fill_dielectric_leaf( uint parent_i, uint last_i, uint layer_i, uin
         vtx2[v2++] = rect.min;
 
         delete[] vtx;
+
+        //-----------------------------------------------------
+        // Now trace the outer rectangle starting with rect.min.
+        //-----------------------------------------------------
+        vtx2[v2++] = rect.min;
+        vtx2[v2++] = real2( rect.min.c[0], rect.max.c[1] );
+        vtx2[v2++] = rect.max;
+        vtx2[v2++] = real2( rect.max.c[0], rect.min.c[1] );
+        vtx2[v2++] = rect.min;
+        lassert( v2 == vtx2_cnt, "something is wrong" );
+
+        //-----------------------------------------------------
+        // Add new polygonal element.
+        //-----------------------------------------------------
+        last_i = fill_dielectric_polygon( parent_i, last_i, layer_i, vtx2, vtx2_cnt );
+
+        delete[] vtx2;
     }
 
-    //-----------------------------------------------------
-    // Now trace the outer rectangle starting with rect.min.
-    //-----------------------------------------------------
-    vtx2[v2++] = rect.min;
-    vtx2[v2++] = real2( rect.min.c[0], rect.max.c[1] );
-    vtx2[v2++] = rect.max;
-    vtx2[v2++] = real2( rect.max.c[0], rect.min.c[1] );
-    vtx2[v2++] = rect.min;
-    lassert( v2 == vtx2_cnt, "something is wrong" );
+    return last_i;
+}
 
+uint Layout::fill_dielectric_rect( uint parent_i, uint last_i, uint layer_i, const AABR& rect )
+{
     //-----------------------------------------------------
-    // Replace empty XY with new dielectric polygon.
+    // Add a dielectric rectangle on the given layer.
+    // The caller must ensure that it doesn't overlap anything.
     //-----------------------------------------------------
-    node_xy_replace_polygon( vtx2, vtx2_cnt );
+    const real2 vtx[] = { rect.min, 
+                          real2( rect.min.c[0], rect.max.c[1] ),
+                          rect.max,
+                          real2( rect.max.c[0], rect.min.c[1] ),
+                          rect.min };
+    last_i = fill_dielectric_polygon( parent_i, last_i, layer_i, vtx, 5 ); 
+    return last_i;
+}
 
-    delete[] vtx2;
+uint Layout::fill_dielectric_polygon( uint parent_i, uint last_i, uint layer_i, const real2 * vtx, uint vtx_cnt )
+{
     return last_i;
 }
 
@@ -3998,7 +4003,7 @@ bool Layout::bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uin
     lassert( xy1_i != NULL_I, "leaf1 has no XY node" );
     lassert( xy2_i != NULL_I, "leaf2 has no XY node" );
     const Node& xy1 = nodes[xy1_i];
-    const Node& xy2 = nodes[xy2_i];
+    Node& xy2 = nodes[xy2_i];
 
     is_exact = true;  // for now
     uint c1_i, c2_i;
@@ -4059,7 +4064,7 @@ bool Layout::bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uin
         //------------------------------------------------------------
         // Replace the 2nd leaf node's polygon with the merged polygon.
         //------------------------------------------------------------
-        node_xy_replace_polygon( vtx, vtx_cnt );
+        node_xy_replace_polygon( xy2, vtx, vtx_cnt );
     }
 
     //------------------------------------------------------------
