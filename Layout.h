@@ -477,6 +477,7 @@ public:
     uint        node_alloc_int( _int i );                       // allocate INT node
     uint        node_alloc_real( real r );                      // allocate REAL node
     uint        node_alloc_str( std::string s );                // allocate STR node
+    uint        node_alloc_boundary( uint parent_i, uint last_i, uint gdsii_num, uint datatype, const real2 * vtx, uint vtx_cnt );
     uint        node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND copy_kind, 
                            CONFLICT_POLICY conflict_policy=CONFLICT_POLICY::MERGE_NONE_ALLOW_NONE, const Matrix& M = Matrix(), bool in_flatten=false );
     void        node_timestamp( Node& node );                   // adds timestamp fields to node
@@ -555,7 +556,6 @@ private:
     uint inst_layout_node( uint parent_i, uint last_i, const Layout * src_layout, std::string src_struct_name, uint src_i, uint src_layer_num, 
                            uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
     uint node_flatten_ref( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, CONFLICT_POLICY conflict_policy, const Matrix& M );
-    uint node_make_boundary( uint parent_i, uint last_i, uint gdsii_num, uint datatype, const real2 * vtx, uint vtx_cnt );
     uint node_convert_path_to_boundary( uint parent_i, uint last_i, const Layout * src_layout, uint src_i,
                            CONFLICT_POLICY conflict_policy, const Matrix& M );
     void node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, CONFLICT_POLICY conflict_policy, const Matrix& M );
@@ -3287,7 +3287,7 @@ uint Layout::fill_dielectric_polygon( uint parent_i, uint last_i, uint layer_i, 
     //
     // There's already a utility routine to do this.
     //-----------------------------------------------------
-    last_i = node_make_boundary( parent_i, last_i, layers[layer_i].dielectric_gdsii_num, datatype, vtx, vtx_cnt );
+    last_i = node_alloc_boundary( parent_i, last_i, layers[layer_i].dielectric_gdsii_num, datatype, vtx, vtx_cnt );
     return last_i;
 }
 
@@ -3320,6 +3320,50 @@ inline uint Layout::node_alloc_str( std::string s )
     uint ni = node_alloc( NODE_KIND::STR );
     nodes[ni].u.s_i = str_get( s );
     return ni;
+}
+
+uint Layout::node_alloc_boundary( uint parent_i, uint last_i, uint gdsii_num, uint datatype, const real2 * vtx, uint vtx_cnt )
+{
+    // BOUNDARY
+    lassert( nodes[last_i].sibling_i == NULL_I, "fill_dielectric_polygon last_i sibling_i should not be set" );
+    uint boundary_i = node_alloc( NODE_KIND::BOUNDARY );
+    if ( last_i != NULL_I )  nodes[last_i].sibling_i = boundary_i;
+
+    // LAYER
+    lassert( gdsii_num != NULL_I, "BOUNDARY must have a non-null LAYER gdsii_num" );
+    uint layer_i = node_alloc( NODE_KIND::LAYER );
+    nodes[boundary_i].u.child_first_i = layer_i;
+    nodes[layer_i].u.child_first_i = node_alloc_int( gdsii_num );
+    last_i = layer_i;
+
+    if ( datatype != NULL_I ) {
+        // DATATYPE
+        uint datatype_i = node_alloc( NODE_KIND::DATATYPE );
+        nodes[last_i].sibling_i = datatype_i;
+        nodes[datatype_i].u.child_first_i = node_alloc_int( datatype );    
+        last_i = datatype_i;
+    }
+
+    // XY
+    uint xy_i = node_alloc( NODE_KIND::XY );
+    nodes[last_i].sibling_i = xy_i;
+
+    uint xy_prev_i = NULL_I;
+    for( uint i = 0; i < vtx_cnt; i++ )
+    {
+        uint x_i = node_alloc_int( vtx[i].c[0] / gdsii_units_user );        
+        if ( xy_prev_i == NULL_I ) {
+            nodes[xy_i].u.child_first_i = x_i;
+        } else {
+            nodes[xy_prev_i].sibling_i = x_i;
+        } 
+        
+        uint y_i = node_alloc_int( vtx[i].c[1] / gdsii_units_user );
+        nodes[x_i].sibling_i = y_i;
+        xy_prev_i = y_i;
+    }
+
+    return boundary_i;
 }
 
 uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND copy_kind, 
@@ -3612,50 +3656,6 @@ uint Layout::node_flatten_ref( uint parent_i, uint last_i, const Layout * src_la
     return last_i;
 }
 
-uint Layout::node_make_boundary( uint parent_i, uint last_i, uint gdsii_num, uint datatype, const real2 * vtx, uint vtx_cnt )
-{
-    // BOUNDARY
-    lassert( nodes[last_i].sibling_i == NULL_I, "node_make_boundary last_i sibling_i should not be set" );
-    uint boundary_i = node_alloc( NODE_KIND::BOUNDARY );
-    if ( last_i != NULL_I )  nodes[last_i].sibling_i = boundary_i;
-
-    // LAYER
-    lassert( gdsii_num != NULL_I, "BOUNDARY must have a non-null LAYER gdsii_num" );
-    uint layer_i = node_alloc( NODE_KIND::LAYER );
-    nodes[boundary_i].u.child_first_i = layer_i;
-    nodes[layer_i].u.child_first_i = node_alloc_int( gdsii_num );
-    last_i = layer_i;
-
-    if ( datatype != NULL_I ) {
-        // DATATYPE
-        uint datatype_i = node_alloc( NODE_KIND::DATATYPE );
-        nodes[last_i].sibling_i = datatype_i;
-        nodes[datatype_i].u.child_first_i = node_alloc_int( datatype );    
-        last_i = datatype_i;
-    }
-
-    // XY
-    uint xy_i = node_alloc( NODE_KIND::XY );
-    nodes[last_i].sibling_i = xy_i;
-
-    uint xy_prev_i = NULL_I;
-    for( uint i = 0; i < vtx_cnt; i++ )
-    {
-        uint x_i = node_alloc_int( vtx[i].c[0] / gdsii_units_user );        
-        if ( xy_prev_i == NULL_I ) {
-            nodes[xy_i].u.child_first_i = x_i;
-        } else {
-            nodes[xy_prev_i].sibling_i = x_i;
-        } 
-        
-        uint y_i = node_alloc_int( vtx[i].c[1] / gdsii_units_user );
-        nodes[x_i].sibling_i = y_i;
-        xy_prev_i = y_i;
-    }
-
-    return boundary_i;
-}
-
 uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const Layout * src_layout, uint src_i,
                                             CONFLICT_POLICY conflict_policy, const Matrix& M )
 {
@@ -3743,7 +3743,7 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
                             // We have what we need to make the per-segment BOUNDARY,
                             // so do it.
                             //-----------------------------------------------------
-                            uint dst_i = node_make_boundary( parent_i, last_i, layer, datatype, vertex, c );
+                            uint dst_i = node_alloc_boundary( parent_i, last_i, layer, datatype, vertex, c );
                             uint dst_xy_i = node_xy_i( nodes[dst_i] );
 
                             //-----------------------------------------------------
