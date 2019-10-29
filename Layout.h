@@ -3325,9 +3325,11 @@ inline uint Layout::node_alloc_str( std::string s )
 uint Layout::node_alloc_boundary( uint parent_i, uint last_i, uint gdsii_num, uint datatype, const real2 * vtx, uint vtx_cnt )
 {
     // BOUNDARY
-    lassert( nodes[last_i].sibling_i == NULL_I, "fill_dielectric_polygon last_i sibling_i should not be set" );
     uint boundary_i = node_alloc( NODE_KIND::BOUNDARY );
-    if ( last_i != NULL_I )  nodes[last_i].sibling_i = boundary_i;
+    if ( last_i != NULL_I ) {
+        lassert( nodes[last_i].sibling_i == NULL_I, "node_alloc_boundary last_i sibling_i should not be set" );
+        nodes[last_i].sibling_i = boundary_i;
+    }
 
     // LAYER
     lassert( gdsii_num != NULL_I, "BOUNDARY must have a non-null LAYER gdsii_num" );
@@ -3743,7 +3745,9 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
                             // We have what we need to make the per-segment BOUNDARY,
                             // so do it.
                             //-----------------------------------------------------
-                            uint dst_i = node_alloc_boundary( parent_i, last_i, layer, datatype, vertex, c );
+                            uint dst_i = node_alloc_boundary( parent_i, dst_prev_i, layer, datatype, vertex, c );
+                            if ( dst_first_i == NULL_I ) dst_first_i = dst_i;
+                            dst_prev_i = dst_i;
                             uint dst_xy_i = node_xy_i( nodes[dst_i] );
 
                             //-----------------------------------------------------
