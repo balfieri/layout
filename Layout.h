@@ -482,6 +482,22 @@ public:
                            CONFLICT_POLICY conflict_policy=CONFLICT_POLICY::MERGE_NONE_ALLOW_NONE, const Matrix& M = Matrix(), bool in_flatten=false );
     void        node_timestamp( Node& node );                   // adds timestamp fields to node
 
+    // raw polygons
+    real2 *     polygon_alloc( uint vtx_cnt ) const;
+    real2 *     polygon_alloc( const Node& xy_node, uint& vtx_cnt ) const;
+    real2 *     polygon_alloc( const AABR& brect, uint& vtx_cnt ) const;
+    real2 *     polygon_copy( const real2 * other, uint other_cnt ) const;
+    real2 *     polygon_reversed( const real2 * other, uint other_cnt ) const;
+    void        polygon_dealloc( real2 * vtx_array ) const;
+    real2 *     polygon_merge_or_intersect( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt ) const;
+    AABR        polygon_brect( const real2 * vtx, uint vtx_cnt ) const;
+    std::string polygon_str( const real2 * vtx, uint vtx_cnt, std::string color, real xy_scale=4.0, real x_off=100.0, real y_off=100.0 ) const;
+    bool        polygon_eq( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt ) const;
+    bool        polygon_encloses( const real2 * vtx, uint vtx_cnt, const real2& p ) const;
+    bool        polygon_includes( const real2 * vtx, uint vtx_cnt, const real2& v ) const;  // v is already in the vtx list?
+    bool        polygon_is_ccw( const real2 * vtx, uint vtx_cnt ) const;        // are vertices in counterclockwise winding order?
+    real2 *     polygon_ccw( const real2 * vtx, uint vtx_cnt ) const;           // reverses vertices if they are in clockwise winding order, else just a copy
+
     struct TopInstInfo
     {
         uint            struct_i;
@@ -561,25 +577,10 @@ private:
     void node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, CONFLICT_POLICY conflict_policy, const Matrix& M );
 
     // BAH 
-    uint    bah_node_alloc( void );
-    void    bah_add( uint leaf_i, uint layer, CONFLICT_POLICY conflict_policy );
-    void    bah_insert( uint bah_i, const AABR& brect, uint leaf_i, const AABR& leaf_brect, CONFLICT_POLICY conflict_policy, std::string indent_str="" );
-    bool    bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uint li2, bool& is_exact ); 
-public:
-    real2 *     polygon_alloc( uint vtx_cnt ) const;
-    real2 *     polygon_alloc( const Node& xy_node, uint& vtx_cnt ) const;
-    real2 *     polygon_alloc( const AABR& brect, uint& vtx_cnt ) const;
-    real2 *     polygon_copy( const real2 * other, uint other_cnt ) const;
-    real2 *     polygon_reversed( const real2 * other, uint other_cnt ) const;
-    void        polygon_dealloc( real2 * vtx_array ) const;
-    real2 *     polygon_merge_or_intersect( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt ) const;
-    AABR        polygon_brect( const real2 * vtx, uint vtx_cnt ) const;
-    std::string polygon_str( const real2 * vtx, uint vtx_cnt, std::string color, real xy_scale=4.0, real x_off=100.0, real y_off=100.0 ) const;
-    bool        polygon_eq( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt ) const;
-    bool        polygon_encloses( const real2 * vtx, uint vtx_cnt, const real2& p ) const;
-    bool        polygon_includes( const real2 * vtx, uint vtx_cnt, const real2& v ) const;  // v is already in the vtx list?
-    bool        polygon_is_ccw( const real2 * vtx, uint vtx_cnt ) const;        // are vertices in counterclockwise winding order?
-    real2 *     polygon_ccw( const real2 * vtx, uint vtx_cnt ) const;           // reverses vertices if they are in clockwise winding order, else just a copy
+    uint bah_node_alloc( void );
+    void bah_add( uint leaf_i, uint layer, CONFLICT_POLICY conflict_policy );
+    void bah_insert( uint bah_i, const AABR& brect, uint leaf_i, const AABR& leaf_brect, CONFLICT_POLICY conflict_policy, std::string indent_str="" );
+    bool bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uint li2, bool& is_exact ); 
 
     // FILL
     uint fill_dielectric_bah( uint parent_i, uint last_i, uint layer_i, uint bah_i, const AABR& rect );
