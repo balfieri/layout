@@ -412,6 +412,9 @@ public:
         SLICE,                                  // child 0 is id, child 1 is index before the ':', other children are other args
     };
             
+    static std::string  str( NODE_KIND kind );
+    NODE_KIND           hier_end_kind( NODE_KIND kind ) const;      // returns corresponding end kind for hier kind
+    
     static constexpr uint32_t GDSII_KIND_CNT = uint(NODE_KIND::LIBSECUR) + 1;
 
     enum class GDSII_DATATYPE
@@ -441,6 +444,15 @@ public:
 
     };
 
+    // NODE CREATION
+    uint        node_alloc( NODE_KIND kind );                   // allocate a node of the given kind
+    uint        node_alloc_int( _int i );                       // allocate INT node
+    uint        node_alloc_real( real r );                      // allocate REAL node
+    uint        node_alloc_str( std::string s );                // allocate STR node
+    uint        node_alloc_boundary( uint parent_i, uint last_i, uint gdsii_num, uint datatype, const real2 * vtx, uint vtx_cnt );
+    void        node_alloc_timestamp( Node& node );             // adds timestamp fields to node
+
+    // NODE QUERIES
     bool        node_is_header_footer( const Node& node ) const;// return true if node is a HEADER, BGNLIB, LIBNAME, UNITS, or ENDLIB
     bool        node_is_gdsii( const Node& node ) const;        // return true if node is a GDSII node
     bool        node_is_scalar( const Node& node ) const;       // return true if node is a scalar 
@@ -462,9 +474,7 @@ public:
     uint        node_pathtype( const Node& node ) const;        // find PATHTYPE for node and return number (default: 0)
     uint        node_datatype( const Node& node ) const;        // find DATATYPE for node and return number (default: 0)
 
-    static std::string  str( NODE_KIND kind );
-    NODE_KIND           hier_end_kind( NODE_KIND kind ) const;      // returns corresponding end kind for hier kind
-    
+    // NODE COPIES
     enum class COPY_KIND
     {
         ONE,                                // copy only the one source node, no children
@@ -473,16 +483,10 @@ public:
         FLATTEN,                            // copy all children but flatten all REFs
     };
 
-    uint        node_alloc( NODE_KIND kind );                   // allocate a node of the given kind
-    uint        node_alloc_int( _int i );                       // allocate INT node
-    uint        node_alloc_real( real r );                      // allocate REAL node
-    uint        node_alloc_str( std::string s );                // allocate STR node
-    uint        node_alloc_boundary( uint parent_i, uint last_i, uint gdsii_num, uint datatype, const real2 * vtx, uint vtx_cnt );
     uint        node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND copy_kind, 
                            CONFLICT_POLICY conflict_policy=CONFLICT_POLICY::MERGE_NONE_ALLOW_NONE, const Matrix& M = Matrix(), bool in_flatten=false );
-    void        node_timestamp( Node& node );                   // adds timestamp fields to node
 
-    // raw polygons
+    // RAW POLYGONS
     real2 *     polygon_alloc( uint vtx_cnt ) const;
     real2 *     polygon_alloc( const Node& xy_node, uint& vtx_cnt ) const;
     real2 *     polygon_alloc( const AABR& brect, uint& vtx_cnt ) const;
@@ -2671,48 +2675,6 @@ inline uint Layout::node_datatype( const Node& node ) const
     return 0;   // default
 }
 
-void Layout::node_timestamp( Node& node )
-{
-    lassert( node.kind == NODE_KIND::BGNLIB || node.kind == NODE_KIND::BGNSTR, "node_timestamp: node must be BGNLIB or BGNSTR" );
-    lassert( node.u.child_first_i == NULL_I, "node_timestamp found node with children already" );
-
-    time_t t;
-    time( &t );
-    struct tm * tm = gmtime( &t );
-
-    uint prev_i = NULL_I;
-    for( uint i = 0; i < 2; i++ ) 
-    {
-        uint ni = node_alloc_int( tm->tm_year );
-        if ( i == 0 ) {
-            node.u.child_first_i = ni;
-        } else {
-            nodes[prev_i].sibling_i = ni;
-        }
-        prev_i = ni;
-
-        ni = node_alloc_int( tm->tm_mon );
-        nodes[prev_i].sibling_i = ni;
-        prev_i = ni;
-
-        ni = node_alloc_int( tm->tm_mday );
-        nodes[prev_i].sibling_i = ni;
-        prev_i = ni;
-
-        ni = node_alloc_int( tm->tm_hour );
-        nodes[prev_i].sibling_i = ni;
-        prev_i = ni;
-
-        ni = node_alloc_int( tm->tm_min );
-        nodes[prev_i].sibling_i = ni;
-        prev_i = ni;
-
-        ni = node_alloc_int( tm->tm_sec );
-        nodes[prev_i].sibling_i = ni;
-        prev_i = ni;
-    }
-}
-
 inline Layout::AABR::AABR( const Layout::real2& p )
 {
     min = p;
@@ -2821,7 +2783,7 @@ uint Layout::start_library( std::string libname, real units_user, real units_met
     prev_i = ni;
 
     ni = node_alloc( Layout::NODE_KIND::BGNLIB );
-    node_timestamp( nodes[ni] );
+    node_alloc_timestamp( nodes[ni] );
     nodes[prev_i].sibling_i = ni;
     prev_i = node_last_scalar_i( nodes[ni] );
     
@@ -3018,7 +2980,7 @@ void Layout::finalize_top_struct( uint parent_i, uint last_i, std::string top_na
     lassert( parent_i == NULL_I, "finalize parent_i must be NULL_I for now" );
     uint bgnstr_i = node_alloc( NODE_KIND::BGNSTR );
     nodes[last_i].sibling_i = bgnstr_i;
-    node_timestamp( nodes[bgnstr_i] );
+    node_alloc_timestamp( nodes[bgnstr_i] );
     uint prev_i = node_last_scalar_i( nodes[bgnstr_i] );
 
     uint strname_i = node_alloc( NODE_KIND::STRNAME );
@@ -3367,6 +3329,48 @@ uint Layout::node_alloc_boundary( uint parent_i, uint last_i, uint gdsii_num, ui
     }
 
     return boundary_i;
+}
+
+void Layout::node_alloc_timestamp( Node& node )
+{
+    lassert( node.kind == NODE_KIND::BGNLIB || node.kind == NODE_KIND::BGNSTR, "node_alloc_timestamp: node must be BGNLIB or BGNSTR" );
+    lassert( node.u.child_first_i == NULL_I, "node_alloc_timestamp found node with children already" );
+
+    time_t t;
+    time( &t );
+    struct tm * tm = gmtime( &t );
+
+    uint prev_i = NULL_I;
+    for( uint i = 0; i < 2; i++ ) 
+    {
+        uint ni = node_alloc_int( tm->tm_year );
+        if ( i == 0 ) {
+            node.u.child_first_i = ni;
+        } else {
+            nodes[prev_i].sibling_i = ni;
+        }
+        prev_i = ni;
+
+        ni = node_alloc_int( tm->tm_mon );
+        nodes[prev_i].sibling_i = ni;
+        prev_i = ni;
+
+        ni = node_alloc_int( tm->tm_mday );
+        nodes[prev_i].sibling_i = ni;
+        prev_i = ni;
+
+        ni = node_alloc_int( tm->tm_hour );
+        nodes[prev_i].sibling_i = ni;
+        prev_i = ni;
+
+        ni = node_alloc_int( tm->tm_min );
+        nodes[prev_i].sibling_i = ni;
+        prev_i = ni;
+
+        ni = node_alloc_int( tm->tm_sec );
+        nodes[prev_i].sibling_i = ni;
+        prev_i = ni;
+    }
 }
 
 uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND copy_kind, 
