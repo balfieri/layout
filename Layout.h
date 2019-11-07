@@ -4361,17 +4361,49 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
                      " is_ccw=" << is_ccw << " do_merge=" << do_merge << " use_other_s0_for_s0=" << use_other_s0_for_s0 << " use_other_s1_for_s0=" << use_other_s1_for_s0 << "\n"; 
             lassert( use_other_s0_for_s0 != use_other_s1_for_s0, "use_other_s0_for_s0 and use_other_s1_for_s0 can't both be set" );
 
+            other_s0_i  = use_other_s0_for_s0 ? other_s0_i : other_s1_i;
+            other_s1_i  = use_other_s1_for_s0 ? other_s0_i : other_s1_i;
+
             //------------------------------------------------------------
-            // Set curr_s0_i = other's chosen s0 or s1
-            // Set curr_s1_i = other's not-chosen s0 or s1
-            // Switch to the other polygon.
-            // Follow (ip, curr_s1).
+            // There's an ugly case we need to check when ip == curr_s1.
+            // If segment [ip, other_s1] is already part of of an existing
+            // segment in the result polygon, then we need to 
+            // pretend that we don't have an intersection point.
             //------------------------------------------------------------
-            curr_s0_i  = use_other_s0_for_s0 ? other_s0_i : other_s1_i;
-            curr_s1_i  = use_other_s1_for_s0 ? other_s0_i : other_s1_i;
-            is_ccw     = use_other_s0_for_s0;
-            curr       = other;
-            other      = 1 - curr;
+            if ( ip.nearly_equal( curr_s1 ) ) {
+                ldout << " checking to see if [ip=curr_s1, other_s1] is already part of an existing result segment...\n";
+                for( uint k = 0; k < (vtxn_cnt[other]-1); k++ )
+                {
+                    if ( ip.is_on_segment( vtxn[other][k], vtxn[other][k+1], true ) && other_s1.is_on_segment( vtxn[other][k], vtxn[other][k+1], true ) ) {
+                        have_ip = false;
+                        break;
+                    }
+                }
+            }
+
+            if ( have_ip ) {
+                //------------------------------------------------------------
+                // Set curr_s0_i = chosen other s0
+                // Set curr_s1_i = chosen other s1
+                // Switch to the other polygon.
+                // Follow (ip, curr_s1).
+                //------------------------------------------------------------
+                curr_s0_i  = other_s0_i;
+                curr_s1_i  = other_s1_i;
+                is_ccw     = use_other_s0_for_s0;
+                curr       = other;
+                other      = 1 - curr;
+            } else {
+                //------------------------------------------------------------
+                // Backed out.
+                //------------------------------------------------------------
+                ip = curr_s1;
+                vtx[vtx_cnt-1] = ip;
+                ldout << "new curr_seg was already visited, switching back to using previous endpoint: " << ip.str() << " is_ccw=" << is_ccw << "\n\n"; 
+                lassert( !polygon_includes( vtx, vtx_cnt, ip ), "intersection point should not already be on the vtx[] list" );
+                curr_s0_i = curr_s1_i;
+                curr_s1_i = (is_ccw ? (curr_s0_i+1) : (curr_s0_i+vtxn_cnt[curr]-2)) % (vtxn_cnt[curr]-1);
+            }
 
         } else {
             //------------------------------------------------------------
