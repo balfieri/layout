@@ -495,7 +495,7 @@ public:
     void        polygon_dealloc( real2 * vtx_array ) const;
     real2 *     polygon_merge_or_intersect( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt ) const;
     AABR        polygon_brect( const real2 * vtx, uint vtx_cnt ) const;
-    std::string polygon_str( const real2 * vtx, uint vtx_cnt, std::string color, real xy_scale=4.0, real x_off=100.0, real y_off=100.0 ) const;
+    std::string polygon_str( const real2 * vtx, uint vtx_cnt, std::string color, real xy_scale=4.0, real x_off=0.0, real y_off=0.0 ) const;
     bool        polygon_eq( const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt ) const;
     bool        polygon_encloses( const real2 * vtx, uint vtx_cnt, const real2& p ) const;
     bool        polygon_includes( const real2 * vtx, uint vtx_cnt, const real2& v ) const;  // v is already in the vtx list?
@@ -4189,8 +4189,8 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     //------------------------------------------------------------
     real2 * vtx1 = polygon_ccw( _vtx1, vtx1_cnt );
     real2 * vtx2 = polygon_ccw( _vtx2, vtx2_cnt );
-    ldout << "\npolygon_merge_or_intersect: do_merge=" << do_merge << " ccw_poly1=" << polygon_str( vtx1, vtx1_cnt, "red" ) <<
-                                                                      " ccw_poly2=" << polygon_str( vtx2, vtx2_cnt, "green" ) << "\n";
+    ldout << "\npolygon_merge_or_intersect: do_merge=" << do_merge << " poly1_was_ccw=" << polygon_is_ccw( _vtx1, vtx1_cnt ) << " ccw_poly1=" << polygon_str( vtx1, vtx1_cnt, "red" ) <<
+                                                                      " poly2_was_ccw=" << polygon_is_ccw( _vtx2, vtx2_cnt ) << " ccw_poly2=" << polygon_str( vtx2, vtx2_cnt, "green" ) << "\n";
 
     //------------------------------------------------------------
     // First find any intersection point between the two polygons, 
@@ -4294,6 +4294,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             //------------------------------------------------------------
             ldout << "\nsave colinear intersection point as next vertex in result: " << ip.str() << " is_ccw=" << is_ccw << "\n\n";
             vtx[vtx_cnt++] = ip;
+            ldout << "partial result=" << polygon_str( vtx, vtx_cnt, "blue" );
 
             //------------------------------------------------------------
             // If we're back at the first intersection point, we are done.
@@ -4324,6 +4325,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             //------------------------------------------------------------
             ldout << "save intersection point as next vertex in result: " << ip.str() << " is_ccw=" << is_ccw << "\n\n";
             vtx[vtx_cnt++] = ip;
+            ldout << "partial result=" << polygon_str( vtx, vtx_cnt, "blue" );
 
             //------------------------------------------------------------
             // If we're back at the first intersection point, we are done.
@@ -4470,9 +4472,9 @@ std::string Layout::polygon_str( const real2 * vtx, uint vtx_cnt, std::string co
         s += ",";
         s += ::str( vtx[i].c[1] );
     }
-    s += "' transform='translate(" + ::str(x_off) + " " + ::str(y_off) + 
-          ") scale(" + ::str(xy_scale) + " " + ::str(xy_scale) + ")' fill='" + 
-          color + "' fill-opacity='0.5' ::stroke-width='1'/>";
+    s += "' transform='translate(" + ::str(x_off) + " " + ::str(2000-y_off) + 
+          ") scale(" + ::str(xy_scale) + " " + ::str(-xy_scale) + 
+          ")' style=\"fill:" + color + ";fill-opacity:0.5;stroke:black;stroke-width:0.1\"/>";
     return s;
 }
 
@@ -4504,7 +4506,7 @@ bool Layout::polygon_includes( const real2 * vtx, uint vtx_cnt, const real2& v )
 bool Layout::polygon_is_ccw( const real2 * vtx, uint vtx_cnt ) const
 {
     real sum = 0.0;
-    for( uint i = 0; i < vtx_cnt; i++ ) 
+    for( uint i = 0; i < (vtx_cnt-1); i++ ) 
     {
         const real2& v1 = vtx[i];
         const real2& v2 = vtx[(i+1) % vtx_cnt];
