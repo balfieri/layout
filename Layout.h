@@ -4371,10 +4371,17 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
             // pretend that we don't have an intersection point.
             //------------------------------------------------------------
             if ( ip.nearly_equal( curr_s1 ) ) {
-                ldout << " checking to see if [ip=curr_s1, other_s1] is already part of an existing result segment...\n";
+                ldout << " checking to see if ip=curr_s1=" << ip << ", other_s1=" << other_s1 << " is already part of an existing result segment...\n";
                 for( uint k = 0; k < (vtxn_cnt[other]-1); k++ )
                 {
-                    if ( ip.is_on_segment( vtxn[other][k], vtxn[other][k+1], true ) && other_s1.is_on_segment( vtxn[other][k], vtxn[other][k+1], true ) ) {
+                    bool ip_on_seg          = ip.is_on_segment( vtxn[other][k], vtxn[other][k+1], true );
+                    bool other_s1_on_seg    = other_s1.is_on_segment( vtxn[other][k], vtxn[other][k+1], true );
+                    bool seg_s0_on_ip_other = vtxn[other][k].is_on_segment( ip, other_s1, true );
+                    bool seg_s1_on_ip_other = vtxn[other][k+1].is_on_segment( ip, other_s1, true );
+                    ldout << "\n  k=" << k << " seg_s0=" << vtxn[other][k] << " seg_s1=" << vtxn[other][k+1] << 
+                             " ip_on_seg=" << ip_on_seg << " other_s1_on_seg=" << other_s1_on_seg << 
+                             " seg_s0_on_ip_other=" << seg_s0_on_ip_other << " seg_s1_on_ip_other=" << seg_s1_on_ip_other << "\n";
+                    if ( ip_on_seg && other_s1_on_seg ) {
                         have_ip = false;
                         break;
                     }
