@@ -1251,11 +1251,11 @@ void Layout::materials_init( void )
     //                  within itself, otherwise known as distributed inductance 
     // conductivity   - 1/resistivity 
     // thermal_conductivity - measure of ability to conduct heat
-    // mass_density   - mass/volume
-    // specific_heat  - Joule/Kelvin
-    // youngs_modulus - uniaxial_stress/strain
+    // mass_density   - mass/volume (kg/m^3)
+    // specific_heat  - J/(K kg)
+    // youngs_modulus - uniaxial_stress/strain (Pa)
     // poissons_ratio - transverse_strain/axial_strain
-    // thermal_expansion_coefficient - 1/V * dV/dT (pressure held constant)
+    // thermal_expansion_coefficient - 1/V * dV/dT (pressure held constant, linear expansion, 20C)
     //
     hdr->material_cnt = 0;
     uint mi = hdr->material_cnt++;
@@ -1335,6 +1335,17 @@ void Layout::materials_init( void )
                               120000000000,     // youngs_modulus
                               0.38,             // poissons_ratio
                               1.77e-05 };       // thermal_expansion_coefficient
+    mi = hdr->material_cnt++;
+    materials[mi] = Material{ str_get( "C" ), 
+                              6.9,              // relative_permittivity
+                              1.0,              // permeability
+                              100000000,        // conductivity (30 ohm/cm^2 sheet resistance, 0.34nm thick)
+                              2000,             // thermal_conductivity
+                              2267,             // mass_density 
+                              700,              // specific_heat
+                              1e12,             // youngs_modulus
+                              0.19,             // poissons_ratio
+                              3.75e-06 };       // thermal_expansion_coefficient
     mi = hdr->material_cnt++;
     materials[mi] = Material{ str_get( "port" ),// fake material representing a source/sink point in a simulation
                               1.0,              // relative_permittivity
