@@ -983,34 +983,34 @@ bool Layout::write( std::string top_file )
     }
 }
 
-bool Layout::write_layer_info( std::string file_path )
+bool Layout::write_layer_info( std::string file_name )
 {
     //------------------------------------------------------------
     // Write depends on file ext_name
     //------------------------------------------------------------
     std::string dir_name;
     std::string base_name;
-    dissect_path( file_path, dir_name, base_name, ext_name );
+    dissect_path( file_name, dir_name, base_name, ext_name );
     if ( ext_name == std::string( ".gds3d" ) ) {
-        return gds3d_write_layer_info( file_path );
+        return gds3d_write_layer_info( file_name );
     } else if ( ext_name == std::string( ".tech" ) || ext_name == std::string( ".hfss" ) ) {
-        return hfss_write_layer_info( file_path );
+        return hfss_write_layer_info( file_name );
     } else {
         lassert( false, "write_layer_info: unknown file ext_name: " + ext_name );
         return false;
     }
 }
 
-bool Layout::write_material_info( std::string file_path )
+bool Layout::write_material_info( std::string file_name )
 {
     //------------------------------------------------------------
     // Write depends on file ext_name
     //------------------------------------------------------------
     std::string dir_name;
     std::string base_name;
-    dissect_path( file_path, dir_name, base_name, ext_name );
+    dissect_path( file_name, dir_name, base_name, ext_name );
     if ( ext_name == std::string( ".amat" ) || ext_name == std::string( ".hfss" ) ) {
-        return hfss_write_material_info( file_path );
+        return hfss_write_material_info( file_name );
     } else {
         lassert( false, "write_material_info: unknown file ext_name: " + ext_name );
         return false;
@@ -1400,7 +1400,7 @@ inline std::string Layout::putf( const char * fmt, ... )
     char buff[1024];
     va_list args;
     va_start( args, fmt );
-    vsnprintf( buff, sizeof(buff), fmt, args );
+    vsnprintf( buff, sizeof(buff), fmt , args );
     va_end( args );
     return buff;
 }
@@ -1769,11 +1769,11 @@ inline bool Layout::real2::is_on_segment( const real2& p2, const real2& p3, bool
 {
     const real2& p1 = *this;
 
-    real2 min( std::min( p2.c[0], p3.c[0] ), std::min( p2.c[1], p3.c[1] ) );
-    real2 max( std::max( p2.c[0], p3.c[0] ), std::max( p2.c[1], p3.c[1] ) );
-    bool on_segment = (p1.c[0]+epsilon) >= min.c[0] && (p1.c[0]-epsilon) <= max.c[0] &&
-                      (p1.c[1]+epsilon) >= min.c[1] && (p1.c[1]-epsilon) <= max.c[1];
-    ldout << ", min=" << min << " max=" << max << " on_segment=" << on_segment;
+    real2 _min( std::min( p2.c[0], p3.c[0] ), std::min( p2.c[1], p3.c[1] ) );
+    real2 _max( std::max( p2.c[0], p3.c[0] ), std::max( p2.c[1], p3.c[1] ) );
+    bool on_segment = (p1.c[0]+epsilon) >= _min.c[0] && (p1.c[0]-epsilon) <= _max.c[0] &&
+                      (p1.c[1]+epsilon) >= _min.c[1] && (p1.c[1]-epsilon) <= _max.c[1];
+    ldout << ", _min=" << _min << " _max=" << _max << " on_segment=" << on_segment;
     return on_segment && (include_endpoints || (!p1.nearly_equal( p2 ) && !p1.nearly_equal( p3 )));
 }
 
@@ -2133,51 +2133,51 @@ void Layout::Matrix::rotate_yz( double radians )
     M1.transform( M2, *this );
 }
 
-inline Layout::Matrix Layout::Matrix::operator + ( const Matrix& m ) const
+inline Layout::Matrix Layout::Matrix::operator + ( const Matrix& M ) const
 {
     Matrix r;
     for( uint i = 0; i < 4; i++ )
     {
         for( uint j = 0; j < 4; j++ )
         {
-            r.m[i][j] = this->m[i][j] + m.m[i][j];
+            r.m[i][j] = this->m[i][j] + M.m[i][j];
         }
     }
     return r;
 }
 
-inline Layout::Matrix Layout::Matrix::operator - ( const Matrix& m ) const
+inline Layout::Matrix Layout::Matrix::operator - ( const Matrix& M ) const
 {
     Matrix r;
     for( uint i = 0; i < 4; i++ )
     {
         for( uint j = 0; j < 4; j++ )
         {
-            r.m[i][j] = this->m[i][j] - m.m[i][j];
+            r.m[i][j] = this->m[i][j] - M.m[i][j];
         }
     }
     return r;
 }
 
-inline bool Layout::Matrix::operator == ( const Matrix& m ) const
+inline bool Layout::Matrix::operator == ( const Matrix& M ) const
 {
     for( uint i = 0; i < 4; i++ )
     {
         for( uint j = 0; j < 4; j++ )
         {
-            if ( this->m[i][j] != m.m[i][j] ) return false;
+            if ( this->m[i][j] != M.m[i][j] ) return false;
         }
     }
     return true;
 }
 
-inline bool Layout::Matrix::operator != ( const Matrix& m ) const
+inline bool Layout::Matrix::operator != ( const Matrix& M ) const
 {
     for( uint i = 0; i < 4; i++ )
     {
         for( uint j = 0; j < 4; j++ )
         {
-            if ( this->m[i][j] != m.m[i][j] ) return true;
+            if ( this->m[i][j] != M.m[i][j] ) return true;
         }
     }
     return false;
@@ -2304,7 +2304,7 @@ inline bool Layout::node_is_header_footer( const Node& node ) const
 
 inline bool Layout::node_is_gdsii( const Node& node ) const
 {
-    return int(node.kind) >= 0 && int(node.kind) < GDSII_KIND_CNT;
+    return int(node.kind) >= 0 && uint32_t(node.kind) < GDSII_KIND_CNT;
 }
 
 inline bool Layout::node_is_scalar( const Node& node ) const
@@ -2917,7 +2917,7 @@ uint Layout::inst_layout_node( uint parent_i, uint last_i, const Layout * src_la
             uint dst_int_node_i = nodes[dst_i].u.child_first_i;
             lassert( dst_int_node_i != NULL_I, "LAYER node has no layer number" ); 
             Node& dst_int_node = nodes[dst_int_node_i];
-            lassert( dst_int_node.kind == NODE_KIND::INT && dst_int_node.u.i == src_layer_num && dst_int_node.sibling_i == NULL_I, "unexpected layer_num in LAYER node" );
+            lassert( dst_int_node.kind == NODE_KIND::INT && dst_int_node.u.i == int(src_layer_num) && dst_int_node.sibling_i == NULL_I, "unexpected layer_num in LAYER node" );
             dst_int_node.u.i = dst_layer_num;
             ldout << indent_str << "    layer change: " << src_layer_num << " => " << dst_layer_num << "\n";
 
@@ -3482,9 +3482,9 @@ uint Layout::node_flatten_ref( uint parent_i, uint last_i, const Layout * src_la
     uint col_cnt = 1;
     uint row_cnt = 1;
     real xy[3][2] = { {0, 0}, {0, 0}, {0, 0} };
-    for( uint src_i = src_node.u.child_first_i; src_i != NULL_I; src_i = src_nodes[src_i].sibling_i )
+    for( uint child_i = src_node.u.child_first_i; child_i != NULL_I; child_i = src_nodes[child_i].sibling_i )
     {
-        const Node& child = src_nodes[src_i];
+        const Node& child = src_nodes[child_i];
         switch( child.kind )
         {
             case NODE_KIND::SNAME:
@@ -4270,7 +4270,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     // Allocate a vtx array for the resultant polygon.
     // Start with the intersection point from above.
     //------------------------------------------------------------
-    int vtx_cnt_max = 2*(vtx1_cnt + vtx2_cnt);
+    uint vtx_cnt_max = 2*(vtx1_cnt + vtx2_cnt);
     vtx = new real2[vtx_cnt_max];
     vtx_cnt = 0;                
 
@@ -4854,8 +4854,8 @@ bool Layout::gdsii_read_record( uint& ni, uint struct_i, bool count_only )
         {
             uint child_i;
             if ( !gdsii_read_record( child_i, struct_i, count_only ) ) return false;
-            NODE_KIND kind = nodes[child_i].kind;
-            if ( kind == NODE_KIND::ENDEL || kind == NODE_KIND::ENDSTR || kind == NODE_KIND::ENDLIB ) break;
+            NODE_KIND ckind = nodes[child_i].kind;
+            if ( ckind == NODE_KIND::ENDEL || ckind == NODE_KIND::ENDSTR || ckind == NODE_KIND::ENDLIB ) break;
             if ( !count_only ) {
                 if ( prev_i == NULL_I ) {
                     nodes[ni].u.child_first_i = child_i;
@@ -5151,10 +5151,10 @@ bool Layout::aedt_read_expr( uint& ni )
             for( ;; )
             {
                 skip_whitespace( nnn, nnn_end );
-                uint id_i;
-                if ( peek_id( id_i, nnn, nnn_end ) ) {
-                    if ( id_i == aedt_end_str_i ) {
-                        parse_id( id_i, nnn, nnn_end );
+                uint id2_i;
+                if ( peek_id( id2_i, nnn, nnn_end ) ) {
+                    if ( id2_i == aedt_end_str_i ) {
+                        parse_id( id2_i, nnn, nnn_end );
                         uint end_str_i;
                         if ( !parse_string_i( end_str_i, nnn, nnn_end ) ) return false;
                         ldout << "END " << std::string(&strings[end_str_i]) << "\n";
@@ -5594,12 +5594,12 @@ bool Layout::cmd( std::string s )
     return system( s.c_str() ) == 0;
 }
 
-bool Layout::open_and_read( std::string file_path, uint8_t *& start, uint8_t *& end )
+bool Layout::open_and_read( std::string file_name, uint8_t *& start, uint8_t *& end )
 {
-    const char * fname = file_path.c_str();
+    const char * fname = file_name.c_str();
     int fd = open( fname, O_RDONLY );
-    if ( fd < 0 ) ldout << "open_and_read() error reading " << file_path << ": " << strerror( errno ) << "\n";
-    lassert( fd >= 0, "could not open file " + file_path + " - open() error: " + strerror( errno ) );
+    if ( fd < 0 ) ldout << "open_and_read() error reading " << file_name << ": " << strerror( errno ) << "\n";
+    lassert( fd >= 0, "could not open file " + file_name + " - open() error: " + strerror( errno ) );
 
     struct stat file_stat;
     int status = fstat( fd, &file_stat );
