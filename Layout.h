@@ -5478,7 +5478,7 @@ bool Layout::gds3d_write_layer_info( std::string file )
         const Layer& layer = layers[i];
 
         out << "LayerStart: " << &strings[layer.name_i] << "\n";
-        out << "Layer:      " << i << "\n";
+        out << "Layer:      " << layer.gdsii_num << "\n";
         if ( layer.gdsii_datatype != NULL_I ) out << "Datatype:   " << layer.gdsii_datatype << "\n";
         out << "Height:     " << height << "\n";
         real thickness = layer.thickness / gdsii_units_user;
