@@ -449,6 +449,7 @@ public:
     uint        node_alloc_int( _int i );                       // allocate INT node
     uint        node_alloc_real( real r );                      // allocate REAL node
     uint        node_alloc_str( std::string s );                // allocate STR node
+    uint        node_alloc_bgnstr( uint parent_i, uint last_i, std::string name, uint& bgnstr_i ); // allocate BGNSTR node
     uint        node_alloc_boundary( uint parent_i, uint last_i, uint gdsii_num, uint datatype, const real2 * vtx, uint vtx_cnt );
     void        node_alloc_timestamp( Node& node );             // adds timestamp fields to node
 
@@ -2988,18 +2989,8 @@ void Layout::finalize_top_struct( uint parent_i, uint last_i, std::string top_na
     //-----------------------------------------------------
     // Create one final struct that instantiates all top_insts.
     //-----------------------------------------------------
-    lassert( parent_i == NULL_I, "finalize parent_i must be NULL_I for now" );
-    uint bgnstr_i = node_alloc( NODE_KIND::BGNSTR );
-    nodes[last_i].sibling_i = bgnstr_i;
-    node_alloc_timestamp( nodes[bgnstr_i] );
-    uint prev_i = node_last_scalar_i( nodes[bgnstr_i] );
-
-    uint strname_i = node_alloc( NODE_KIND::STRNAME );
-    nodes[prev_i].sibling_i = strname_i;
-    nodes[strname_i].u.s_i = str_get( top_name );
-    prev_i = strname_i;
-
-    name_i_to_struct_i[nodes[strname_i].u.s_i] = bgnstr_i;
+    uint bgnstr_i;
+    uint prev_i = node_alloc_bgnstr( parent_i, last_i, top_name, bgnstr_i );
 
     for( size_t i = 0; i < hdr->top_inst_cnt; i++ )
     {
@@ -3294,6 +3285,27 @@ inline uint Layout::node_alloc_str( std::string s )
     uint ni = node_alloc( NODE_KIND::STR );
     nodes[ni].u.s_i = str_get( s );
     return ni;
+}
+
+uint Layout::node_alloc_bgnstr( uint parent_i, uint last_i, std::string name, uint& bgnstr_i ) 
+{
+    bgnstr_i = node_alloc( NODE_KIND::BGNSTR );
+    if ( last_i != NULL_I ) {
+        lassert( parent_i != NULL_I, "node_alloc_bgnstr parent_i should be set" );
+        nodes[last_i].sibling_i = bgnstr_i;
+    } else if ( parent_i != NULL_I ) {
+        nodes[parent_i].u.child_first_i = bgnstr_i;
+    }
+    node_alloc_timestamp( nodes[bgnstr_i] );
+    uint prev_i = node_last_scalar_i( nodes[bgnstr_i] );
+
+    uint strname_i = node_alloc( NODE_KIND::STRNAME );
+    nodes[strname_i].u.s_i = str_get( name );
+    name_i_to_struct_i[nodes[strname_i].u.s_i] = bgnstr_i;
+    nodes[prev_i].sibling_i = strname_i;
+    prev_i = strname_i;
+
+    return prev_i;
 }
 
 uint Layout::node_alloc_boundary( uint parent_i, uint last_i, uint gdsii_num, uint datatype, const real2 * vtx, uint vtx_cnt )
