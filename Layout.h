@@ -1250,7 +1250,7 @@ void Layout::materials_init( void )
     // relativity_permittivity (aka dialectric_constant) - permittivity/permittivity_of_vacuum
     // permeability   - measure of the ability of a material to support the formation of a magnetic field 
     //                  within itself, otherwise known as distributed inductance 
-    // conductivity   - 1/resistivity 
+    // conductivity   - 1/resistivity (aka sigma = 1/rho)
     // thermal_conductivity - measure of ability to conduct heat
     // mass_density   - mass/volume (kg/m^3)
     // specific_heat  - J/(K kg)
