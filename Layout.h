@@ -614,6 +614,12 @@ private:
     void gdsii_write_bytes( const uint8_t * bytes, uint byte_cnt );
     void gdsii_flush( bool for_end_of_file=false );
     
+    // FASTCAP/FASTCAP2/FFTCAP I/O
+    bool fastcap_write( std::string file );
+
+    // FASTHENRY/FASTHENRY2 I/O
+    bool fasthenry_write( std::string file );
+
     // AEDT I/O
     uint aedt_begin_str_i;              // these are to make it easier to compare
     uint aedt_end_str_i;
@@ -977,6 +983,10 @@ bool Layout::write( std::string top_file )
             return aedt_write( top_file, true );
         } else if ( ext_name == std::string( ".gds" ) ) {
             return gdsii_write( top_file );
+        } else if ( ext_name == std::string( ".fastcap" ) ) {
+            return fastcap_write( top_file );
+        } else if ( ext_name == std::string( ".fasthenry" ) ) {
+            return fasthenry_write( top_file );
         } else {
             lassert( false, "unknown file ext_name: " + ext_name );
             return false;
@@ -5117,6 +5127,16 @@ void Layout::gdsii_flush( bool for_end_of_file )
         lassert( false, std::string("could not write() gdsii file - write() error: ") + strerror( errno ) );
     }
     gdsii_buff_byte_cnt = 0;
+}
+
+bool Layout::fastcap_write( std::string file )
+{
+    return false;
+}
+
+bool Layout::fasthenry_write( std::string file )
+{
+    return false;
 }
 
 bool Layout::aedt_read( std::string file )
