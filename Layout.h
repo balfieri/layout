@@ -5131,6 +5131,26 @@ void Layout::gdsii_flush( bool for_end_of_file )
 
 bool Layout::fastcap_write( std::string file )
 {
+    //------------------------------------------------------------
+    // generic file format:
+    //     0 <title>
+    //     * comment
+    //     Q <conductor_name> <x1> <y1> <z1> ... <x4> <y4> <z4>    -- quad      (clockwise or counterclockwise vertices)
+    //     T <conductor_name> <x1> <y1> <z1> ... <x3> <y3> <z3>    -- triangle  (ditto)
+    //     N <old_conductor_name> <new_conductor_name>             -- rename    (so old_conductor_name can be really short)
+    //
+    // list file:
+    //     G <group_name>                                                                   -- use non-default group name for following C,D,B commands
+    //     C <file> <outperm> <xtran> <ytran> <ztran> [+]                                   -- conductor surrounded by outperm dielectric, + to merge with next
+    //     D <file> <outperm> <inperm> <xtran> <ytran> <ztran> <xref> <yref> <zref> [-]     -- dielectric interface, ref point is on outperm side (inperm if -, not used)
+    //     B <file> <outperm> <inperm> <xtran> <ytran> <ztran> <xref> <yref> <zref> [-][+]  -- same but interface is coincident with infintessimally thin
+    //                                                                                         conductor (not used)
+    //
+    // How we do this:
+    //     1) Ignore layer dielectrics.
+    //     2) Tesselate bounding rectangle conductors into triangles (T commands).  Merge faces within same 3D conductor using + option.
+    //     3) Add a box around the entire layer with the layer dielectric inside the box and the air outside (D command).
+    //------------------------------------------------------------
     return false;
 }
 
