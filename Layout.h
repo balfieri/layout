@@ -5148,7 +5148,7 @@ bool Layout::fastcap_write( std::string file )
     //
     // How we do this:
     //     1) Ignore layer dielectrics.
-    //     2) Tesselate bounding rectangle conductors into triangles (T commands).  Merge faces within same 3D conductor using + option.
+    //     2) Tesselate bounding rectangle conductors into quads and triangles (Q and T commands).  Merge faces within same 3D conductor using + option.
     //     3) Add a box around the entire layer with the layer dielectric inside the box and the air outside (D command).
     //------------------------------------------------------------
     return false;
