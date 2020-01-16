@@ -2673,10 +2673,12 @@ void Layout::node_xy_replace_polygon( Node& node, const real2 * vtx, uint vtx_cn
             node.u.child_first_i = dst_x_i;
         } else {
             nodes[dst_xy_prev_i].sibling_i = dst_x_i;
+            lassert( dst_x_i != dst_xy_prev_i, "node_xy_replace_polygon: assigning dst_xy_prev_i sibling_i to point back to itself" );
         } 
         
         uint dst_y_i = node_alloc_int( vtx[v].c[1] / gdsii_units_user );
         nodes[dst_x_i].sibling_i = dst_y_i;
+        lassert( dst_x_i != dst_y_i, "node_xy_replace_polygon: assigning dst_x_i sibling_i to point back to itself" );
         dst_xy_prev_i = dst_y_i;
     }
 }
@@ -3371,10 +3373,12 @@ uint Layout::node_alloc_boundary( uint parent_i, uint last_i, uint gdsii_num, ui
             nodes[xy_i].u.child_first_i = x_i;
         } else {
             nodes[xy_prev_i].sibling_i = x_i;
+            lassert( xy_prev_i != x_i, "node_alloc_boundary: assigning xy_prev_i sibling_i to point back to itself" );
         } 
         
         uint y_i = node_alloc_int( vtx[i].c[1] / gdsii_units_user );
         nodes[x_i].sibling_i = y_i;
+        lassert( x_i != y_i, "node_alloc_boundary: assigning x_i sibling_i to point back to itself" );
         xy_prev_i = y_i;
     }
 
@@ -3452,11 +3456,13 @@ uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, u
         // Convert PATH to BOUNDARY     
         //-----------------------------------------------------
         dst_first_i = node_convert_path_to_boundary( parent_i, last_i, src_layout, src_i, conflict_policy, M );
+        ldout << "path dst_first_i=" << dst_first_i << " sibling_i=" << nodes[dst_first_i].sibling_i << "\n"; 
     } else {
         //-----------------------------------------------------
         // Normal Copy
         //-----------------------------------------------------
         dst_first_i = node_alloc( src_node.kind );
+        ldout << "normal " << str(src_node.kind) << " dst_first_i=" << dst_first_i << " sibling_i=" << nodes[dst_first_i].sibling_i << "\n"; 
         if ( src_layout->node_is_parent( src_node ) ) { 
             if ( copy_kind != COPY_KIND::ONE ) {
                 //-----------------------------------------------------
@@ -3489,6 +3495,8 @@ uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, u
     //-----------------------------------------------------
     for( uint dst_i = dst_first_i; dst_i != NULL_I; dst_i = nodes[dst_i].sibling_i )
     {
+        ldout << "last_i=" << last_i << " dst_i=" << dst_i << "\n";
+
         //-----------------------------------------------------
         // Connect the new dst_i node to parent_i or last_i.
         //-----------------------------------------------------
@@ -3496,6 +3504,7 @@ uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, u
             lassert( nodes[last_i].sibling_i == NULL_I || nodes[last_i].sibling_i == dst_i, "node_copy: nodes[last_i] sibling_i is already set" ); 
             lassert( parent_i == NULL_I || nodes[parent_i].u.child_first_i != NULL_I, "node_copy: nodes[parent_i] is not set but last_i is set" );
             nodes[last_i].sibling_i = dst_i;
+            lassert( last_i != dst_i, "node_copy: assigning last_i sibling_i to point back to itself" );
         } else if ( parent_i != NULL_I ) {
             lassert( nodes[parent_i].u.child_first_i == NULL_I, "node_copy: nodes[parent_i] child_first_i is already set but last_i is NULL_I" ); 
             nodes[parent_i].u.child_first_i = dst_i;
@@ -3509,6 +3518,8 @@ uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, u
             //-----------------------------------------------------
             node_transform_xy( parent_i, dst_i, copy_kind, conflict_policy, M );
         }
+
+        lassert( nodes[dst_i].sibling_i != dst_i, "node_copy: dst_i sibling_i points to itself" );
     }
 
     return last_i;
