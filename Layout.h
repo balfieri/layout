@@ -3456,13 +3456,13 @@ uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, u
         // Convert PATH to BOUNDARY     
         //-----------------------------------------------------
         dst_first_i = node_convert_path_to_boundary( parent_i, last_i, src_layout, src_i, conflict_policy, M, indent_str + "  " );
-        ldout << indent_str << "path dst_first_i=" << dst_first_i << " sibling_i=" << nodes[dst_first_i].sibling_i << "\n"; 
+        ldout << indent_str << "PATH_TO_BOUNDARY last_i=" << last_i << " parent_i=" << parent_i << " dst_first_i=" << dst_first_i << " sibling_i=" << nodes[dst_first_i].sibling_i << "\n"; 
     } else {
         //-----------------------------------------------------
         // Normal Copy
         //-----------------------------------------------------
         dst_first_i = node_alloc( src_node.kind );
-        ldout << indent_str << "normal " << str(src_node.kind) << " dst_first_i=" << dst_first_i << " sibling_i=" << nodes[dst_first_i].sibling_i << "\n"; 
+        ldout << indent_str << str(src_node.kind) << " last_i=" << last_i << " parent_i=" << parent_i << " dst_first_i=" << dst_first_i << " sibling_i=" << nodes[dst_first_i].sibling_i << "\n"; 
         if ( src_layout->node_is_parent( src_node ) ) { 
             if ( copy_kind != COPY_KIND::ONE ) {
                 //-----------------------------------------------------
@@ -3497,7 +3497,7 @@ uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, u
     for( uint dst_i = dst_first_i; dst_i != NULL_I; )
     {
         uint dst_sibling_i = nodes[dst_i].sibling_i;
-        ldout << indent_str << "last_i=" << last_i << " dst_i=" << dst_i << " dst_sibling_i=" << dst_sibling_i << "\n";
+        ldout << indent_str << "last_i=" << last_i << " parent_i=" << parent_i << " dst_i=" << dst_i << " dst_sibling_i=" << dst_sibling_i << "\n";
 
         //-----------------------------------------------------
         // Connect the new dst_i node to parent_i or last_i.
