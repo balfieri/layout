@@ -331,6 +331,7 @@ public:
     //
     void        layer_set( uint layer_i, const Layer& layer );
     uint        layer_get( std::string name );
+    uint        layer_get( uint gdsii_num ) const;
 
     enum class NODE_KIND
     {
@@ -467,7 +468,8 @@ public:
     uint        node_last_scalar_i( const Node& node ) const;   // find node index of last scalar child, else NULL_I if none
     uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
     std::string node_name( const Node& node ) const;            // find name for node
-    uint        node_layer( const Node& node ) const;           // find LAYER value for node (an element)
+    uint        node_layer_num( const Node& node ) const;       // find LAYER value for node (an element)
+    uint        node_layer_i( const Node& node ) const;         // find layer index within this layout's layers
     uint        node_width( const Node& node ) const;           // find WIDTH value for node 
     uint        node_bah_layer( const Node& node ) const;       // find LAYER value for flattened node and get layer to use for BAH
     uint        node_xy_i( const Node& node ) const;            // find index of XY node within node
@@ -1412,6 +1414,16 @@ uint Layout::layer_get( std::string name )
     for( uint li = 0; li < hdr->layer_cnt; li++ )
     {
         if ( layers[li].name_i == name_i ) return li;
+    }
+
+    return NULL_I;
+}
+
+uint Layout::layer_get( uint gdsii_num ) const
+{
+    for( uint li = 0; li < hdr->layer_cnt; li++ )
+    {
+        if ( layers[li].gdsii_num == gdsii_num ) return li;
     }
 
     return NULL_I;
@@ -2503,14 +2515,14 @@ inline std::string Layout::node_name( const Node& node ) const
     return "";
 }
 
-inline uint Layout::node_layer( const Node& node ) const
+inline uint Layout::node_layer_num( const Node& node ) const
 {
     if ( node.kind == NODE_KIND::LAYER ) {
         uint int_node_i = node.u.child_first_i;
         lassert( int_node_i != NULL_I && nodes[int_node_i].kind == NODE_KIND::INT && nodes[int_node_i].sibling_i == NULL_I, "bad LAYER node" );
         return nodes[int_node_i].u.i;
     } else {
-        lassert( node_is_element( node ), "node_layer: node is not a LAYER or an ELEMENT" );
+        lassert( node_is_element( node ), "node_layer_num: node is not a LAYER or an ELEMENT" );
         for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i ) 
         {
             if ( nodes[child_i].kind == NODE_KIND::LAYER ) {
@@ -2522,6 +2534,11 @@ inline uint Layout::node_layer( const Node& node ) const
         lassert( false, "could not find layer for node" );
         return NULL_I;
     }
+}
+
+inline uint Layout::node_layer_i( const Node& node ) const
+{
+    return layer_get( node_layer_num( node ) );
 }
 
 inline uint Layout::node_width( const Node& node ) const
@@ -2547,8 +2564,8 @@ inline uint Layout::node_width( const Node& node ) const
 
 inline uint Layout::node_bah_layer( const Node& node ) const
 {
-    uint layer_i = node_layer( node );
-    lassert( layer_i < hdr->layer_cnt, "node_layer() is out of range of current layer_cnt" );
+    uint layer_i = node_layer_i( node );
+    lassert( layer_i < hdr->layer_cnt, "node_layer_i() is out of range of current layer_cnt" );
     while( layers[layer_i].same_zoffset_as_prev ) 
     {
         //------------------------------------------------------------
@@ -2581,7 +2598,7 @@ bool Layout::node_has_layer( uint ni, uint layer_num, has_layer_cache_t * cache,
         //------------------------------------------------------------
         // Finally hit a LAYER.
         //------------------------------------------------------------
-        uint li = node_layer( node );
+        uint li = node_layer_i( node );
         //ldout << indent_str << "node_has_layer: LAYER=" << li << " and want layer_num=" << layer_num << "\n";
         return li == layer_num;
 
@@ -2911,9 +2928,9 @@ uint Layout::inst_layout_node( uint parent_i, uint last_i, const Layout * src_la
 
     if ( !src_layout->node_is_ref( src_node ) && 
           src_layout->node_is_element( src_node ) && 
-          src_layout->node_layer( src_node ) != src_layer_num ) {
+          src_layout->node_layer_num( src_node ) != src_layer_num ) {
         do_copy = false;
-        ldout << indent_str << "    src_layer=" << src_layout->node_layer( src_node ) << " desired_src_layer=" << src_layer_num << "\n";
+        ldout << indent_str << "    src_layer=" << src_layout->node_layer_num( src_node ) << " desired_src_layer=" << src_layer_num << "\n";
 
     } else if ( src_layout->node_is_header_footer( src_node ) && src_kind != NODE_KIND::BGNLIB ) {
         //-----------------------------------------------------
@@ -3720,7 +3737,7 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
             case NODE_KIND::WIDTH:              width    = src_layout->node_width( src ) * gdsii_units_user; break;
             case NODE_KIND::PATHTYPE:           pathtype = src_layout->node_pathtype( src );    break;
             case NODE_KIND::DATATYPE:           datatype = src_layout->node_datatype( src );    break;
-            case NODE_KIND::LAYER:              layer    = src_layout->node_layer( src );       break;
+            case NODE_KIND::LAYER:              layer    = src_layout->node_layer_num( src );   break;
             case NODE_KIND::XY:
             {
                 //-----------------------------------------------------
