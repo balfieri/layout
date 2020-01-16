@@ -487,7 +487,7 @@ public:
     };
 
     uint        node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND copy_kind, 
-                           CONFLICT_POLICY conflict_policy=CONFLICT_POLICY::MERGE_NONE_ALLOW_NONE, const Matrix& M = Matrix(), bool in_flatten=false );
+                           CONFLICT_POLICY conflict_policy=CONFLICT_POLICY::MERGE_NONE_ALLOW_NONE, const Matrix& M = Matrix(), bool in_flatten=false, std::string indent_str="" );
 
     // RAW POLYGONS
     real2 *     polygon_alloc( uint vtx_cnt ) const;
@@ -580,12 +580,12 @@ private:
                            uint dst_layer_num, has_layer_cache_t * cache, std::string name, std::string indent_str="" );
     uint node_flatten_ref( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, CONFLICT_POLICY conflict_policy, const Matrix& M );
     uint node_convert_path_to_boundary( uint parent_i, uint last_i, const Layout * src_layout, uint src_i,
-                           CONFLICT_POLICY conflict_policy, const Matrix& M );
-    void node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, CONFLICT_POLICY conflict_policy, const Matrix& M );
+                           CONFLICT_POLICY conflict_policy, const Matrix& M, std::string indent_str="" );
+    void node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, CONFLICT_POLICY conflict_policy, const Matrix& M, std::string indent_str="" );
 
     // BAH 
     uint bah_node_alloc( void );
-    void bah_add( uint leaf_i, uint layer, CONFLICT_POLICY conflict_policy );
+    void bah_add( uint leaf_i, uint layer, CONFLICT_POLICY conflict_policy, std::string indent_str="" );
     void bah_insert( uint bah_i, const AABR& brect, uint leaf_i, const AABR& leaf_brect, CONFLICT_POLICY conflict_policy, std::string indent_str="" );
     bool bah_leaf_nodes_intersect( const AABR& quadrant_brect, uint li1, uint li2, bool& is_exact ); 
 
@@ -1459,10 +1459,10 @@ inline std::ostream& operator << ( std::ostream& os, const Layout::real2& v )
 
 inline std::ostream& operator << ( std::ostream& os, const Layout::Matrix& m ) 
 {
-    os << "[ [" << m.m[0][0] << "," << m.m[0][1] << "," << m.m[0][2] << "," << m.m[0][3] << "],\n" << 
-          "  [" << m.m[1][0] << "," << m.m[1][1] << "," << m.m[1][2] << "," << m.m[1][3] << "],\n" << 
-          "  [" << m.m[2][0] << "," << m.m[2][1] << "," << m.m[2][2] << "," << m.m[2][3] << "],\n" << 
-          "  [" << m.m[3][0] << "," << m.m[3][1] << "," << m.m[3][2] << "," << m.m[3][3] << "] ]\n";
+    os << "[ [" << m.m[0][0] << "," << m.m[0][1] << "," << m.m[0][2] << "," << m.m[0][3] << "]," << 
+          " [" << m.m[1][0] << "," << m.m[1][1] << "," << m.m[1][2] << "," << m.m[1][3] << "]," << 
+          " [" << m.m[2][0] << "," << m.m[2][1] << "," << m.m[2][2] << "," << m.m[2][3] << "]," << 
+          " [" << m.m[3][0] << "," << m.m[3][1] << "," << m.m[3][2] << "," << m.m[3][3] << "] ]";
     return os;
 }
 
@@ -3428,7 +3428,7 @@ void Layout::node_alloc_timestamp( Node& node )
 }
 
 uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, uint src_i, COPY_KIND copy_kind, 
-                        CONFLICT_POLICY conflict_policy, const Matrix& M, bool in_flatten )
+                        CONFLICT_POLICY conflict_policy, const Matrix& M, bool in_flatten, std::string indent_str )
 {
     const Node& src_node = src_layout->nodes[src_i];
     if ( copy_kind == COPY_KIND::FLATTEN ) {
@@ -3455,14 +3455,14 @@ uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, u
         //-----------------------------------------------------
         // Convert PATH to BOUNDARY     
         //-----------------------------------------------------
-        dst_first_i = node_convert_path_to_boundary( parent_i, last_i, src_layout, src_i, conflict_policy, M );
-        ldout << "path dst_first_i=" << dst_first_i << " sibling_i=" << nodes[dst_first_i].sibling_i << "\n"; 
+        dst_first_i = node_convert_path_to_boundary( parent_i, last_i, src_layout, src_i, conflict_policy, M, indent_str + "  " );
+        ldout << indent_str << "path dst_first_i=" << dst_first_i << " sibling_i=" << nodes[dst_first_i].sibling_i << "\n"; 
     } else {
         //-----------------------------------------------------
         // Normal Copy
         //-----------------------------------------------------
         dst_first_i = node_alloc( src_node.kind );
-        ldout << "normal " << str(src_node.kind) << " dst_first_i=" << dst_first_i << " sibling_i=" << nodes[dst_first_i].sibling_i << "\n"; 
+        ldout << indent_str << "normal " << str(src_node.kind) << " dst_first_i=" << dst_first_i << " sibling_i=" << nodes[dst_first_i].sibling_i << "\n"; 
         if ( src_layout->node_is_parent( src_node ) ) { 
             if ( copy_kind != COPY_KIND::ONE ) {
                 //-----------------------------------------------------
@@ -3474,7 +3474,7 @@ uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, u
                     const Node& src = src_layout->nodes[src_i];
 
                     if ( copy_kind == COPY_KIND::DEEP || copy_kind == COPY_KIND::FLATTEN || node_is_scalar( src ) ) {
-                        dst_prev_i = node_copy( dst_first_i, dst_prev_i, src_layout, src_i, copy_kind, conflict_policy, M, in_flatten );
+                        dst_prev_i = node_copy( dst_first_i, dst_prev_i, src_layout, src_i, copy_kind, conflict_policy, M, in_flatten, indent_str + "  " );
                     } else {
                         break;
                     }
@@ -3493,9 +3493,11 @@ uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, u
     //-----------------------------------------------------
     // For each dst_i (could be more than one for PATH to BOUNDARY conversion):
     //-----------------------------------------------------
-    for( uint dst_i = dst_first_i; dst_i != NULL_I; dst_i = nodes[dst_i].sibling_i )
+    ldout << indent_str << "node_copy: entering linkage loop\n";
+    for( uint dst_i = dst_first_i; dst_i != NULL_I; )
     {
-        ldout << "last_i=" << last_i << " dst_i=" << dst_i << "\n";
+        uint dst_sibling_i = nodes[dst_i].sibling_i;
+        ldout << indent_str << "last_i=" << last_i << " dst_i=" << dst_i << " dst_sibling_i=" << dst_sibling_i << "\n";
 
         //-----------------------------------------------------
         // Connect the new dst_i node to parent_i or last_i.
@@ -3510,17 +3512,20 @@ uint Layout::node_copy( uint parent_i, uint last_i, const Layout * src_layout, u
             nodes[parent_i].u.child_first_i = dst_i;
         }
         last_i = dst_i;
+        nodes[last_i].sibling_i = NULL_I;
 
         if ( nodes[dst_i].kind == NODE_KIND::XY ) {
             //-----------------------------------------------------
             // Transform each X,Y pair by M.
             // Also keep track of the bounding rectangle if we're flattening.
             //-----------------------------------------------------
-            node_transform_xy( parent_i, dst_i, copy_kind, conflict_policy, M );
+            node_transform_xy( parent_i, dst_i, copy_kind, conflict_policy, M, indent_str + "  " );
         }
 
         lassert( nodes[dst_i].sibling_i != dst_i, "node_copy: dst_i sibling_i points to itself" );
+        dst_i = dst_sibling_i;
     }
+    ldout << indent_str << "node_copy: exited linkage loop\n";
 
     return last_i;
 }
@@ -3679,18 +3684,18 @@ uint Layout::node_flatten_ref( uint parent_i, uint last_i, const Layout * src_la
             if ( smag != 1.0 || sreflection ) {
                 real3 sv{ smag, sreflection ? -smag : smag, 1 };
                 inst_M.scale( sv );
-                ldout << "scale mag=" << smag << " sreflection=" << sreflection << " vec=" << sv << " new M=\n" << inst_M << "\n";
+                ldout << "scale mag=" << smag << " sreflection=" << sreflection << " vec=" << sv << " new M=" << inst_M << "\n";
             }
 
             if ( sangle != 0.0 ) {
                 inst_M.rotate_xy( sangle );
-                ldout << "rotate angle=" << sangle << " new M=\n" << inst_M << "\n";
+                ldout << "rotate angle=" << sangle << " new M=" << inst_M << "\n";
             }
 
             if ( src_node.kind == NODE_KIND::SREF ) {
                 real3 tv{ xy[0][0], xy[0][1], 0 };
                 inst_M.translate( tv );
-                ldout << "sref translate vec=" << tv << " M=\n" << inst_M << "\n";
+                ldout << "sref translate vec=" << tv << " M=" << inst_M << "\n";
             } else {
                 real dxy[2][2] = { { (xy[1][0] - xy[0][0]) / real(col_cnt), (xy[1][1] - xy[0][1]) / real(col_cnt) },
                                    { (xy[2][0] - xy[0][0]) / real(row_cnt), (xy[2][1] - xy[0][1]) / real(row_cnt) } };
@@ -3725,7 +3730,7 @@ uint Layout::node_flatten_ref( uint parent_i, uint last_i, const Layout * src_la
 }
 
 uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const Layout * src_layout, uint src_i,
-                                            CONFLICT_POLICY conflict_policy, const Matrix& M )
+                                            CONFLICT_POLICY conflict_policy, const Matrix& M, std::string indent_str )
 {
     //-----------------------------------------------------
     // PATH -> BOUNDARY conversion
@@ -3820,7 +3825,7 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
                             // Transform XY pairs using M.
                             // Also add to BAH.
                             //-----------------------------------------------------
-                            node_transform_xy( dst_i, dst_xy_i, COPY_KIND::FLATTEN, conflict_policy, M );
+                            node_transform_xy( dst_i, dst_xy_i, COPY_KIND::FLATTEN, conflict_policy, M, indent_str + "  " );
                         }
 
                         p0 = p1;
@@ -3842,7 +3847,7 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
     return dst_first_i;
 }
 
-void Layout::node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, CONFLICT_POLICY conflict_policy, const Matrix& M )
+void Layout::node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, CONFLICT_POLICY conflict_policy, const Matrix& M, std::string indent_str )
 {
     lassert( nodes[xy_i].kind == NODE_KIND::XY, "node_transform_xy is not called on an XY node" );      
     bool is_y = false;
@@ -3861,9 +3866,9 @@ void Layout::node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, C
             real3 r;
             M.transform( v, r, true ); // divide by w
             if ( copy_kind == COPY_KIND::FLATTEN ) {
-                ldout << "M=\n" << M << "\n";
-                ldout << "v=" << v << "\n";
-                ldout << "r=" << r << "\n";
+                ldout << indent_str << "M=" << M << "\n";
+                ldout << indent_str << "v=" << v << "\n";
+                ldout << indent_str << "r=" << r << "\n";
             }
 
             real2 p( r.c[0] / gdsii_units_user,    // new X
@@ -3878,7 +3883,7 @@ void Layout::node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, C
                 } else {
                     brect.expand( r2 );    
                 }
-                ldout << "brect=" << brect << "\n";     
+                ldout << indent_str << "brect=" << brect << "\n";     
             }
         }
         i++;
@@ -3900,7 +3905,7 @@ void Layout::node_transform_xy( uint parent_i, uint xy_i, COPY_KIND copy_kind, C
         leaf_nodes[leaf_i].node_i = parent_i;
         leaf_nodes[leaf_i].brect  = brect;
 
-        bah_add( bah_layer_i, leaf_i, conflict_policy );
+        bah_add( bah_layer_i, leaf_i, conflict_policy, indent_str );
     }
 }
 
@@ -3919,7 +3924,7 @@ uint Layout::bah_node_alloc( void )
     return bi;
 }
 
-void Layout::bah_add( uint bah_layer_i, uint leaf_i, CONFLICT_POLICY conflict_policy )
+void Layout::bah_add( uint bah_layer_i, uint leaf_i, CONFLICT_POLICY conflict_policy, std::string indent_str )
 {
     if ( layers[bah_layer_i].bah_root_i == NULL_I ) {
         //------------------------------------------------------------
@@ -3974,7 +3979,7 @@ void Layout::bah_add( uint bah_layer_i, uint leaf_i, CONFLICT_POLICY conflict_po
         //------------------------------------------------------------
         // Insert leaf recursively starting at the root.
         //------------------------------------------------------------
-        bah_insert( layers[bah_layer_i].bah_root_i, layers[bah_layer_i].bah_brect, leaf_i, leaf_nodes[leaf_i].brect, conflict_policy );
+        bah_insert( layers[bah_layer_i].bah_root_i, layers[bah_layer_i].bah_brect, leaf_i, leaf_nodes[leaf_i].brect, conflict_policy, indent_str + "  " );
     }
 }
 
@@ -3983,7 +3988,7 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, const AABR& le
     //------------------------------------------------------------
     // Insert into each quadrant that intersects with the new leaf.
     //------------------------------------------------------------
-    std::cout << indent_str << "bah_insert bi=" << bi << " bah_brect=" << bah_brect << " li=" << li << " leaf_brect=" << leaf_brect << "\n";
+    ldout << indent_str << "bah_insert bi=" << bi << " bah_brect=" << bah_brect << " li=" << li << " leaf_brect=" << leaf_brect << "\n";
     indent_str += "  ";
     std::string indent_str2 = indent_str + "  ";
     for( uint i = 0; i < 2; i++ )
@@ -3992,12 +3997,12 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, const AABR& le
         {
             AABR quadrant_brect = bah_brect.quadrant( i, j );
             if ( quadrant_brect.intersects( leaf_brect ) ) {
-                std::cout << indent_str << "quadrant[" << i << "," << j << "]=" << quadrant_brect << " intersects with new leaf\n";
+                ldout << indent_str << "quadrant[" << i << "," << j << "]=" << quadrant_brect << " intersects with new leaf\n";
                 if ( bah_nodes[bi].child_i[i][j] == NULL_I ) {
                     //------------------------------------------------------------
                     // No child.  Make this leaf the child.
                     //------------------------------------------------------------
-                    std::cout << indent_str2 << "empty child, make this leaf the child\n";
+                    ldout << indent_str2 << "empty child, make this leaf the child\n";
                     bah_nodes[bi].child_i[i][j] = li;
                     bah_nodes[bi].child_is_leaf[i][j] = true;
 
@@ -4006,7 +4011,7 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, const AABR& le
                     // Call this recursively on the child BAH node.
                     // But first calculate the child's bounding rectangle based on i,j.
                     //------------------------------------------------------------
-                    std::cout << indent_str2 << "child is not a leaf, call recursively...\n";
+                    ldout << indent_str2 << "child is not a leaf, call recursively...\n";
                     AABR quadrant_leaf_brect = leaf_brect.quadrant( i, j );
                     bah_insert( bah_nodes[bi].child_i[i][j], quadrant_brect, li, quadrant_leaf_brect, conflict_policy, indent_str2 );
 
@@ -4018,7 +4023,7 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, const AABR& le
                     uint li2 = bah_nodes[bi].child_i[i][j];
                     bool is_exact;
                     if ( bah_leaf_nodes_intersect( quadrant_brect, li, li2, is_exact ) ) {
-                        std::cout << indent_str2 << "child is a leaf, and intersects with new leaf\n";
+                        ldout << indent_str2 << "child is a leaf, and intersects with new leaf\n";
                         if ( is_exact ) {
                             //------------------------------------------------------------
                             // Exact duplicates are not added to the BAH.
@@ -4039,7 +4044,7 @@ void Layout::bah_insert( uint bi, const AABR& bah_brect, uint li, const AABR& le
                         // We have to add a BAH_Node as the new child, then
                         // recursively add both leaves to it.  At some point, they won't conflict.
                         //------------------------------------------------------------
-                        std::cout << indent_str2 << "child is a non-intersecting leaf, replace with new BAH node and recurse for both leaves...\n";
+                        ldout << indent_str2 << "child is a non-intersecting leaf, replace with new BAH node and recurse for both leaves...\n";
                         uint cbi = bah_node_alloc();
                         bah_nodes[bi].child_i[i][j] = cbi;
                         bah_nodes[bi].child_is_leaf[i][j] = false;
