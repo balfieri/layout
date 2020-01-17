@@ -476,6 +476,8 @@ public:
     void        node_xy_replace_polygon( Node& node, const real2 * vtx, uint vtx_cnt ); // replace X,Y children from new set of vertices
     uint        node_pathtype( const Node& node ) const;        // find PATHTYPE for node and return number (default: 0)
     uint        node_datatype( const Node& node ) const;        // find DATATYPE for node and return number (default: 0)
+    uint        node_bgnlib( const Node& node ) const;          // find BGNLIB for node 
+    uint        node_bgnstr( const Node& node ) const;          // find BGNSTR for node 
 
     // NODE COPIES
     enum class COPY_KIND
@@ -2711,6 +2713,24 @@ inline uint Layout::node_datatype( const Node& node ) const
         }
     }
     return 0;   // default
+}
+
+inline uint Layout::node_bgnlib( const Node& node ) const
+{
+    for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i ) 
+    {
+        if ( nodes[child_i].kind == NODE_KIND::BGNLIB ) return child_i;
+    }
+    return NULL_I;   // default
+}
+
+inline uint Layout::node_bgnstr( const Node& node ) const
+{
+    for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i ) 
+    {
+        if ( nodes[child_i].kind == NODE_KIND::BGNSTR ) return child_i;
+    }
+    return NULL_I;   // default
 }
 
 inline Layout::AABR::AABR( const Layout::real2& p )
@@ -5181,6 +5201,10 @@ bool Layout::fastcap_write( std::string file )
     //     2) Tesselate bounding rectangle conductors into quads and triangles (Q and T commands).  Merge faces within same 3D conductor using + option.
     //     3) Add a box around the entire layer with the layer dielectric inside the box and the air outside (D command).
     //------------------------------------------------------------
+    uint bgnlib_i = node_bgnlib( nodes[hdr->root_i] );
+    lassert( bgnlib_i != NULL_I, "could not find BGNLIB" );
+    uint bgnstr_i = node_bgnstr( nodes[bgnlib_i] );
+    lassert( bgnstr_i != NULL_I, "could not find BGNSTR" );
     return false;
 }
 
