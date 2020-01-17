@@ -3227,7 +3227,7 @@ uint Layout::fill_dielectric_leaf( uint parent_i, uint last_i, uint layer_i, uin
             uint v3 = (best_v + i) % (vtx_cnt-1);
             vtx2[v2++] = vtx[v3];
         }
-        vtx2[v2++] = rect.min;
+        lassert( v2 == vtx_cnt, "something is wrong" );
 
         delete[] vtx;
 
