@@ -2471,14 +2471,11 @@ inline bool Layout::node_is_ref( const Node& node ) const
 inline uint Layout::node_last_i( const Node& node ) const
 {
     lassert( node_is_parent( node ), "node_last_i: node is not a parent" );    
-    uint last_i = NULL_I;
     for( uint child_i = node.u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i )
     {
-        if ( nodes[child_i].sibling_i == NULL_I ) break;
-
-        last_i = child_i;
+        if ( nodes[child_i].sibling_i == NULL_I ) return child_i;
     }
-    return last_i;
+    return NULL_I;
 }
 
 inline uint Layout::node_last_scalar_i( const Node& node ) const
