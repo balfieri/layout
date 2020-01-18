@@ -331,7 +331,7 @@ public:
     //
     void        layer_set( uint layer_i, const Layer& layer );
     uint        layer_get( std::string name );
-    uint        layer_get( uint gdsii_num ) const;
+    uint        layer_get( uint gdsii_num, bool is_dielectric=false ) const;
 
     enum class NODE_KIND
     {
@@ -469,7 +469,7 @@ public:
     uint        node_name_i( const Node& node ) const;          // find name for node but return strings[] index
     std::string node_name( const Node& node ) const;            // find name for node
     uint        node_layer_num( const Node& node ) const;       // find LAYER value for node (an element)
-    uint        node_layer_i( const Node& node ) const;         // find layer index within this layout's layers
+    uint        node_layer_i( const Node& node, bool is_dielectric=false ) const; // find layer index within this layout's layers
     uint        node_width( const Node& node ) const;           // find WIDTH value for node 
     uint        node_bah_layer( const Node& node ) const;       // find LAYER value for flattened node and get layer to use for BAH
     uint        node_xy_i( const Node& node ) const;            // find index of XY node within node
@@ -1421,11 +1421,11 @@ uint Layout::layer_get( std::string name )
     return NULL_I;
 }
 
-uint Layout::layer_get( uint gdsii_num ) const
+uint Layout::layer_get( uint gdsii_num, bool is_dielectric ) const
 {
     for( uint li = 0; li < hdr->layer_cnt; li++ )
     {
-        if ( layers[li].gdsii_num == gdsii_num ) return li;
+        if ( (is_dielectric ? layers[li].dielectric_gdsii_num : layers[li].gdsii_num) == gdsii_num ) return li;
     }
 
     return NULL_I;
@@ -2535,9 +2535,9 @@ inline uint Layout::node_layer_num( const Node& node ) const
     }
 }
 
-inline uint Layout::node_layer_i( const Node& node ) const
+inline uint Layout::node_layer_i( const Node& node, bool is_dielectric ) const
 {
-    return layer_get( node_layer_num( node ) );
+    return layer_get( node_layer_num( node ), is_dielectric );
 }
 
 inline uint Layout::node_width( const Node& node ) const
@@ -5202,9 +5202,19 @@ bool Layout::fastcap_write( std::string file )
     //     3) Add a box around the entire layer with the layer dielectric inside the box and the air outside (D command).
     //------------------------------------------------------------
     uint bgnlib_i = node_bgnlib( nodes[hdr->root_i] );
-    lassert( bgnlib_i != NULL_I, "could not find BGNLIB" );
     uint bgnstr_i = node_bgnstr( nodes[bgnlib_i] );
-    lassert( bgnstr_i != NULL_I, "could not find BGNSTR" );
+    for( uint child_i = nodes[bgnstr_i].u.child_first_i; child_i != NULL_I; child_i = nodes[child_i].sibling_i ) 
+    {
+        if ( nodes[child_i].kind == NODE_KIND::BOUNDARY ) {
+            uint layer_i = node_layer_i( nodes[child_i] );
+            if ( layer_i == NULL_I ) continue;  // must be dielectric
+            uint xy_i = node_xy_i( nodes[child_i] );
+            uint vtx_cnt;
+            real2 * vtx = polygon_alloc( nodes[xy_i], vtx_cnt );
+            // TODO: tesselate to quads or triangles
+            polygon_dealloc( vtx );
+        }
+    }
     return false;
 }
 
