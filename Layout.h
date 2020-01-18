@@ -497,7 +497,8 @@ public:
     real2 *     polygon_alloc( const AABR& brect, uint& vtx_cnt ) const;
     real2 *     polygon_copy( const real2 * other, uint other_cnt ) const;
     real2 *     polygon_reversed( const real2 * other, uint other_cnt ) const;
-    void        polygon_dealloc( real2 * vtx_array ) const;
+    void        polygon_dealloc( real2 * vtx ) const;
+    void        polygons_dealloc( real2 ** polys, uint poly_cnt ) const;
     real2 *     polygon_merge_or_intersect( bool do_merge, const real2 * vtx1, uint vtx1_cnt, const real2 * vtx2, uint vtx2_cnt, uint& vtx_cnt ) const;
     AABR        polygon_brect( const real2 * vtx, uint vtx_cnt ) const;
     std::string polygon_str( const real2 * vtx, uint vtx_cnt, std::string color, real xy_scale=4.0, real x_off=0.0, real y_off=0.0 ) const;
@@ -506,6 +507,8 @@ public:
     bool        polygon_includes( const real2 * vtx, uint vtx_cnt, const real2& v ) const;  // v is already in the vtx list?
     bool        polygon_is_ccw( const real2 * vtx, uint vtx_cnt ) const;        // are vertices in counterclockwise winding order?
     real2 *     polygon_ccw( const real2 * vtx, uint vtx_cnt ) const;           // reverses vertices if they are in clockwise winding order, else just a copy
+    bool        polygon_is_convex( const real2 * vtx, uint vtx_cnt ) const;     // returns true if polygon is convex (must be a simple polygon, no crosssing segments)
+    real2 **    polygon_tesselate( const real2 * vtx, uint vtx_cnt, uint& tris_cnt ) const; // tesselates a polygon into one or more triangles - each triangle will have 3 vertices (no dup of first vertex)
 
     struct TopInstInfo
     {
@@ -4217,34 +4220,34 @@ Layout::real2 * Layout::polygon_alloc( const Node& xy_node, uint& vtx_cnt ) cons
     lassert( !have_x, "no Y coord" );
 
     //------------------------------------------------------------
-    // Now allocate that vtx_array and copy them out.
+    // Now allocate that vtx and copy them out.
     //------------------------------------------------------------
-    real2 * vtx_array = polygon_alloc( vtx_cnt );
+    real2 * vtx = polygon_alloc( vtx_cnt );
     uint i = 0;
     foreach( child_i, xy_node )
     {
         if ( !have_x ) {
-            vtx_array[i].c[0] = real(nodes[child_i].u.i) * gdsii_units_user;
+            vtx[i].c[0] = real(nodes[child_i].u.i) * gdsii_units_user;
         } else {
-            vtx_array[i++].c[1] = real(nodes[child_i].u.i) * gdsii_units_user;
+            vtx[i++].c[1] = real(nodes[child_i].u.i) * gdsii_units_user;
         }
         have_x = !have_x;
     }
-    return vtx_array;
+    return vtx;
 }
 
 Layout::real2 * Layout::polygon_alloc( const AABR& brect, uint& vtx_cnt ) const
 {
     vtx_cnt = 5;        
-    real2 * vtx_array = new real2[vtx_cnt];
-    vtx_array[0] = brect.min;
-    vtx_array[1].c[0] = brect.max.c[0]; 
-    vtx_array[1].c[1] = brect.min.c[1]; 
-    vtx_array[2] = brect.max;
-    vtx_array[3].c[0] = brect.min.c[0]; 
-    vtx_array[3].c[1] = brect.max.c[1]; 
-    vtx_array[4] = vtx_array[0];
-    return vtx_array;
+    real2 * vtx = new real2[vtx_cnt];
+    vtx[0] = brect.min;
+    vtx[1].c[0] = brect.max.c[0]; 
+    vtx[1].c[1] = brect.min.c[1]; 
+    vtx[2] = brect.max;
+    vtx[3].c[0] = brect.min.c[0]; 
+    vtx[3].c[1] = brect.max.c[1]; 
+    vtx[4] = vtx[0];
+    return vtx;
 }
 
 Layout::real2 * Layout::polygon_copy( const real2 * other, uint other_cnt ) const
@@ -4264,9 +4267,19 @@ Layout::real2 * Layout::polygon_reversed( const real2 * other, uint other_cnt ) 
     return vtx;
 }
 
-void Layout::polygon_dealloc( real2 * vtx_array ) const
+inline void Layout::polygon_dealloc( real2 * vtx ) const
 {
-    delete[] vtx_array;
+    delete[] vtx;
+}
+
+inline void Layout::polygons_dealloc( real2 ** polys, uint polys_cnt ) const
+{
+    for( uint i = 0; i < polys_cnt; i++ )
+    {
+        polygon_dealloc( polys[i] );
+        polys[i] = nullptr;
+    }
+    delete[] polys;
 }
 
 Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 * _vtx1, uint vtx1_cnt, const real2 * _vtx2, uint vtx2_cnt, 
@@ -4640,6 +4653,47 @@ bool Layout::polygon_is_ccw( const real2 * vtx, uint vtx_cnt ) const
         sum += (v2.c[0] - v1.c[0]) * (v2.c[1] + v1.c[1]);
     }
     return sum < 0.0;
+}
+
+bool Layout::polygon_is_convex( const real2 * vtx, uint vtx_cnt ) const
+{
+    lassert( vtx[0] == vtx[vtx_cnt-1], "polygon_is_convex: first and last vertices are not the same" );
+    vtx_cnt--;
+
+    if ( vtx_cnt < 4 ) return true;
+
+    bool sign = false;
+
+    for( uint i = 0; i < vtx_cnt; i++ )
+    {
+        real dx1 = vtx[(i + 2) % vtx_cnt].c[0] - vtx[(i + 1) % vtx_cnt].c[0];
+        real dy1 = vtx[(i + 2) % vtx_cnt].c[1] - vtx[(i + 1) % vtx_cnt].c[1];
+        real dx2 = vtx[i].c[0] - vtx[(i + 1) % vtx_cnt].c[0];
+        real dy2 = vtx[i].c[1] - vtx[(i + 1) % vtx_cnt].c[1];
+        real cross = dx1 * dy2 - dy1 * dx2;
+
+        bool this_sign = cross > 0;
+        if ( i == 0 ) sign = this_sign;
+        if ( this_sign != sign ) return false;
+    }
+
+    return true;
+}
+
+Layout::real2 ** Layout::polygon_tesselate( const real2 * vtx, uint vtx_cnt, uint& tris_cnt ) const
+{
+    lassert( polygon_is_convex( vtx, vtx_cnt ), "polygon_tesselate: polygon must be convex for now" )
+    tris_cnt = vtx_cnt - 3;
+    real2 ** tris = new real2 *[tris_cnt];
+    for( uint i = 0; i < tris_cnt; i++ )
+    {
+        tris[i] = new real2[3];
+        for( uint j = 0; j < 3; j++ )
+        {
+            tris[i][j] = vtx[i+j];
+        }
+    }
+    return tris;
 }
 
 Layout::real2 * Layout::polygon_ccw( const real2 * vtx, uint vtx_cnt ) const
@@ -5216,7 +5270,9 @@ bool Layout::fastcap_write( std::string file )
             uint xy_i = node_xy_i( nodes[child_i] );
             uint vtx_cnt;
             real2 * vtx = polygon_alloc( nodes[xy_i], vtx_cnt );
-            // TODO: tesselate to quads or triangles
+            uint tris_cnt;
+            real2 ** tris = polygon_tesselate( vtx, vtx_cnt, tris_cnt );
+            polygons_dealloc( tris, tris_cnt );
             polygon_dealloc( vtx );
         }
     }
