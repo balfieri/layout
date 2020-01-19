@@ -31,6 +31,7 @@
 #include <map>
 #include <set>
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <sstream>
 #include <cstdio>
@@ -5276,14 +5277,15 @@ bool Layout::fastcap_write( std::string file )
     uint bgnstr_i = node_bgnstr( nodes[bgnlib_i] );
     std::vector<std::string> generic_s( hdr->layer_cnt );
     uint c = 0;
+    uint precision = 8;
     foreach( child_i, nodes[bgnstr_i] )
     {
         if ( nodes[child_i].kind == NODE_KIND::BOUNDARY ) {
             uint layer_i = node_layer_i( nodes[child_i] );
             if ( layer_i == NULL_I ) continue;  // must be dielectric
             real zoffset = layer_zoffset( layer_i );
-            std::string z0_s = ::str(zoffset);
-            std::string z1_s = ::str(zoffset+layers[layer_i].thickness);
+            std::string z0_s = ::str(zoffset, precision);
+            std::string z1_s = ::str(zoffset+layers[layer_i].thickness, precision);
 
             //------------------------------------------------------------
             // Get XY vertex list as polygon.
@@ -5310,7 +5312,7 @@ bool Layout::fastcap_write( std::string file )
                     generic_s[layer_i] += "T " + name;
                     for( uint j = 0; j < 3; j++ )
                     {
-                        generic_s[layer_i] += " " + ::str(tri[j].c[0]) + " " + ::str(tri[j].c[1]) + " " + (u ? z1_s : z0_s);
+                        generic_s[layer_i] += " " + ::str(tri[j].c[0], precision) + " " + ::str(tri[j].c[1], precision) + " " + (u ? z1_s : z0_s);
                     }
                     generic_s[layer_i] += "\n";
                 }
@@ -5322,8 +5324,8 @@ bool Layout::fastcap_write( std::string file )
             generic_s[layer_i] += "* sides\n";
             for( uint i = 0; i < (vtx_cnt-1); i++ )
             {
-                std::string v0_s = ::str(vtx[i+0].c[0]) + " " + ::str(vtx[i+0].c[1]);
-                std::string v1_s = ::str(vtx[i+1].c[0]) + " " + ::str(vtx[i+1].c[1]);
+                std::string v0_s = ::str(vtx[i+0].c[0], precision) + " " + ::str(vtx[i+0].c[1], precision);
+                std::string v1_s = ::str(vtx[i+1].c[0], precision) + " " + ::str(vtx[i+1].c[1], precision);
                 generic_s[layer_i] += "Q " + name + " " + v0_s + " " + z0_s + " " + v1_s + " " + z0_s + " " + v1_s + " " + z1_s + " " + v0_s + " " + z1_s + "\n";
             }
 
@@ -5358,16 +5360,16 @@ bool Layout::fastcap_write( std::string file )
             g_s += generic_s[li];
 
             std::ofstream g( g_file, std::ofstream::out );
-            g << g_s;
+            g << std::setprecision(8) << g_s;
             g.close();
 
             real dielectric_permittivity = materials[layers[li].dielectric_material_i].relative_permittivity;
-            lst_s += "C " + g_file + " " + ::str(dielectric_permittivity) + " 0.0 0.0 0.0\n";
+            lst_s += "C " + g_file + " " + ::str(dielectric_permittivity, precision) + " " + ::str(0.0, precision) + " " + ::str(0.0, precision) + " " + ::str(0.0, precision) + "\n";
         }        
     }
 
     std::ofstream lst( file, std::ofstream::out );
-    lst << lst_s;
+    lst << std::setprecision(8) << lst_s;
     lst.close();
 
     return true;
