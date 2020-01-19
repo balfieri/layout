@@ -5272,6 +5272,8 @@ bool Layout::fastcap_write( std::string file )
     //     1) Ignore layer dielectrics.
     //     2) Tesselate bounding rectangle conductors into triangles (T commands).  
     //     3) Add a box around the entire layer with the layer dielectric inside the box and the air outside (D command).
+    //
+    // TODO: scale numbers to meters
     //------------------------------------------------------------
     uint bgnlib_i = node_bgnlib( nodes[hdr->root_i] );
     uint bgnstr_i = node_bgnstr( nodes[bgnlib_i] );
