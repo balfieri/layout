@@ -5336,30 +5336,41 @@ bool Layout::fastcap_write( std::string file )
         }
     }
 
-    std::string list_s = "";
-    list_s += "* " + file + ".lst\n";
-    list_s += "*\n";
-    list_s += "* AUTOMATICALLY GENERATED - DO NOT EDIT\n";
-    list_s += "*\n";
+    //------------------------------------------------------------
+    // Write a generic file for each layer that we had geometry for.
+    // Then write the single .fastcap list file that instantiates the generic files.
+    //------------------------------------------------------------
+    std::string lst_s = "";
+    lst_s += "* " + file + ".lst\n";
+    lst_s += "*\n";
+    lst_s += "* AUTOMATICALLY GENERATED - DO NOT EDIT\n";
+    lst_s += "*\n";
     for( uint li = 0; li < hdr->layer_cnt; li++ )
     {
         if ( generic_s[li] != "" ) {
             std::string g_file = file + ".L" + std::to_string( layers[li].gdsii_num );
-            std::string s = "";
-            s += "0 " + g_file + "\n";
-            s += "*\n";
-            s += "* AUTOMATICALLY GENERATED - DO NOT EDIT\n";
-            s += "*\n";
-            s += "*\n";
-            s += generic_s[li];
-            std::cout << s;
+            std::string g_s = "";
+            g_s += "0 " + g_file + "\n";
+            g_s += "*\n";
+            g_s += "* AUTOMATICALLY GENERATED - DO NOT EDIT\n";
+            g_s += "*\n";
+            g_s += "*\n";
+            g_s += generic_s[li];
+
+            std::ofstream g( g_file, std::ofstream::out );
+            g << g_s;
+            g.close();
 
             real dielectric_permittivity = materials[layers[li].dielectric_material_i].relative_permittivity;
-            list_s += "C " + g_file + " " + ::str(dielectric_permittivity) + " 0.0 0.0 0.0\n";
+            lst_s += "C " + g_file + " " + ::str(dielectric_permittivity) + " 0.0 0.0 0.0\n";
         }        
     }
-    std::cout << list_s;
-    return false;
+
+    std::ofstream lst( file, std::ofstream::out );
+    lst << lst_s;
+    lst.close();
+
+    return true;
 }
 
 bool Layout::fasthenry_write( std::string file )
