@@ -332,6 +332,7 @@ public:
     void        layer_set( uint layer_i, const Layer& layer );
     uint        layer_get( std::string name );
     uint        layer_get( uint gdsii_num, bool is_dielectric=false ) const;
+    uint        layer_zoffset( uint layer_i ) const;            // zoffset of layer i
 
     enum class NODE_KIND
     {
@@ -1436,6 +1437,17 @@ uint Layout::layer_get( uint gdsii_num, bool is_dielectric ) const
     }
 
     return NULL_I;
+}
+
+uint Layout::layer_zoffset( uint layer_i ) const
+{
+    lassert( layer_i < hdr->layer_cnt, "layer_i is out of range" );
+    real zoffset = 0;
+    for( uint li = 0; li != layer_i; li++ )
+    {
+        if ( !layers[li].same_zoffset_as_prev ) zoffset += layers[li].thickness;
+    }
+    return zoffset;
 }
 
 inline std::string Layout::putf( const char * fmt, ... ) 
@@ -5257,25 +5269,96 @@ bool Layout::fastcap_write( std::string file )
     //
     // How we do this:
     //     1) Ignore layer dielectrics.
-    //     2) Tesselate bounding rectangle conductors into quads and triangles (Q and T commands).  Merge faces within same 3D conductor using + option.
+    //     2) Tesselate bounding rectangle conductors into triangles (T commands).  
     //     3) Add a box around the entire layer with the layer dielectric inside the box and the air outside (D command).
     //------------------------------------------------------------
     uint bgnlib_i = node_bgnlib( nodes[hdr->root_i] );
     uint bgnstr_i = node_bgnstr( nodes[bgnlib_i] );
+    std::vector<std::string> generic_s( hdr->layer_cnt );
+    uint c = 0;
     foreach( child_i, nodes[bgnstr_i] )
     {
         if ( nodes[child_i].kind == NODE_KIND::BOUNDARY ) {
             uint layer_i = node_layer_i( nodes[child_i] );
             if ( layer_i == NULL_I ) continue;  // must be dielectric
+            real zoffset = layer_zoffset( layer_i );
+            std::string z0_s = ::str(zoffset);
+            std::string z1_s = ::str(zoffset+layers[layer_i].thickness);
+
+            //------------------------------------------------------------
+            // Get XY vertex list as polygon.
+            // Tesselate 2D conductor into 2D triangles.
+            //------------------------------------------------------------
             uint xy_i = node_xy_i( nodes[child_i] );
             uint vtx_cnt;
             real2 * vtx = polygon_alloc( nodes[xy_i], vtx_cnt );
+
             uint tris_cnt;
             real2 ** tris = polygon_tesselate( vtx, vtx_cnt, tris_cnt );
+
+            //------------------------------------------------------------
+            // Use tris to create top and bottom of conductor surface.
+            //------------------------------------------------------------
+            std::string name = "conductor" + std::to_string(c);
+            generic_s[layer_i] += "\n* " + name + "\n";
+            for( uint u = 0; u < 2; u++ ) 
+            {
+                generic_s[layer_i] += u ? "* top\n" : "* bottom\n";
+                for( uint i = 0; i < tris_cnt; i++ )
+                {
+                    generic_s[layer_i] += "T";
+                    real2 * tri = tris[i];
+                    for( uint j = 0; j < 3; j++ )
+                    {
+                        generic_s[layer_i] += " " + name + "_topbot " + ::str(tri[j].c[0]) + " " + ::str(tri[j].c[1]) + " " + z0_s;
+                    }
+                    generic_s[layer_i] += "\n";
+                }
+            }
+
+            //------------------------------------------------------------
+            // Also create the vertical quads all the way around the boundary for the sides.
+            //------------------------------------------------------------
+            generic_s[layer_i] += "* sides\n";
+            for( uint i = 0; i < (vtx_cnt-1); i++ )
+            {
+                std::string v0_s = ::str(vtx[i+0].c[0]) + " " + ::str(vtx[i+0].c[1]);
+                std::string v1_s = ::str(vtx[i+1].c[0]) + " " + ::str(vtx[i+1].c[1]);
+                generic_s[layer_i] += "Q " + name + " " + v0_s + " " + z0_s + " " + v1_s + " " + z0_s + " " + v1_s + " " + z1_s + " " + v0_s + " " + z1_s + "\n";
+            }
+
+            //------------------------------------------------------------
+            // Done with polygons.
+            //------------------------------------------------------------
             polygons_dealloc( tris, tris_cnt );
             polygon_dealloc( vtx );
+            c++;
         }
     }
+
+    std::string list_s = "";
+    list_s += "* " + file + ".lst\n";
+    list_s += "*\n";
+    list_s += "* AUTOMATICALLY GENERATED - DO NOT EDIT\n";
+    list_s += "*\n";
+    for( uint li = 0; li < hdr->layer_cnt; li++ )
+    {
+        if ( generic_s[li] != "" ) {
+            std::string g_file = file + ".L" + std::to_string( layers[li].gdsii_num );
+            std::string s = "";
+            s += "0 " + g_file + "\n";
+            s += "*\n";
+            s += "* AUTOMATICALLY GENERATED - DO NOT EDIT\n";
+            s += "*\n";
+            s += "*\n";
+            s += generic_s[li];
+            std::cout << s;
+
+            real dielectric_permittivity = materials[layers[li].dielectric_material_i].relative_permittivity;
+            list_s += "C " + g_file + " " + ::str(dielectric_permittivity) + " 0.0 0.0 0.0\n";
+        }        
+    }
+    std::cout << list_s;
     return false;
 }
 
