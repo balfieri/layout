@@ -5304,7 +5304,7 @@ bool Layout::fastcap_write( std::string file )
             // Use tris to create top and bottom of conductor surface.
             //------------------------------------------------------------
             std::string name = "conductor" + std::to_string(c);
-            generic_s[layer_i] += "\n* " + name + "\n*\n";
+            generic_s[layer_i] += "*\n* " + name + "\n*\n";
             for( uint u = 0; u < 2; u++ ) 
             {
                 generic_s[layer_i] += u ? "* top\n" : "* bottom\n";
