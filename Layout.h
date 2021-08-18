@@ -3782,7 +3782,7 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
     uint layer = NULL_I;
     uint dst_first_i = NULL_I;
     uint dst_prev_i = NULL_I;
-    foreach2( src_child_i, src_layout->nodes[src_child_i], src_layout )
+    foreach2( src_child_i, src_layout->nodes[src_i], src_layout )
     {
         const Node& src = src_layout->nodes[src_child_i];
 
@@ -3829,7 +3829,7 @@ uint Layout::node_convert_path_to_boundary( uint parent_i, uint last_i, const La
                         p1.c[1] = xy_r;
                         if ( have_p0 ) {
                             // see comments above 
-                            lassert( pathtype >= 0 && pathtype <= 2, "pathtype is out of range 0 .. 2" );      
+                            lassert( pathtype <= 2, "pathtype is out of range 0 .. 2" );      
                             lassert( width >= 0.0, "PATH WIDTH should be >= 0.0" );
                             real2 s0 = p0;
                             real2 s1 = p1;
@@ -4311,7 +4311,7 @@ Layout::real2 * Layout::polygon_merge_or_intersect( bool do_merge, const real2 *
     // excluding segment endpoints.
     // TODO: not correct, can still have polygons that overlap and meet only at common endpoints
     //------------------------------------------------------------
-    uint i, i2, j, j2;
+    uint i, i2=0, j, j2=0;
     real2 ip;
     j = vtx2_cnt;
     for( i = 0; i < vtx1_cnt; i++ )
